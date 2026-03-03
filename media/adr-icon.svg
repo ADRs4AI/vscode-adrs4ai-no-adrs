@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
+  <!-- Document shape -->
+  <path d="M3 1h7l3 3v11H3V1z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+  <!-- Folded corner -->
+  <path d="M10 1v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+  <!-- Text lines (representing ADR content) -->
+  <line x1="5" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1"/>
+  <line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1"/>
+  <!-- Question mark dot (open question indicator) -->
+  <circle cx="5" cy="11" r="0.8" fill="currentColor"/>
+  <!-- Question mark arc -->
+  <path d="M5 10c0-1 1.5-1 1.5 0s-1.5 0.5-1.5 1.5" fill="none" stroke="currentColor" stroke-width="0.8"/>
+</svg>

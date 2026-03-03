@@ -1,0 +1,155 @@
+{
+  "name": "adrs-for-ai",
+  "displayName": "ADRs for AI",
+  "description": "Navigate and manage Architectural Decision Records for human-AI collaboration (collab-adr-lean format)",
+  "version": "0.1.0",
+  "publisher": "jlumbroso",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Notebooks"
+  ],
+  "keywords": [
+    "adr",
+    "architectural decision records",
+    "human-ai collaboration",
+    "documentation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jlumbroso/vscode-adrs-for-ai"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/docs/adr/*.md"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "adr-explorer",
+          "title": "ADRs for AI",
+          "icon": "media/adr-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "adr-explorer": [
+        {
+          "id": "adrExplorer",
+          "name": "ADR Explorer",
+          "contextualTitle": "ADRs for AI"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "adrManager.open",
+        "title": "Open ADR Manager",
+        "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.createAdr",
+        "title": "Create New ADR",
+        "category": "ADR Manager",
+        "icon": "$(add)"
+      },
+      {
+        "command": "adrManager.refresh",
+        "title": "Refresh",
+        "category": "ADR Manager",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adrManager.openAdr",
+        "title": "Open ADR File",
+        "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.commitAdrs",
+        "title": "Commit ADR Changes",
+        "category": "ADR Manager",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "adrManager.copyDeepLink",
+        "title": "Copy Deep Link",
+        "category": "ADR Manager"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "adrManager.createAdr",
+          "when": "view == adrExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "adrManager.commitAdrs",
+          "when": "view == adrExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "adrManager.refresh",
+          "when": "view == adrExplorer",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "adrManager.openAdr",
+          "when": "view == adrExplorer && viewItem == adr",
+          "group": "inline"
+        },
+        {
+          "command": "adrManager.copyDeepLink",
+          "when": "view == adrExplorer && (viewItem == adr || viewItem == question)",
+          "group": "1_actions"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ADR Manager",
+      "properties": {
+        "adrManager.adrDirectory": {
+          "type": "string",
+          "default": "docs/adr",
+          "description": "Path to the ADR directory, relative to the workspace root."
+        },
+        "adrManager.adrNamespace": {
+          "type": "string",
+          "default": "",
+          "description": "Override the project namespace for cross-project ADR citations (e.g., 'my-project'). Auto-detected from git remote if empty."
+        },
+        "adrManager.mcpWriteMode": {
+          "type": "string",
+          "enum": ["workspaceEdit", "direct"],
+          "default": "workspaceEdit",
+          "description": "How MCP write operations modify ADR files. 'workspaceEdit' uses VS Code's undo-safe edit API; 'direct' writes directly to disk."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "package": "vsce package",
+    "vscode:prepublish": "npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.0.0",
+    "vitest": "^2.0.0"
+  }
+}
