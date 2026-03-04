@@ -71,6 +71,8 @@ export interface AdrFile {
   /** All addressable anchors (for deep-link resolution) */
   deepLinks: DeepLink[];
 
+  /** True when the title starts with "SEED:" — brain dumps, not decisions */
+  isSeed: boolean;
   /** sha1 hex of raw file content — for change detection */
   checksum: string;
   parsedAt: number;

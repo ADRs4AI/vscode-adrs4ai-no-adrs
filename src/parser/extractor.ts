@@ -186,7 +186,7 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
   if (result.status && requiresScopeRemaining(result.status) && !result.scopeRemaining) {
     result.warnings.push({
       code: 'MISSING_SCOPE_REMAINING',
-      message: 'ADR status is "Partially Implemented" but has no "Scope Remaining" field. Add: - **Scope Remaining**: what is still to be built.',
+      message: 'Status is "Partially Implemented" but the header is missing "- **Scope Remaining**: ...". Add this line directly below the Status line in the header metadata block. A quick fix is available.',
     });
   }
 
@@ -620,10 +620,18 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   // Build deep link index
   const deepLinks = buildDeepLinks(sections, questions);
 
+  // Seeds (title starts with "SEED:") are brain dumps, not decisions.
+  // They don't require a Status field — remove the MISSING_STATUS warning.
+  const isSeed = (title ?? '').toUpperCase().startsWith('SEED:');
+  const finalWarnings = isSeed
+    ? warnings.filter(w => w.code !== 'MISSING_STATUS')
+    : warnings;
+
   return {
     path: filePath,
     number: adrNumber,
     title: title ?? path.basename(filePath, '.md'),
+    isSeed,
     date: metadata.date,
     iteration: metadata.iteration,
     status: metadata.status ?? 'Draft',
@@ -637,7 +645,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
     namespace: options.namespace,
     deepLinks,
     checksum,
+    parseWarnings: finalWarnings,
     parsedAt,
-    parseWarnings: warnings,
   };
 }

@@ -118,6 +118,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
+    // ── Quick Fix: insert Scope Remaining field after the Status line ──────
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file', language: 'markdown' },
+      {
+        provideCodeActions(document, _range, context) {
+          const actions: vscode.CodeAction[] = [];
+          for (const diag of context.diagnostics) {
+            if (diag.source !== 'ADR Manager' || diag.code !== 'MISSING_SCOPE_REMAINING') continue;
+            const fix = new vscode.CodeAction(
+              'Add "Scope Remaining" to header (below Status line)',
+              vscode.CodeActionKind.QuickFix,
+            );
+            fix.diagnostics = [diag];
+            fix.isPreferred = true;
+            // Find the Status line and insert directly after it
+            const lines = document.getText().split('\n');
+            let insertAfterLine = diag.range.start.line;
+            for (let i = 0; i < Math.min(20, lines.length); i++) {
+              if (/^-\s+\*\*Status\*\*:/.test(lines[i])) { insertAfterLine = i; break; }
+            }
+            fix.edit = new vscode.WorkspaceEdit();
+            fix.edit.insert(document.uri, new vscode.Position(insertAfterLine + 1, 0), '- **Scope Remaining**: \n');
+            actions.push(fix);
+          }
+          return actions;
+        },
+      },
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
+    ),
+
     vscode.commands.registerCommand('adrManager.goToAnswerInFile', (item) => {
       if (item?.question) {
         const line = item.question.answer?.line ?? item.question.lineStart;
