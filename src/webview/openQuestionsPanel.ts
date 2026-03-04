@@ -104,11 +104,13 @@ export class OpenQuestionsPanel {
         }))
     })
 
+    const cfg = vscode.workspace.getConfiguration('adrManager')
+    const settingsName = cfg.get<string>('humanName', '')
     this.panel.webview.postMessage({
       type: 'questions',
       questions,
-      gitAuthor: getGitUserName(),
-      authorSuggestions: extractHumanNames(this.index),
+      // Priority: settings > git config > top name from ADR index
+      gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.index)[0],
     })
   }
 
@@ -428,8 +430,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 
   <div class="author-row">
     <label for="author">Answering as:</label>
-    <input id="author" type="text" placeholder="Your name" autocomplete="off" list="author-list" />
-    <datalist id="author-list"></datalist>
+    <input id="author" type="text" placeholder="Your name" autocomplete="off" />
   </div>
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
@@ -525,14 +526,6 @@ window.addEventListener('message', e => {
       $id('author').value = best;
       saved.author = best;
       vscode.setState(saved);
-    }
-
-    // Populate datalist with known human names
-    if (msg.authorSuggestions && msg.authorSuggestions.length) {
-      const dl = $id('author-list');
-      dl.innerHTML = msg.authorSuggestions
-        .map(n => \`<option value="\${n}">\`)
-        .join('');
     }
 
     render();

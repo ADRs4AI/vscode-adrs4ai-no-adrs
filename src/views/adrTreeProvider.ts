@@ -17,6 +17,17 @@ import * as vscode from 'vscode'
 import type { AdrFile, Question } from '../parser/types'
 import type { AdrIndex } from '../index/adrIndex'
 
+function statusEmoji(status: string): string {
+  switch (status) {
+    case 'Accepted':    return '✅'
+    case 'Implemented': return '🏗️'
+    case 'Superseded':  return '🔄'
+    case 'Draft':       return '✏️'
+    case 'Proposed':    return '🔲'
+    default:            return '📄'
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tree item types
 // ---------------------------------------------------------------------------
@@ -77,6 +88,13 @@ export class AdrTreeItem extends vscode.TreeItem {
         arguments: [opts.adr!.path, opts.question.lineStart],
       };
     }
+
+    if (opts.kind === 'open-questions-header') {
+      this.command = {
+        command: 'adrManager.openQuestionsPanel',
+        title: 'Answer Open Questions',
+      };
+    }
   }
 
   private static makeLabel(opts: ConstructorParameters<typeof AdrTreeItem>[0]): string {
@@ -98,7 +116,7 @@ export class AdrTreeItem extends vscode.TreeItem {
   private static makeDescription(opts: ConstructorParameters<typeof AdrTreeItem>[0]): string {
     if (opts.kind === 'adr' && opts.adr) {
       const openCount = opts.adr.questions.filter(q => !q.isAnswered).length;
-      const statusPart = `[${opts.adr.status}]`;
+      const statusPart = `[${statusEmoji(opts.adr.status)} ${opts.adr.status}]`;
       const questionPart = openCount > 0 ? ` · ${openCount} open` : '';
       return `${statusPart}${questionPart}`;
     }
@@ -110,7 +128,7 @@ export class AdrTreeItem extends vscode.TreeItem {
       const a = opts.adr;
       const parts = [
         `**${a.title}**`,
-        `Status: ${a.status}`,
+        `${statusEmoji(a.status)} Status: ${a.status}`,
         `Format: ${a.format}`,
         a.date ? `Date: ${a.date}` : null,
         a.deciders.length > 0 ? `Deciders: ${a.deciders.join(', ')}` : null,

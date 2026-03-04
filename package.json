@@ -135,6 +135,16 @@
           "default": "",
           "description": "Override the project namespace for cross-project ADR citations (e.g., 'my-project'). Auto-detected from git remote if empty."
         },
+        "adrManager.humanName": {
+          "type": "string",
+          "default": "",
+          "description": "Your name as the human collaborator. Pre-fills the 'Deciders' field in new ADRs and the 'Answering as:' field in the Open Questions panel. Falls back to git config user.name if empty."
+        },
+        "adrManager.aiModel": {
+          "type": "string",
+          "default": "Sonnet 4.6 (1M)",
+          "description": "The AI model name used in new ADR templates (e.g., 'Sonnet 4.6 (1M)', 'Claude Opus 4.6')."
+        },
         "adrManager.mcpWriteMode": {
           "type": "string",
           "enum": ["workspaceEdit", "direct"],

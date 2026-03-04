@@ -203,7 +203,10 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
   const filePath = path.join(adrDir, filename);
 
   const today = new Date().toISOString().split('T')[0];
-  const template = generateAdrTemplate(title, today);
+  const cfg = vscode.workspace.getConfiguration('adrManager');
+  const humanName = cfg.get<string>('humanName', '') || 'Human';
+  const aiModel = cfg.get<string>('aiModel', 'Sonnet 4.6 (1M)');
+  const template = generateAdrTemplate(title, today, humanName, aiModel);
 
   const uri = vscode.Uri.file(filePath);
   await vscode.workspace.fs.writeFile(uri, Buffer.from(template, 'utf-8'));
@@ -216,13 +219,13 @@ function determineNextNumber(adrDir: string): number {
   return max + 1;
 }
 
-function generateAdrTemplate(title: string, date: string): string {
+function generateAdrTemplate(title: string, date: string, humanName: string, aiModel: string): string {
   return `# ${title}
 
 - **Date**: ${date}
 - **Iteration**: 1
 - **Status**: Draft
-- **Deciders**: [Human name], [AI model]
+- **Deciders**: ${humanName}, ${aiModel}
 
 ---
 
@@ -232,40 +235,85 @@ function generateAdrTemplate(title: string, date: string): string {
 - \`QST:\` Questions
 - \`ANS:\` Answers
 - \`COD:\` Code examples
-- \`NOT:\` Notes
+- \`API:\` API calls
+- \`FIL:\` Files to examine
+- \`DOC:\` Documentation
+- \`NOT:\` Note, important observation
+
+**Find things**:
+\`\`\`bash
+grep '^### QST:' docs/adr/$(basename ${date}-*.md)
+grep 'Status: unanswered' docs/adr/
+\`\`\`
 
 ---
 
 ## Human Context
 
-[Your thoughts, questions, frustrations, ideas, code snippets...]
+**Your stream-of-consciousness here** — no structure needed, just dump everything.
+
+[Your thoughts, questions, frustrations, ideas, code snippets, whatever's on your mind about this decision]
+
+**Agency Grant**: [Optional: What freedom does the AI have? "Implement as you see fit" / "Explore options" / "Just structure my thoughts"]
 
 ---
 
 ## AI Interpretation
 
+**What I understand you're asking**:
+
 1. [Thread/topic 1] - [why it matters]
+
+**Assumptions I'm making**:
+- [Assumption 1]
+
+**Confirm**: Does this match what you meant?
 
 ---
 
 ## Questions
 
-### QST: [Your first question]
+### QST: [Question text]
 - Status: unanswered
 - Why asking: [How this shapes the approach]
-- Need: [yes/no | explanation | code example]
+- Need: [yes/no | explanation | code example | etc]
 
-**ANS:** (by [name])
+**ANS:** (by ${humanName})
 [Fill this in]
+
+---
+
+## Supporting Materials
+
+### NOT: [observation]
+[Note content]
 
 ---
 
 ## Decision
 
 ### Context
-[To be filled]
+[What problem are we solving? Why does it matter?]
+
+### Options
+
+**Option A**: [Name]
+- Pros: [Benefits]
+- Cons: [Drawbacks]
+
+**Option B**: [Name]
+- Pros: [Benefits]
+- Cons: [Drawbacks]
 
 ### Chosen: [TBD]
+
+**Why**: [Rationale]
+
+**Trade-offs accepted**: [What we're giving up]
+
+### Consequences
+- [Immediate impact]
+- [Long-term consideration]
 
 ---
 
@@ -275,11 +323,18 @@ function generateAdrTemplate(title: string, date: string): string {
 
 ---
 
+## Validation
+
+- [ ] ${humanName}: Decision captured correctly
+- [ ] ${aiModel}: Understood the requirements
+
+---
+
 ## Iterations
 
 ### Iteration 1 (${date})
 - Human: [What you provided]
-- AI: [What the AI did]
+- AI (${aiModel}): [What the AI did]
 - Outcome: [What changed]
 
 ---
@@ -287,6 +342,7 @@ function generateAdrTemplate(title: string, date: string): string {
 ## Links
 
 - Related ADRs: (none)
+- Template: collab-adr-lean v3.1
 `;
 }
 
