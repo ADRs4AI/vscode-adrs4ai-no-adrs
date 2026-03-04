@@ -111,11 +111,6 @@
       ],
       "view/item/context": [
         {
-          "command": "adrManager.openAdr",
-          "when": "view == adrExplorer && viewItem == adr",
-          "group": "inline"
-        },
-        {
           "command": "adrManager.copyDeepLink",
           "when": "view == adrExplorer && (viewItem == adr || viewItem == question)",
           "group": "1_actions"
