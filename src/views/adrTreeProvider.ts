@@ -81,7 +81,10 @@ export class AdrTreeItem extends vscode.TreeItem {
 
   private static makeLabel(opts: ConstructorParameters<typeof AdrTreeItem>[0]): string {
     if (opts.kind === 'adr' && opts.adr) {
-      return `ADR-${String(opts.adr.number).padStart(4, '0')}: ${opts.adr.title}`;
+      const num = String(opts.adr.number).padStart(4, '0');
+      // Strip leading "ADR-NNNN:" from title to avoid "ADR-0001: ADR-0001: ..." duplication
+      const title = opts.adr.title.replace(/^ADR-\d{4}[:\s\-]+/i, '').trim() || opts.adr.title;
+      return `ADR-${num}: ${title}`;
     }
     if (opts.kind === 'question' && opts.question) {
       return `? ${opts.question.text}`;
