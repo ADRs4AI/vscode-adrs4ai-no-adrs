@@ -1,22 +1,23 @@
 {
     "workbench.colorCustomizations": {
-        "activityBar.activeBackground": "#57bfc4",
-        "activityBar.background": "#57bfc4",
+        "activityBar.activeBackground": "#e5690b",
+        "activityBar.background": "#e5690b",
         "activityBar.foreground": "#15202b",
         "activityBar.inactiveForeground": "#15202b99",
-        "activityBarBadge.background": "#bd42b7",
-        "activityBarBadge.foreground": "#e7e7e7",
-        "commandCenter.border": "#15202b99",
-        "sash.hoverBorder": "#57bfc4",
-        "statusBar.background": "#3ca7ac",
-        "statusBar.foreground": "#15202b",
-        "statusBarItem.hoverBackground": "#2f8286",
-        "statusBarItem.remoteBackground": "#3ca7ac",
-        "statusBarItem.remoteForeground": "#15202b",
-        "titleBar.activeBackground": "#3ca7ac",
-        "titleBar.activeForeground": "#15202b",
-        "titleBar.inactiveBackground": "#3ca7ac99",
-        "titleBar.inactiveForeground": "#15202b99"
+        "activityBarBadge.background": "#0cf370",
+        "activityBarBadge.foreground": "#15202b",
+        "commandCenter.border": "#e7e7e799",
+        "sash.hoverBorder": "#e5690b",
+        "statusBar.background": "#b45309",
+        "statusBar.foreground": "#e7e7e7",
+        "statusBarItem.hoverBackground": "#e5690b",
+        "statusBarItem.remoteBackground": "#b45309",
+        "statusBarItem.remoteForeground": "#e7e7e7",
+        "titleBar.activeBackground": "#b45309",
+        "titleBar.activeForeground": "#e7e7e7",
+        "titleBar.inactiveBackground": "#b4530999",
+        "titleBar.inactiveForeground": "#e7e7e799"
     },
-    "peacock.color": "#3CA7AC"
+    "peacock.color": "#B45309",
+    "vitest.vitestConfig": "${workspaceFolder}/vite.config.ts"
 }
