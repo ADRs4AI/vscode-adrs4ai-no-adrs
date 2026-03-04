@@ -84,6 +84,27 @@
         "title": "Answer Open Questions",
         "category": "ADR Manager",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "adrManager.filterQuestions",
+        "title": "Filter Questions",
+        "category": "ADR Manager",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adrManager.changeStatus",
+        "title": "Change Status…",
+        "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.goToQuestionInPanel",
+        "title": "Go to in Open Questions Panel",
+        "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.goToAnswerInFile",
+        "title": "Go to Answer Field in File",
+        "category": "ADR Manager"
       }
     ],
     "menus": {
@@ -94,26 +115,46 @@
           "group": "navigation@1"
         },
         {
-          "command": "adrManager.createAdr",
+          "command": "adrManager.filterQuestions",
           "when": "view == adrExplorer",
           "group": "navigation@2"
         },
         {
-          "command": "adrManager.commitAdrs",
+          "command": "adrManager.createAdr",
           "when": "view == adrExplorer",
           "group": "navigation@3"
         },
         {
-          "command": "adrManager.refresh",
+          "command": "adrManager.commitAdrs",
           "when": "view == adrExplorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "adrManager.refresh",
+          "when": "view == adrExplorer",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
         {
+          "command": "adrManager.changeStatus",
+          "when": "view == adrExplorer && viewItem == adr",
+          "group": "1_actions@1"
+        },
+        {
           "command": "adrManager.copyDeepLink",
           "when": "view == adrExplorer && (viewItem == adr || viewItem == question)",
-          "group": "1_actions"
+          "group": "1_actions@2"
+        },
+        {
+          "command": "adrManager.goToQuestionInPanel",
+          "when": "view == adrExplorer && viewItem == question",
+          "group": "2_navigate@1"
+        },
+        {
+          "command": "adrManager.goToAnswerInFile",
+          "when": "view == adrExplorer && viewItem == question",
+          "group": "2_navigate@2"
         }
       ]
     },
@@ -139,6 +180,16 @@
           "type": "string",
           "default": "Sonnet 4.6 (1M)",
           "description": "The AI model name used in new ADR templates (e.g., 'Sonnet 4.6 (1M)', 'Claude Opus 4.6')."
+        },
+        "adrManager.clickNavigatesTo": {
+          "type": "string",
+          "enum": ["question", "answer"],
+          "default": "question",
+          "enumDescriptions": [
+            "Scroll to the ### QST: heading (shows the full question context)",
+            "Scroll to the **ANS:** field (jump straight to where you type)"
+          ],
+          "description": "When clicking a question in the tree or navigating from the panel, where to scroll in the file."
         },
         "adrManager.mcpWriteMode": {
           "type": "string",

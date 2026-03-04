@@ -170,13 +170,21 @@ export class AdrTreeItem extends vscode.TreeItem {
 // Tree data provider
 // ---------------------------------------------------------------------------
 
+export type QuestionFilter = 'open' | 'all' | 'answered';
+
 export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<AdrTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  filterMode: QuestionFilter = 'open';
+
   constructor(private readonly index: AdrIndex) {
-    // Refresh tree whenever the index changes
     index.onChange(() => this.refresh());
+  }
+
+  setFilter(mode: QuestionFilter): void {
+    this.filterMode = mode;
+    this.refresh();
   }
 
   refresh(): void {
@@ -188,45 +196,41 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   }
 
   getChildren(element?: AdrTreeItem): AdrTreeItem[] {
-    if (!element) {
-      return this.getRootItems();
-    }
-
-    if (element.kind === 'adr' && element.adr) {
-      return this.getAdrChildren(element.adr);
-    }
-
+    if (!element) return this.getRootItems();
+    if (element.kind === 'adr' && element.adr) return this.getAdrChildren(element.adr);
     return [];
   }
 
   private getRootItems(): AdrTreeItem[] {
     const adrs = this.index.allAdrs();
     if (adrs.length === 0) return [];
-
     const items: AdrTreeItem[] = [];
 
-    // Optional header row showing total open questions
     const openCount = this.index.openQuestionCount;
     if (openCount > 0) {
       items.push(new AdrTreeItem({ kind: 'open-questions-header', count: openCount }));
     }
 
     for (const adr of adrs) {
-      const hasOpenQuestions = adr.questions.some(q => !q.isAnswered);
+      const visibleQuestions = this.visibleQuestions(adr);
       items.push(new AdrTreeItem({
         kind: 'adr',
         adr,
-        collapsibleState: hasOpenQuestions
+        collapsibleState: visibleQuestions.length > 0
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
       }));
     }
-
     return items;
   }
 
   private getAdrChildren(adr: AdrFile): AdrTreeItem[] {
-    const openQuestions = adr.questions.filter(q => !q.isAnswered);
-    return openQuestions.map(q => new AdrTreeItem({ kind: 'question', question: q, adr }));
+    return this.visibleQuestions(adr).map(q => new AdrTreeItem({ kind: 'question', question: q, adr }));
+  }
+
+  private visibleQuestions(adr: AdrFile) {
+    if (this.filterMode === 'all') return adr.questions;
+    if (this.filterMode === 'answered') return adr.questions.filter(q => q.isAnswered);
+    return adr.questions.filter(q => !q.isAnswered); // 'open' (default)
   }
 }

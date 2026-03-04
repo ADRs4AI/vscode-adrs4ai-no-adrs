@@ -86,6 +86,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('adrManager.openQuestionsPanel', () => {
       if (index) OpenQuestionsPanel.createOrShow(index);
     }),
+
+    vscode.commands.registerCommand('adrManager.filterQuestions', () => {
+      if (treeProvider) filterQuestions(treeProvider);
+    }),
+
+    vscode.commands.registerCommand('adrManager.changeStatus', (item) => {
+      if (item?.adr) changeAdrStatus(item);
+    }),
+
+    vscode.commands.registerCommand('adrManager.goToQuestionInPanel', (item) => {
+      if (item?.question && index) {
+        OpenQuestionsPanel.createOrShow(index);
+        OpenQuestionsPanel.navigateTo(item.question.id);
+      }
+    }),
+
+    vscode.commands.registerCommand('adrManager.goToAnswerInFile', (item) => {
+      if (item?.question) {
+        const line = item.question.answer?.line ?? item.question.lineStart;
+        openAdrFile(item.question.adrPath, line);
+      }
+    }),
   );
 
   // ── File watcher ──────────────────────────────────────────────────────────
@@ -186,9 +208,19 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
     return;
   }
 
+  const kind = await vscode.window.showQuickPick([
+    { label: '$(file-text) New ADR', description: 'Full collab-adr-lean template with questions', value: 'adr' as const },
+    { label: '$(edit) New Seed', description: 'Brain dump — AI will chunk into ADRs', value: 'seed' as const },
+  ], { title: 'What would you like to create?', placeHolder: 'Select type' });
+  if (!kind) return;
+
+  const promptLabel = kind.value === 'adr'
+    ? 'ADR title (e.g., "Use SQLite for local ADR index")'
+    : 'Seed topic (e.g., "Auth strategy thoughts")';
+
   const title = await vscode.window.showInputBox({
-    prompt: 'ADR title (e.g., "Use SQLite for local ADR index")',
-    placeHolder: 'Decision title',
+    prompt: promptLabel,
+    placeHolder: kind.value === 'adr' ? 'Decision title' : 'Topic',
   });
 
   if (!title) return;
@@ -206,7 +238,9 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('adrManager');
   const humanName = cfg.get<string>('humanName', '') || 'Human';
   const aiModel = cfg.get<string>('aiModel', 'Sonnet 4.6 (1M)');
-  const template = generateAdrTemplate(title, today, humanName, aiModel);
+  const template = kind.value === 'seed'
+    ? generateSeedTemplate(title, today, humanName)
+    : generateAdrTemplate(title, today, humanName, aiModel);
 
   const uri = vscode.Uri.file(filePath);
   await vscode.workspace.fs.writeFile(uri, Buffer.from(template, 'utf-8'));
@@ -395,6 +429,68 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
   } catch (err) {
     vscode.window.showErrorMessage(`ADR Manager: Commit failed — ${err}`);
   }
+}
+
+function generateSeedTemplate(title: string, date: string, humanName: string): string {
+  return `# SEED: ${title}
+
+- **Date**: ${date}
+- **From**: ${humanName}
+
+---
+
+## Brain Dump
+
+[Everything here — no structure needed. Dump your thoughts, ideas, questions, code snippets, frustrations, inspirations, whatever is on your mind about this topic.]
+
+---
+
+**Model**: Please chunk this into ADRs using the collab-adr-lean template.
+`
+}
+
+async function filterQuestions(treeProvider: import('./views/adrTreeProvider').AdrTreeProvider): Promise<void> {
+  const current = treeProvider.filterMode;
+  const picked = await vscode.window.showQuickPick([
+    { label: '$(question) Open questions only', value: 'open' as const, description: current === 'open' ? '✓ current' : '' },
+    { label: '$(list-flat) All questions', value: 'all' as const, description: current === 'all' ? '✓ current' : '' },
+    { label: '$(check) Answered questions only', value: 'answered' as const, description: current === 'answered' ? '✓ current' : '' },
+  ], { title: 'Filter Questions in Sidebar' });
+  if (picked) treeProvider.setFilter(picked.value);
+}
+
+const KNOWN_STATUSES = ['Draft', 'Accepted', 'Implemented', 'Superseded', 'Proposed'] as const;
+const STATUS_EMOJI: Record<string, string> = { Draft: '✏️', Accepted: '✅', Implemented: '🏗️', Superseded: '🔄', Proposed: '🔲' };
+
+async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeItem): Promise<void> {
+  if (!item.adr) return;
+  const current = item.adr.status;
+  const picked = await vscode.window.showQuickPick(
+    KNOWN_STATUSES.map(s => ({
+      label: `${STATUS_EMOJI[s] ?? '📄'} ${s}`,
+      value: s,
+      description: s === current ? '(current)' : undefined,
+    })),
+    { title: `Change status of ADR-${String(item.adr.number).padStart(4, '0')}`, placeHolder: `Current: ${current}` }
+  );
+  if (!picked || picked.value === current) return;
+
+  const uri = vscode.Uri.file(item.adr.path);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const edit = new vscode.WorkspaceEdit();
+  const lines = doc.getText().split('\n');
+  for (let i = 0; i < Math.min(20, lines.length); i++) {
+    if (/^-\s+\*\*Status\*\*:/.test(lines[i])) {
+      edit.replace(uri, doc.lineAt(i).range, `- **Status**: ${picked.value}`);
+      break;
+    }
+    if (/^\*\s+Status:/.test(lines[i])) {
+      edit.replace(uri, doc.lineAt(i).range, `* Status: ${picked.value}`);
+      break;
+    }
+  }
+  await vscode.workspace.applyEdit(edit);
+  await vscode.workspace.save(uri);
 }
 
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {

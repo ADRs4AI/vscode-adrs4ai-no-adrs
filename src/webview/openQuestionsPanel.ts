@@ -61,6 +61,14 @@ export class OpenQuestionsPanel {
     new OpenQuestionsPanel(index)
   }
 
+  /** Jump the open panel to a specific question by ID. Call after createOrShow. */
+  static navigateTo(questionId: string): void {
+    // Post after a short delay to let the panel initialize if it was just opened
+    setTimeout(() => {
+      OpenQuestionsPanel.instance?.panel.webview.postMessage({ type: 'navigate', questionId })
+    }, 150)
+  }
+
   private constructor(private readonly index: AdrIndex) {
     OpenQuestionsPanel.instance = this
 
@@ -434,7 +442,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </div>
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
-  <div class="hint">Cmd+Enter to submit · Skip to come back later</div>
+  <div class="hint">Cmd+Enter to submit · Skip to come back later · <a id="open-in-file" href="#" style="color:var(--vscode-textLink-foreground)">Open in file ↗</a></div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
@@ -464,6 +472,11 @@ $id('ans').addEventListener('keydown', e => {
 });
 
 $id('btn-ans').addEventListener('click', submit);
+$id('open-in-file').addEventListener('click', e => {
+  e.preventDefault();
+  if (!questions[idx]) return;
+  vscode.postMessage({ type: 'jumpTo', adrPath: questions[idx].adrPath, lineNumber: questions[idx].lineStart });
+});
 
 $id('btn-skip').addEventListener('click', () => {
   idx = (idx + 1) % Math.max(questions.length, 1);
@@ -536,6 +549,10 @@ window.addEventListener('message', e => {
       if (idx >= questions.length - 1) idx = 0;
       render();
     }, 900);
+  }
+  if (msg.type === 'navigate') {
+    const i = questions.findIndex(q => q.id === msg.questionId);
+    if (i >= 0) { idx = i; render(); }
   }
   if (msg.type === 'error') {
     $id('btn-ans').disabled = false;
