@@ -13,6 +13,7 @@
  */
 
 import * as vscode from 'vscode'
+import { execSync } from 'child_process'
 import type { AdrIndex } from '../index/adrIndex'
 
 // ---------------------------------------------------------------------------
@@ -103,7 +104,12 @@ export class OpenQuestionsPanel {
         }))
     })
 
-    this.panel.webview.postMessage({ type: 'questions', questions })
+    this.panel.webview.postMessage({
+      type: 'questions',
+      questions,
+      gitAuthor: getGitUserName(),
+      authorSuggestions: extractHumanNames(this.index),
+    })
   }
 
   private async handleMessage(msg: WebviewMessage): Promise<void> {
@@ -198,6 +204,53 @@ export class OpenQuestionsPanel {
     for (const d of this.disposables) d.dispose()
     this.disposables.length = 0
   }
+}
+
+// ---------------------------------------------------------------------------
+// Author name helpers
+// ---------------------------------------------------------------------------
+
+/** Try to get the git user name from the workspace's git config. */
+function getGitUserName(): string | undefined {
+  try {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    const result = execSync('git config user.name', {
+      encoding: 'utf-8',
+      cwd: workspaceRoot,
+      timeout: 2000,
+    }).trim()
+    return result || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Extract human author names from the ADR index, ranked by frequency.
+ * Filters out AI model names (Sonnet, Opus, Haiku, Claude, GPT, Gemini, etc.)
+ * so only human names appear in the suggestion list.
+ */
+function extractHumanNames(index: AdrIndex): string[] {
+  const freq = new Map<string, number>()
+  const bump = (name: string) => freq.set(name, (freq.get(name) ?? 0) + 1)
+
+  const AI_NAME_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral/i
+
+  for (const adr of index.allAdrs()) {
+    for (const d of adr.deciders) {
+      if (!AI_NAME_RE.test(d)) bump(d)
+    }
+    for (const q of adr.questions) {
+      if (q.answer?.author && !AI_NAME_RE.test(q.answer.author)) bump(q.answer.author)
+    }
+    for (const c of adr.inlineCodes) {
+      if (c.author && !AI_NAME_RE.test(c.author)) bump(c.author)
+    }
+  }
+
+  return Array.from(freq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name]) => name)
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +428,8 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 
   <div class="author-row">
     <label for="author">Answering as:</label>
-    <input id="author" type="text" placeholder="Your name" autocomplete="off" />
+    <input id="author" type="text" placeholder="Your name" autocomplete="off" list="author-list" />
+    <datalist id="author-list"></datalist>
   </div>
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
@@ -396,7 +450,7 @@ const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
 
-// Restore author from persisted state
+// Restore author from persisted state (set on first 'questions' message if empty)
 $id('author').value = saved.author || '';
 $id('author').addEventListener('input', () => {
   saved.author = $id('author').value;
@@ -464,6 +518,23 @@ window.addEventListener('message', e => {
   if (msg.type === 'questions') {
     questions = msg.questions;
     if (idx >= questions.length) idx = 0;
+
+    // Pre-fill author: saved state > git config > top name from ADR index
+    if (!saved.author && (msg.gitAuthor || (msg.authorSuggestions && msg.authorSuggestions[0]))) {
+      const best = msg.gitAuthor || msg.authorSuggestions[0];
+      $id('author').value = best;
+      saved.author = best;
+      vscode.setState(saved);
+    }
+
+    // Populate datalist with known human names
+    if (msg.authorSuggestions && msg.authorSuggestions.length) {
+      const dl = $id('author-list');
+      dl.innerHTML = msg.authorSuggestions
+        .map(n => \`<option value="\${n}">\`)
+        .join('');
+    }
+
     render();
   }
   if (msg.type === 'answered') {
