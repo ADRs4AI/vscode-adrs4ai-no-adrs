@@ -12,6 +12,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import { AdrIndex } from './index/adrIndex'
 import { AdrTreeProvider } from './views/adrTreeProvider'
+import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 
 // ---------------------------------------------------------------------------
 // Extension state
@@ -80,6 +81,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
       copyDeepLink(item);
+    }),
+
+    vscode.commands.registerCommand('adrManager.openQuestionsPanel', () => {
+      if (index) OpenQuestionsPanel.createOrShow(index);
     }),
   );
 

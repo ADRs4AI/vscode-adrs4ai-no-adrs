@@ -78,24 +78,35 @@
         "command": "adrManager.copyDeepLink",
         "title": "Copy Deep Link",
         "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.openQuestionsPanel",
+        "title": "Answer Open Questions",
+        "category": "ADR Manager",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "adrManager.createAdr",
+          "command": "adrManager.openQuestionsPanel",
           "when": "view == adrExplorer",
           "group": "navigation@1"
         },
         {
-          "command": "adrManager.commitAdrs",
+          "command": "adrManager.createAdr",
           "when": "view == adrExplorer",
           "group": "navigation@2"
         },
         {
-          "command": "adrManager.refresh",
+          "command": "adrManager.commitAdrs",
           "when": "view == adrExplorer",
           "group": "navigation@3"
+        },
+        {
+          "command": "adrManager.refresh",
+          "when": "view == adrExplorer",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
