@@ -459,7 +459,8 @@ async function filterQuestions(treeProvider: import('./views/adrTreeProvider').A
   if (picked) treeProvider.setFilter(picked.value);
 }
 
-const KNOWN_STATUSES = ['Draft', 'Accepted', 'Implemented', 'Superseded', 'Proposed'] as const;
+// Ordered by the ADR lifecycle: Draft → Proposed → Accepted → Implemented → Superseded
+const KNOWN_STATUSES = ['Draft', 'Proposed', 'Accepted', 'Implemented', 'Superseded'] as const;
 const STATUS_EMOJI: Record<string, string> = { Draft: '✏️', Accepted: '✅', Implemented: '🏗️', Superseded: '🔄', Proposed: '🔲' };
 
 async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeItem): Promise<void> {
