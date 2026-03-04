@@ -183,7 +183,10 @@
         },
         "adrManager.clickNavigatesTo": {
           "type": "string",
-          "enum": ["question", "answer"],
+          "enum": [
+            "question",
+            "answer"
+          ],
           "default": "question",
           "enumDescriptions": [
             "Scroll to the ### QST: heading (shows the full question context)",
@@ -193,7 +196,10 @@
         },
         "adrManager.mcpWriteMode": {
           "type": "string",
-          "enum": ["workspaceEdit", "direct"],
+          "enum": [
+            "workspaceEdit",
+            "direct"
+          ],
           "default": "workspaceEdit",
           "description": "How MCP write operations modify ADR files. 'workspaceEdit' uses VS Code's undo-safe edit API; 'direct' writes directly to disk."
         }
@@ -210,11 +216,11 @@
     "package": "vsce package",
     "vscode:prepublish": "npm run build"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
     "@vitest/coverage-v8": "^2.0.0",
+    "@vscode/vsce": "^3.7.1",
     "typescript": "^5.4.0",
     "vite": "^5.0.0",
     "vitest": "^2.0.0"
