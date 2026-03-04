@@ -156,8 +156,13 @@ export class AdrTreeItem extends vscode.TreeItem {
         default: return new vscode.ThemeIcon('file-text');
       }
     }
-    if (opts.kind === 'question') {
-      return new vscode.ThemeIcon('question', new vscode.ThemeColor('charts.orange'));
+    if (opts.kind === 'question' && opts.question) {
+      // Unanswered: bright orange (needs attention)
+      // Answered: dimmed (same shape, distinguished by brightness not hue — colorblind-safe)
+      const color = opts.question.isAnswered
+        ? new vscode.ThemeColor('descriptionForeground')
+        : new vscode.ThemeColor('charts.orange')
+      return new vscode.ThemeIcon('question', color)
     }
     if (opts.kind === 'open-questions-header') {
       return new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('charts.orange'));

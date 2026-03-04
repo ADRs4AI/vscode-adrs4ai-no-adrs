@@ -432,7 +432,10 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   <div class="counter" id="counter"></div>
   <div class="progress"><div class="progress-fill" id="pbar"></div></div>
 
-  <button class="adr-link" id="adr-link"></button>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+    <button class="adr-link" id="adr-link" style="margin-bottom:0"></button>
+    <a id="open-in-file" href="#" style="font-size:11px;color:var(--vscode-textLink-foreground);text-decoration:none;opacity:.8">Open in file ↗</a>
+  </div>
   <div class="qtext" id="qtext"></div>
   <div class="why" id="why" style="display:none"></div>
 
@@ -442,7 +445,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </div>
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
-  <div class="hint">Cmd+Enter to submit · Skip to come back later · <a id="open-in-file" href="#" style="color:var(--vscode-textLink-foreground)">Open in file ↗</a></div>
+  <div class="hint">Cmd+Enter to submit · Skip to come back later</div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>

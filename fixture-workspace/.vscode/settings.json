@@ -1,0 +1,5 @@
+{
+  "adrManager.humanName": "Jérémie Lumbroso",
+  "adrManager.aiModel": "Sonnet 4.6 (1M)",
+  "adrManager.adrDirectory": "docs/adr"
+}
