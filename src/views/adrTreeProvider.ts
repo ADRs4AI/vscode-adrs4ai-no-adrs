@@ -16,18 +16,7 @@
 import * as vscode from 'vscode'
 import type { AdrFile, Question } from '../parser/types'
 import type { AdrIndex } from '../index/adrIndex'
-
-function statusEmoji(status: string): string {
-  switch (status) {
-    case 'Draft':                return '✏️'
-    case 'Proposed':             return '🔲'
-    case 'Accepted':             return '✅'
-    case 'Partially Implemented': return '🔧'
-    case 'Implemented':          return '🏗️'
-    case 'Superseded':           return '🔄'
-    default:                     return '📄'
-  }
-}
+import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
 
 // ---------------------------------------------------------------------------
 // Tree item types
@@ -149,13 +138,7 @@ export class AdrTreeItem extends vscode.TreeItem {
 
   private static makeIcon(opts: ConstructorParameters<typeof AdrTreeItem>[0]): vscode.ThemeIcon {
     if (opts.kind === 'adr' && opts.adr) {
-      switch (opts.adr.status) {
-        case 'Accepted': return new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed'));
-        case 'Implemented': return new vscode.ThemeIcon('verified', new vscode.ThemeColor('testing.iconPassed'));
-        case 'Superseded': return new vscode.ThemeIcon('history', new vscode.ThemeColor('disabledForeground'));
-        case 'Draft': return new vscode.ThemeIcon('edit', new vscode.ThemeColor('charts.yellow'));
-        default: return new vscode.ThemeIcon('file-text');
-      }
+      return statusThemeIcon(opts.adr.status, vscode.ThemeIcon, vscode.ThemeColor);
     }
     if (opts.kind === 'question' && opts.question) {
       // Unanswered: bright orange (needs attention)

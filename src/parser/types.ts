@@ -27,6 +27,7 @@ export type AdrStatus =
 /** Navigation codes used in collab-adr-lean format */
 export type NavCode = 'QST' | 'ANS' | 'COD' | 'API' | 'FIL' | 'DOC' | 'NOT';
 
+/** @deprecated Import KNOWN_STATUS_VALUES from statusInfo.ts instead */
 export const KNOWN_STATUSES: AdrStatus[] = [
   'Draft', 'Proposed', 'Accepted', 'Partially Implemented', 'Implemented', 'Superseded',
 ];

@@ -10,6 +10,7 @@
 
 import * as crypto from 'crypto'
 import * as path from 'path'
+import { KNOWN_STATUS_VALUES, requiresScopeRemaining } from './statusInfo'
 import { tokenize, extractRawSections, type RawSection, type Token } from './tokenizer'
 import type {
   AdrFile,
@@ -154,10 +155,10 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
       }
       case 'status': {
         result.status = value;
-        if (!KNOWN_STATUSES.includes(value)) {
+        if (!KNOWN_STATUS_VALUES.includes(value)) {
           result.warnings.push({
             code: 'UNKNOWN_STATUS',
-            message: `ADR status "${value}" is not a recognized value. Known statuses: ${KNOWN_STATUSES.join(', ')}.`,
+            message: `ADR status "${value}" is not a recognized value. Known statuses: ${KNOWN_STATUS_VALUES.join(', ')}.`,
             line: token.line,
           });
         }
@@ -182,7 +183,7 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
     result.status = 'Draft'; // default fallback
   }
 
-  if (result.status === 'Partially Implemented' && !result.scopeRemaining) {
+  if (result.status && requiresScopeRemaining(result.status) && !result.scopeRemaining) {
     result.warnings.push({
       code: 'MISSING_SCOPE_REMAINING',
       message: 'ADR status is "Partially Implemented" but has no "Scope Remaining" field. Add: - **Scope Remaining**: what is still to be built.',

@@ -13,6 +13,7 @@ import * as path from 'path'
 import { AdrIndex } from './index/adrIndex'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
+import { ADR_STATUSES } from './parser/statusInfo'
 
 // ---------------------------------------------------------------------------
 // Extension state
@@ -22,6 +23,7 @@ let index: AdrIndex | undefined;
 let treeProvider: AdrTreeProvider | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
+let diagnosticCollection: vscode.DiagnosticCollection | undefined;
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -34,6 +36,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Create the index (no files parsed yet — lazy init)
   index = new AdrIndex();
   treeProvider = new AdrTreeProvider(index);
+
+  // ── Diagnostics collection ────────────────────────────────────────────────
+  diagnosticCollection = vscode.languages.createDiagnosticCollection('adr-manager');
+  context.subscriptions.push(diagnosticCollection);
+
+  // Whenever the index changes, refresh diagnostics for all indexed ADRs
+  index.onChange(event => {
+    if (!diagnosticCollection) return;
+    if (event.type === 'removed') {
+      diagnosticCollection.delete(vscode.Uri.file(event.adrPath));
+    } else {
+      updateDiagnostics(diagnosticCollection, event.adr);
+    }
+  });
 
   // ── Status bar item ──────────────────────────────────────────────────────
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -459,18 +475,14 @@ async function filterQuestions(treeProvider: import('./views/adrTreeProvider').A
   if (picked) treeProvider.setFilter(picked.value);
 }
 
-// Ordered by the ADR lifecycle
-const KNOWN_STATUSES = ['Draft', 'Proposed', 'Accepted', 'Partially Implemented', 'Implemented', 'Superseded'] as const;
-const STATUS_EMOJI: Record<string, string> = { Draft: '✏️', Proposed: '🔲', Accepted: '✅', 'Partially Implemented': '🔧', Implemented: '🏗️', Superseded: '🔄' };
-
 async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeItem): Promise<void> {
   if (!item.adr) return;
   const current = item.adr.status;
   const picked = await vscode.window.showQuickPick(
-    KNOWN_STATUSES.map(s => ({
-      label: `${STATUS_EMOJI[s] ?? '📄'} ${s}`,
-      value: s,
-      description: s === current ? '(current)' : undefined,
+    ADR_STATUSES.map(s => ({
+      label: `${s.emoji} ${s.value}`,
+      value: s.value,
+      description: s.value === current ? '(current)' : undefined,
     })),
     { title: `Change status of ADR-${String(item.adr.number).padStart(4, '0')}`, placeHolder: `Current: ${current}` }
   );
@@ -492,6 +504,26 @@ async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeIt
   }
   await vscode.workspace.applyEdit(edit);
   await vscode.workspace.save(uri);
+}
+
+function updateDiagnostics(
+  collection: vscode.DiagnosticCollection,
+  adr: import('./parser/types').AdrFile,
+): void {
+  const uri = vscode.Uri.file(adr.path);
+  const diags = adr.parseWarnings.map(w => {
+    const line = Math.max(0, (w.line ?? 1) - 1);
+    const range = new vscode.Range(line, 0, line, 999);
+    const severity =
+      w.code === 'MISSING_SCOPE_REMAINING' || w.code === 'MISSING_STATUS'
+        ? vscode.DiagnosticSeverity.Warning
+        : vscode.DiagnosticSeverity.Information;
+    const diag = new vscode.Diagnostic(range, w.message, severity);
+    diag.source = 'ADR Manager';
+    diag.code = w.code;
+    return diag;
+  });
+  collection.set(uri, diags.length > 0 ? diags : []);
 }
 
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {
