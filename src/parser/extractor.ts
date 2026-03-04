@@ -314,16 +314,21 @@ const STATUS_LINE_RE = /^-\s+Status:\s+(.+)$/;
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
 // Matches: - Need: value
 const NEED_RE = /^-\s+Need:\s+(.+)$/;
+// Matches: **My recommendation**: text
+const RECOMMENDATION_RE = /^\*\*My recommendation\*\*:\s*(.*)/;
 
 function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string): Question {
   const lines = section.body.split('\n');
   let statusText = 'unanswered';
   let whyAsking: string | undefined;
   let need: string | undefined;
+  let recommendation: string | undefined;
   let answer: QuestionAnswer | undefined;
 
   let inAnswer = false;
+  let inRecommendation = false;
   const answerLines: string[] = [];
+  const recommendationLines: string[] = [];
   let answerAuthor: string | undefined;
   let answerLine: number | undefined;
 
@@ -337,13 +342,30 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     }
 
     const statusMatch = line.match(STATUS_LINE_RE);
-    if (statusMatch) { statusText = statusMatch[1].trim(); continue; }
+    if (statusMatch) { statusText = statusMatch[1].trim(); inRecommendation = false; continue; }
 
     const whyMatch = line.match(WHY_ASKING_RE);
-    if (whyMatch) { whyAsking = whyMatch[1].trim(); continue; }
+    if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; continue; }
 
     const needMatch = line.match(NEED_RE);
-    if (needMatch) { need = needMatch[1].trim(); continue; }
+    if (needMatch) { need = needMatch[1].trim(); inRecommendation = false; continue; }
+
+    // Recommendation: starts with **My recommendation**: and may span multiple lines
+    const recMatch = line.match(RECOMMENDATION_RE);
+    if (recMatch) {
+      inRecommendation = true;
+      const firstLine = recMatch[1].trim();
+      if (firstLine) recommendationLines.push(firstLine);
+      continue;
+    }
+
+    // Continue collecting recommendation lines until the ANS block or a blank line
+    // followed by a new bold/option line
+    if (inRecommendation) {
+      if (line === '') { inRecommendation = false; continue; }
+      if (/^\*\*ANS:\*\*/.test(line)) { inRecommendation = false; /* fall through */ }
+      else { recommendationLines.push(line); continue; }
+    }
 
     const ansMatch = line.match(ANS_INLINE_RE);
     if (ansMatch) {
@@ -373,6 +395,10 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
 
   const isAnswered = statusText === 'answered' || !!answer;
 
+  if (recommendationLines.length > 0) {
+    recommendation = recommendationLines.join('\n').trim() || undefined;
+  }
+
   return {
     id: `adr-${String(adrNumber).padStart(4, '0')}-${section.slug}`,
     slug: section.slug,
@@ -381,6 +407,7 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     isAnswered,
     whyAsking,
     need,
+    recommendation,
     answer,
     adrNumber,
     adrPath,

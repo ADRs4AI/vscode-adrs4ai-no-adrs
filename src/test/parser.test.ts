@@ -355,6 +355,57 @@ describe('Regression tests', () => {
     expect(adr.questions[0].answer).toBeUndefined()
   })
 
+  it('should not treat # headings inside fenced code blocks as document headings', () => {
+    // Bug: ADR-0005 title was parsed as "# CLAUDE.md - Project Guidance ← header (always)"
+    // because the tokenizer didn't skip heading detection inside fenced code blocks.
+    // Fixed in commit: fenced code block tracking added to tokenizer.ts
+    const content = `# ADR-0005: CLAUDE.md Parser
+
+- **Status**: Draft
+
+## Supporting Materials
+
+### NOT: CLAUDE.md structure observed in this project
+
+\`\`\`
+# CLAUDE.md - Project Guidance          ← header (always)
+  - Project / Human / AI / Last Updated ← project context fields
+## Prime Directive                       ← framework directive (numbered)
+\`\`\`
+
+More content here.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0005-claudemd-parser.md')
+    expect(adr.title).toBe('ADR-0005: CLAUDE.md Parser')
+    expect(adr.number).toBe(5)
+  })
+
+  it('should extract the recommendation field from a QST block', () => {
+    // Regression: recommendation was defined in types.ts but never populated by the extractor
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+- Why asking: Affects stability of cross-file references.
+- Need: pick one
+
+**Option A**: Slug from heading text
+- Pros: human-readable
+
+**My recommendation**: Option A with HTML comment override as opt-in.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].recommendation).toBe('Option A with HTML comment override as opt-in.')
+  })
+
   it('should parse an inline NOT that appears without a QST header', () => {
     // Real case: model adds **NOT:** observations inline within section bodies
     const content = `# ADR-0001: Specs

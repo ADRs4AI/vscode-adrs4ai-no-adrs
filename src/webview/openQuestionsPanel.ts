@@ -25,6 +25,7 @@ interface WebviewQuestion {
   text: string
   whyAsking?: string
   need?: string
+  recommendation?: string
   adrNumber: number
   adrTitle: string
   adrPath: string
@@ -105,6 +106,7 @@ export class OpenQuestionsPanel {
           text: q.text,
           whyAsking: q.whyAsking,
           need: q.need,
+          recommendation: q.recommendation,
           adrNumber: adr.number,
           adrTitle: cleanTitle,
           adrPath: adr.path,
@@ -349,9 +351,25 @@ body{
   border-left:3px solid var(--vscode-textBlockQuote-border);
   padding:10px 14px;
   border-radius:0 4px 4px 0;
+  margin-bottom:12px;
+  white-space:pre-wrap;
+  line-height:1.5;
+}
+.recommendation{
+  font-size:12px;
+  color:var(--vscode-editor-foreground);
+  background:var(--vscode-diffEditor-insertedTextBackground,rgba(155,185,85,.1));
+  border-left:3px solid var(--vscode-charts-green,#4ec9b0);
+  padding:10px 14px;
+  border-radius:0 4px 4px 0;
   margin-bottom:20px;
   white-space:pre-wrap;
   line-height:1.5;
+}
+.recommendation::before{
+  content:'→ ';
+  font-weight:600;
+  opacity:.7;
 }
 .author-row{
   display:flex;align-items:center;gap:8px;
@@ -438,6 +456,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </div>
   <div class="qtext" id="qtext"></div>
   <div class="why" id="why" style="display:none"></div>
+  <div class="recommendation" id="rec" style="display:none"></div>
 
   <div class="author-row">
     <label for="author">Answering as:</label>
@@ -522,6 +541,9 @@ function render() {
   const ctx = [q.whyAsking, q.need ? 'Need: ' + q.need : null].filter(Boolean).join('\\n');
   if (ctx) { $id('why').style.display = 'block'; $id('why').textContent = ctx; }
   else { $id('why').style.display = 'none'; }
+
+  if (q.recommendation) { $id('rec').style.display = 'block'; $id('rec').textContent = q.recommendation; }
+  else { $id('rec').style.display = 'none'; }
 
   $id('ans').value = '';
   $id('flash').style.display = 'none';

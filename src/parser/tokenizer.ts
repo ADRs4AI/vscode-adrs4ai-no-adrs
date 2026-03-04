@@ -47,6 +47,7 @@ export type Token = HeadingToken | BodyToken | HtmlCommentToken | BlankToken;
 // ---------------------------------------------------------------------------
 
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
+const FENCE_OPEN_RE = /^(`{3,}|~{3,})/;
 
 // Matches a complete single-line HTML comment: <!-- content -->
 // Multi-line comments are collapsed to the first line only (rare in ADRs)
@@ -60,9 +61,41 @@ export function tokenize(source: string): Token[] {
   const lines = source.split('\n');
   const tokens: Token[] = [];
 
+  // Track fenced code blocks so that `# headings` inside them are not
+  // misidentified as document headings. This was the root cause of ADR-0005
+  // showing a code-block example line as its title.
+  let inFencedCode = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const lineNumber = i + 1;
+    const trimmed = raw.trimStart();
+
+    // Detect fenced code block open/close
+    const fenceMatch = trimmed.match(FENCE_OPEN_RE);
+    if (fenceMatch) {
+      const fc = fenceMatch[1][0];
+      const fl = fenceMatch[1].length;
+      if (!inFencedCode) {
+        inFencedCode = true;
+        fenceChar = fc;
+        fenceLen = fl;
+        tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+        continue;
+      } else if (fc === fenceChar && fl >= fenceLen) {
+        inFencedCode = false;
+        tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+        continue;
+      }
+    }
+
+    // Inside a fenced code block — everything is body, no heading detection
+    if (inFencedCode) {
+      tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+      continue;
+    }
 
     if (raw.trim() === '') {
       tokens.push({ kind: 'blank', raw, line: lineNumber });
