@@ -17,17 +17,18 @@ export type AdrFormat =
 
 export type AdrStatus =
   | 'Draft'
+  | 'Proposed'
   | 'Accepted'
+  | 'Partially Implemented'
   | 'Implemented'
   | 'Superseded'
-  | 'Proposed'
   | string;          // tolerate unknown statuses (warn, don't reject)
 
 /** Navigation codes used in collab-adr-lean format */
 export type NavCode = 'QST' | 'ANS' | 'COD' | 'API' | 'FIL' | 'DOC' | 'NOT';
 
 export const KNOWN_STATUSES: AdrStatus[] = [
-  'Draft', 'Accepted', 'Implemented', 'Superseded', 'Proposed',
+  'Draft', 'Proposed', 'Accepted', 'Partially Implemented', 'Implemented', 'Superseded',
 ];
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,13 @@ export interface AdrFile {
   /** Latest iteration number from the header */
   iteration: number;
   status: AdrStatus;
+  /**
+   * When status is 'Partially Implemented', this field is required.
+   * A brief description of what remains — parseable from the header bullet list.
+   * Example: "SQLite FTS5 (Forma 2), MCP server (Forma 3), AI features (Forma 4)"
+   * The parser emits MISSING_SCOPE_REMAINING if this is absent and status is Partially Implemented.
+   */
+  scopeRemaining?: string;
   deciders: string[];
   format: AdrFormat;
 
@@ -163,13 +171,14 @@ export interface DeepLink {
 // ---------------------------------------------------------------------------
 
 export type ParseWarningCode =
-  | 'UNKNOWN_STATUS'       // status field has an unrecognized value
-  | 'MISSING_STATUS'       // status field is absent
-  | 'BULLET_FORMAT'        // metadata line uses * instead of - **Key**:
-  | 'DUPLICATE_SLUG'       // two sections resolve to the same slug
-  | 'UNKNOWN_FORMAT'       // file doesn't match any known format
-  | 'MISSING_TITLE'        // no # Title heading found
-  | 'ANSWER_WITHOUT_QST';  // **ANS:** found but no preceding QST block
+  | 'UNKNOWN_STATUS'           // status field has an unrecognized value
+  | 'MISSING_STATUS'           // status field is absent
+  | 'MISSING_SCOPE_REMAINING'  // status is 'Partially Implemented' but no Scope Remaining field
+  | 'BULLET_FORMAT'            // metadata line uses * instead of - **Key**:
+  | 'DUPLICATE_SLUG'           // two sections resolve to the same slug
+  | 'UNKNOWN_FORMAT'           // file doesn't match any known format
+  | 'MISSING_TITLE'            // no # Title heading found
+  | 'ANSWER_WITHOUT_QST';      // **ANS:** found but no preceding QST block
 
 export interface ParseWarning {
   code: ParseWarningCode;

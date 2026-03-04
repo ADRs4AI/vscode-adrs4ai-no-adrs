@@ -19,12 +19,13 @@ import type { AdrIndex } from '../index/adrIndex'
 
 function statusEmoji(status: string): string {
   switch (status) {
-    case 'Accepted':    return '✅'
-    case 'Implemented': return '🏗️'
-    case 'Superseded':  return '🔄'
-    case 'Draft':       return '✏️'
-    case 'Proposed':    return '🔲'
-    default:            return '📄'
+    case 'Draft':                return '✏️'
+    case 'Proposed':             return '🔲'
+    case 'Accepted':             return '✅'
+    case 'Partially Implemented': return '🔧'
+    case 'Implemented':          return '🏗️'
+    case 'Superseded':           return '🔄'
+    default:                     return '📄'
   }
 }
 

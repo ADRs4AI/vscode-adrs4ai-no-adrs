@@ -110,6 +110,7 @@ interface ExtractedMetadata {
   date?: string;
   iteration: number;
   status?: AdrStatus;
+  scopeRemaining?: string;
   deciders: string[];
   warnings: ParseWarning[];
 }
@@ -166,15 +167,26 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
         result.deciders = value.split(',').map(s => s.trim()).filter(Boolean);
         break;
       }
+      case 'scope remaining': {
+        result.scopeRemaining = value;
+        break;
+      }
     }
   }
 
   if (!result.status) {
     result.warnings.push({
       code: 'MISSING_STATUS',
-      message: 'ADR is missing a status field (Draft, Accepted, Implemented, Superseded, or Proposed).',
+      message: 'ADR is missing a status field (Draft, Proposed, Accepted, Partially Implemented, Implemented, or Superseded).',
     });
     result.status = 'Draft'; // default fallback
+  }
+
+  if (result.status === 'Partially Implemented' && !result.scopeRemaining) {
+    result.warnings.push({
+      code: 'MISSING_SCOPE_REMAINING',
+      message: 'ADR status is "Partially Implemented" but has no "Scope Remaining" field. Add: - **Scope Remaining**: what is still to be built.',
+    });
   }
 
   return result;
@@ -614,6 +626,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
     date: metadata.date,
     iteration: metadata.iteration,
     status: metadata.status ?? 'Draft',
+    scopeRemaining: metadata.scopeRemaining,
     deciders: metadata.deciders,
     format,
     sections,
