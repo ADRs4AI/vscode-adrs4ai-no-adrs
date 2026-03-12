@@ -226,7 +226,10 @@ function setupFileWatcher(
 }
 
 function isAdrFile(filePath: string): boolean {
-  return /\d{4}[-_].+\.md$/.test(path.basename(filePath));
+  // Match ADR files (NNNN-title.md) but NOT seed files (seed-YYYY-MM-DD-title.md).
+  // Seeds are indexed separately from ADRs.
+  const base = path.basename(filePath);
+  return /^\d{4}[-_].+\.md$/.test(base) && !base.startsWith('seed-');
 }
 
 // ---------------------------------------------------------------------------
@@ -272,15 +275,19 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
   if (!title) return;
 
   const adrDir = path.join(workspaceFolder.uri.fsPath, adrDirRel);
-  const nextNumber = determineNextNumber(adrDir);
   const slug = title.toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .slice(0, 60);
-  const filename = `${String(nextNumber).padStart(4, '0')}-${slug}.md`;
+
+  // Seeds use date-prefixed filenames (seed-YYYY-MM-DD-slug.md), NOT sequential numbers.
+  // ADR numbers are permanent slots for decisions; seeds are transient pre-decisional artifacts.
+  const today = new Date().toISOString().split('T')[0];
+  const filename = kind.value === 'seed'
+    ? `seed-${today}-${slug}.md`
+    : `${String(determineNextNumber(adrDir)).padStart(4, '0')}-${slug}.md`;
   const filePath = path.join(adrDir, filename);
 
-  const today = new Date().toISOString().split('T')[0];
   const cfg = vscode.workspace.getConfiguration('adrManager');
   const humanName = cfg.get<string>('humanName', '') || 'Human';
   const aiModel = cfg.get<string>('aiModel', 'Sonnet 4.6 (1M)');
