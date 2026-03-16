@@ -19,5 +19,35 @@
         "titleBar.inactiveForeground": "#e7e7e799"
     },
     "peacock.color": "#B45309",
-    "vitest.vitestConfig": "${workspaceFolder}/vite.config.ts"
+    "vitest.vitestConfig": "${workspaceFolder}/vite.config.ts",
+    "vitest.nodeEnv": {
+        "PATH": "/opt/homebrew/bin:${env:HOME}/.asdf/shims:/usr/local/bin:/usr/bin:/bin",
+        "ASDF_DIR": "${env:HOME}/.asdf"
+    },
+    "vitest.nodeExecutable": "${env:HOME}/.asdf/shims/node",
+    "python.terminal.activateEnvironment": false,
+    "terminal.integrated.env.osx": {
+        "PATH": "/opt/homebrew/bin:${env:HOME}/.asdf/shims:${env:PATH}",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6[1m]"
+    },
+    /* Claude Code configuration */
+    "claudeCode.selectedModel": "claude-sonnet-4-6[1m]",
+    "claudeCode.environmentVariables": [
+        {
+            "name": "PATH",
+            "value": "/opt/homebrew/bin:/Users/jlumbroso/.asdf/shims:/Users/jlumbroso/.poetry/bin:/Users/jlumbroso/.local/bin:/opt/homebrew/Caskroom/mambaforge/base/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        },
+        {
+            "name": "ASDF_DIR",
+            "value": "/opt/homebrew/opt/asdf/libexec"
+        },
+        {
+            "name": "NODE_PATH",
+            "value": "/opt/homebrew/lib/node_modules"
+        },
+        {
+            "name": "ANTHROPIC_MODEL",
+            "value": "claude-sonnet-4-6[1m]"
+        }
+    ]
 }
