@@ -100,7 +100,7 @@ export class OpenQuestionsPanel {
 
   private sendQuestions(): void {
     const questions: WebviewQuestion[] = this.index.allAdrs().flatMap(adr => {
-      const cleanTitle = adr.title.replace(/^ADR[-\s]\d+[:\s\-]+/i, '').trim() || adr.title
+      const cleanTitle = adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || adr.title
       // ADR-0010: Collect context from sections before ## Questions for the collapsible context box.
       // Include: Human Context, AI Interpretation (and any other ## sections before Questions).
       const contextSections = adr.sections.filter(s => {

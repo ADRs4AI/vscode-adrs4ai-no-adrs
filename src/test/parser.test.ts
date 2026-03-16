@@ -624,17 +624,16 @@ describe('Regression tests', () => {
     expect(seed.date).toBe('2026-03-11')
   })
 
-  it('should strip "ADR NNN:" space-separator prefix as well as "ADR-NNNN:" hyphen prefix', () => {
-    // Bug: AdrTreeItem.makeLabel used /^ADR-\d+[:\s\-]+/i which required a hyphen between
-    // "ADR" and the digit sequence. Projects like penn-engineering-cv store titles as
-    // "ADR 001: Tech Stack & Architecture" (space separator), causing the tree to show
-    // "ADR-0001: ADR 001: Tech Stack & Architecture" (double prefix).
-    // Fixed by changing the separator character class to [-\s].
-    const STRIP_RE = /^ADR[-\s]\d+[:\s\-]+/i
-    expect('ADR 001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
-    expect('ADR-0001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
+  it('should strip ADR prefix regardless of separator (space, hyphen, or none)', () => {
+    // Bug (round 1): /^ADR-\d+/ only matched hyphen — "ADR 001:" was not stripped.
+    // Bug (round 2): /^ADR[-\s]\d+/ required exactly one separator — "ADR001:" was not stripped.
+    // Fixed by using [-\s]* (zero or more separators).
+    const STRIP_RE = /^ADR[-\s]*\d+[:\s\-]+/i
+    expect('ADR 001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')   // space
+    expect('ADR-0001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')  // hyphen
+    expect('ADR001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')    // no separator
     expect('ADR-0028: Read Path Scope'.replace(STRIP_RE, '').trim()).toBe('Read Path Scope')
-    // Should not strip if there is no ADR prefix
+    // Should not strip titles that don't start with an ADR prefix
     expect('Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
   })
 })
