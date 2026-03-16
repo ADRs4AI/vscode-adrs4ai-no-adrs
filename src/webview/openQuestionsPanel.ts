@@ -26,6 +26,8 @@ interface WebviewQuestion {
   whyAsking?: string
   need?: string
   recommendation?: string
+  /** ADR-0010: Markdown content of sections before ## Questions (Human Context + AI Interpretation) */
+  adrContext?: string
   adrNumber: number
   adrTitle: string
   adrPath: string
@@ -98,7 +100,20 @@ export class OpenQuestionsPanel {
 
   private sendQuestions(): void {
     const questions: WebviewQuestion[] = this.index.allAdrs().flatMap(adr => {
-      const cleanTitle = adr.title.replace(/^ADR-\d{4}[:\s\-]+/i, '').trim() || adr.title
+      const cleanTitle = adr.title.replace(/^ADR-\d+[:\s\-]+/i, '').trim() || adr.title
+      // ADR-0010: Collect context from sections before ## Questions for the collapsible context box.
+      // Include: Human Context, AI Interpretation (and any other ## sections before Questions).
+      const contextSections = adr.sections.filter(s => {
+        const h = s.heading.toLowerCase()
+        return h !== 'questions' && h !== 'quick reference' && h !== 'decision'
+          && h !== 'action items' && h !== 'iterations' && h !== 'links'
+          && h !== 'validation' && h !== 'supporting materials'
+          && s.lineStart < (adr.sections.find(qs => qs.heading === 'Questions')?.lineStart ?? Infinity)
+      })
+      const adrContext = contextSections.length > 0
+        ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
+        : undefined
+
       return adr.questions
         .filter(q => !q.isAnswered)
         .map(q => ({
@@ -107,6 +122,7 @@ export class OpenQuestionsPanel {
           whyAsking: q.whyAsking,
           need: q.need,
           recommendation: q.recommendation,
+          adrContext,
           adrNumber: adr.number,
           adrTitle: cleanTitle,
           adrPath: adr.path,
@@ -161,7 +177,9 @@ export class OpenQuestionsPanel {
         const trimmed = lines[i].trim()
         if (trimmed.startsWith('- Status:') && statusLineIdx === -1) statusLineIdx = i
         if (/^\*\*ANS:\*\*/.test(trimmed) && ansHeaderLineIdx === -1) ansHeaderLineIdx = i
-        if (trimmed === '[Fill this in]' && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
+        // ADR-0012: Tolerant matching — handle extra spaces and case variations like
+        // "[ Fill this in ]", "[ Fill this in please ]", "[fill this in]".
+        if (/^\[\s*fill\s+this\s+in[^\]]*\]$/i.test(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
         // Stop searching at the next QST heading
         if (i > start && trimmed.startsWith('### QST:')) break
       }
@@ -344,6 +362,75 @@ body{
   margin-bottom:16px;
   color:var(--vscode-editor-foreground);
 }
+/* ADR-0010: Context box — collapsible summary of ADR before the question */
+.ctx-details{
+  margin-bottom:16px;
+  background:var(--vscode-textBlockQuote-background);
+  border:1px solid var(--vscode-textBlockQuote-border,#555);
+  border-radius:4px;
+  overflow:hidden;
+}
+.ctx-details summary{
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--vscode-descriptionForeground);
+  padding:7px 12px;
+  cursor:pointer;
+  user-select:none;
+  list-style:none;
+}
+.ctx-details summary::-webkit-details-marker{display:none}
+.ctx-details summary::before{content:'▶ '}
+.ctx-details[open] summary::before{content:'▼ '}
+.ctx-body{
+  padding:12px 16px 14px;
+  border-top:1px solid var(--vscode-textBlockQuote-border,#555);
+  font-size:12px;
+  line-height:1.6;
+  overflow:auto;
+}
+/* Markdown rendering inside context body */
+.ctx-body h2,.ctx-body h3{font-size:13px;font-weight:600;margin:12px 0 4px}
+.ctx-body h2:first-child,.ctx-body h3:first-child{margin-top:0}
+.ctx-body p{margin:0 0 8px}
+.ctx-body p:last-child{margin-bottom:0}
+.ctx-body code{
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;
+  background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
+  padding:1px 4px;border-radius:3px;
+}
+.ctx-body pre{
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;
+  background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
+  padding:8px 12px;border-radius:4px;
+  overflow-x:auto;
+  margin:6px 0;
+  white-space:pre;
+}
+.ctx-body blockquote{
+  border-left:3px solid var(--vscode-textBlockQuote-border,#555);
+  margin:0 0 8px 0;
+  padding:4px 12px;
+  opacity:.85;
+}
+.ctx-body table{border-collapse:collapse;width:100%;margin:8px 0}
+.ctx-body th,.ctx-body td{
+  border:1px solid var(--vscode-textBlockQuote-border,#555);
+  padding:4px 8px;
+  font-size:11px;
+  text-align:left;
+}
+.ctx-body th{background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));font-weight:600}
+.ctx-body ul,.ctx-body ol{padding-left:20px;margin:4px 0}
+.ctx-body li{margin:2px 0}
+.ctx-body strong{font-weight:600}
+.ctx-body em{font-style:italic}
+.ctx-body hr{border:none;border-top:1px solid var(--vscode-textBlockQuote-border,#555);margin:10px 0}
+/* Why / recommendation */
 .why{
   font-size:12px;
   color:var(--vscode-descriptionForeground);
@@ -454,6 +541,13 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
     <button class="adr-link" id="adr-link" style="margin-bottom:0"></button>
     <a id="open-in-file" href="#" style="font-size:11px;color:var(--vscode-textLink-foreground);text-decoration:none;opacity:.8">Open in file ↗</a>
   </div>
+
+  <!-- ADR-0010: Collapsible ADR context box (Human Context + AI Interpretation) -->
+  <details class="ctx-details" id="ctx-details" style="display:none">
+    <summary>ADR context</summary>
+    <div class="ctx-body" id="ctx-body"></div>
+  </details>
+
   <div class="qtext" id="qtext"></div>
   <div class="why" id="why" style="display:none"></div>
   <div class="recommendation" id="rec" style="display:none"></div>
@@ -481,7 +575,112 @@ const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
 
-// Restore author from persisted state (set on first 'questions' message if empty)
+// ---------------------------------------------------------------------------
+// Minimal inline markdown renderer (ADR-0010)
+// Handles: headings, bold, italic, inline code, fenced code, tables,
+//          blockquotes, HR, ordered and unordered lists.
+// No external dependencies — all inline to satisfy VS Code CSP.
+// ---------------------------------------------------------------------------
+function renderMarkdown(md) {
+  if (!md) return '';
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Process fenced code blocks first (protect from inline transforms)
+  const codeBlocks = [];
+  md = md.replace(/\`\`\`[\\s\\S]*?\`\`\`/g, m => {
+    const lang = m.match(/\`\`\`(\\w*)/)?.[1] || '';
+    const code = m.replace(/\`\`\`\\w*\\n?/, '').replace(/\`\`\`$/, '');
+    codeBlocks.push('<pre><code>' + esc(code.trimEnd()) + '</code></pre>');
+    return '\\x00CODE' + (codeBlocks.length - 1) + '\\x00';
+  });
+
+  // Tables
+  function renderTable(block) {
+    const rows = block.trim().split('\\n');
+    if (rows.length < 2) return block;
+    const header = rows[0].split('|').filter((_,i,a)=>i>0&&i<a.length-1).map(c=>'<th>'+renderInline(c.trim())+'</th>').join('');
+    const body = rows.slice(2).map(r=>{
+      const cells = r.split('|').filter((_,i,a)=>i>0&&i<a.length-1).map(c=>'<td>'+renderInline(c.trim())+'</td>').join('');
+      return '<tr>'+cells+'</tr>';
+    }).join('');
+    return '<table><thead><tr>'+header+'</tr></thead><tbody>'+body+'</tbody></table>';
+  }
+
+  function renderInline(s) {
+    s = esc(s);
+    s = s.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+    s = s.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+    s = s.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
+    s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
+    return s;
+  }
+
+  const lines = md.split('\\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Restored code block placeholder
+    if (/^\\x00CODE\\d+\\x00$/.test(line.trim())) {
+      const idx = parseInt(line.trim().replace(/\\x00CODE(\\d+)\\x00/,'$1'));
+      out.push(codeBlocks[idx]);
+      i++; continue;
+    }
+
+    // Tables: detect by | delimiter in first cell
+    if (/^\\|/.test(line) && i + 1 < lines.length && /^\\|[-: |]+\\|/.test(lines[i+1])) {
+      let tableEnd = i;
+      while (tableEnd < lines.length && /^\\|/.test(lines[tableEnd])) tableEnd++;
+      out.push(renderTable(lines.slice(i, tableEnd).join('\\n')));
+      i = tableEnd; continue;
+    }
+
+    // HR
+    if (/^---+$/.test(line.trim())) { out.push('<hr>'); i++; continue; }
+
+    // Headings
+    const hm = line.match(/^(#{1,4})\\s+(.*)/);
+    if (hm) { out.push('<h'+(hm[1].length+1)+'>'+renderInline(hm[2])+'</h'+(hm[1].length+1)+'>'); i++; continue; }
+
+    // Blockquote
+    if (line.startsWith('> ')) { out.push('<blockquote>'+renderInline(line.slice(2))+'</blockquote>'); i++; continue; }
+
+    // Unordered list
+    if (/^[\\-\\*]\\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[\\-\\*]\\s+/.test(lines[i])) {
+        items.push('<li>'+renderInline(lines[i].replace(/^[\\-\\*]\\s+/,''))+'</li>');
+        i++;
+      }
+      out.push('<ul>'+items.join('')+'</ul>');
+      continue;
+    }
+
+    // Ordered list
+    if (/^\\d+\\.\\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\\d+\\.\\s+/.test(lines[i])) {
+        items.push('<li>'+renderInline(lines[i].replace(/^\\d+\\.\\s+/,''))+'</li>');
+        i++;
+      }
+      out.push('<ol>'+items.join('')+'</ol>');
+      continue;
+    }
+
+    // Blank line
+    if (line.trim() === '') { i++; continue; }
+
+    // Paragraph
+    out.push('<p>'+renderInline(line)+'</p>');
+    i++;
+  }
+
+  return out.join('\\n');
+}
+
+// Restore author from persisted state
 $id('author').value = saved.author || '';
 $id('author').addEventListener('input', () => {
   saved.author = $id('author').value;
@@ -538,6 +737,14 @@ function render() {
 
   $id('qtext').textContent = q.text;
 
+  // ADR-0010: Collapsible context box
+  if (q.adrContext) {
+    $id('ctx-details').style.display = 'block';
+    $id('ctx-body').innerHTML = renderMarkdown(q.adrContext);
+  } else {
+    $id('ctx-details').style.display = 'none';
+  }
+
   const ctx = [q.whyAsking, q.need ? 'Need: ' + q.need : null].filter(Boolean).join('\\n');
   if (ctx) { $id('why').style.display = 'block'; $id('why').textContent = ctx; }
   else { $id('why').style.display = 'none'; }
@@ -556,7 +763,11 @@ window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.type === 'questions') {
     questions = msg.questions;
-    if (idx >= questions.length) idx = 0;
+    // Clamp idx: if the list shrank (answered question removed), idx may now
+    // point past the end. Clamp to last item rather than wrapping to 0 —
+    // this keeps the user on the question they just skipped past, not the first.
+    if (questions.length === 0) { idx = 0; }
+    else if (idx >= questions.length) { idx = questions.length - 1; }
 
     // Pre-fill author: saved state > git config > top name from ADR index
     if (!saved.author && (msg.gitAuthor || (msg.authorSuggestions && msg.authorSuggestions[0]))) {
@@ -569,11 +780,15 @@ window.addEventListener('message', e => {
     render();
   }
   if (msg.type === 'answered') {
+    // Regression fix (2026-03-12): do NOT advance idx here.
+    // The 'questions' refresh (triggered by file-save) already removes the
+    // answered question and re-renders with the correct next idx.
+    // Advancing here caused a double-move: answering second-to-last would
+    // show the last question (correct), then wrap back to index 0 (wrong).
+    // One owner of idx: the 'questions' handler. See ADR-0010.
     $id('flash').style.display = 'flex';
-    setTimeout(() => {
-      if (idx >= questions.length - 1) idx = 0;
-      render();
-    }, 900);
+    $id('btn-ans').disabled = false;
+    setTimeout(() => { $id('flash').style.display = 'none'; }, 900);
   }
   if (msg.type === 'navigate') {
     const i = questions.findIndex(q => q.id === msg.questionId);

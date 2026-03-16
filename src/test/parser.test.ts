@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify } from '../parser/extractor'
+import { parseSeed } from '../parser/seedExtractor'
 
 // ---------------------------------------------------------------------------
 // Fixtures: real ADR content patterns
@@ -406,6 +407,50 @@ More content here.
     expect(adr.questions[0].recommendation).toBe('Option A with HTML comment override as opt-in.')
   })
 
+  it('should exclude answered questions from the unanswered list after status changes', () => {
+    // Regression (2026-03-12): Off-by-one in the Open Questions panel when answering
+    // the second-to-last question (ADR-0010, Problem 6).
+    //
+    // Root cause: the webview's 'answered' handler and the 'questions' refresh handler
+    // both advanced idx independently, causing a double-move. The fix designates the
+    // 'questions' refresh as the sole owner of idx advancement.
+    //
+    // This test verifies the invariant the fix relies on: after a file is saved with
+    // "Status: answered", the parser produces N-1 open questions. The refresh handler
+    // receives exactly the right list — the answered question is gone, not duplicated.
+    const content = `# ADR-0001: Test
+
+- **Status**: Draft
+
+## Questions
+
+### QST: First question
+- Status: answered
+- Why asking: Testing the invariant.
+- Need: yes/no
+
+**ANS:** (by Jérémie)
+The answer is yes.
+
+---
+
+### QST: Second question (should still be open)
+- Status: unanswered
+- Why asking: Testing the invariant.
+- Need: yes/no
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    const open = adr.questions.filter(q => !q.isAnswered)
+    expect(adr.questions).toHaveLength(2)
+    expect(open).toHaveLength(1)
+    expect(open[0].text).toBe('Second question (should still be open)')
+    // If this breaks, the refresh sends a wrong-length array and the
+    // single-owner idx advancement fix in the webview will be ineffective.
+  })
+
   it('should parse an inline NOT that appears without a QST header', () => {
     // Real case: model adds **NOT:** observations inline within section bodies
     const content = `# ADR-0001: Specs
@@ -422,5 +467,142 @@ Some other content here.
     const nots = adr.inlineCodes.filter(c => c.code === 'NOT')
     expect(nots).toHaveLength(1)
     expect(nots[0].author).toBe('Sonnet 4.6')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Seed parser tests (ADR-0011: Seeds as First-Class Artifacts)
+// ---------------------------------------------------------------------------
+
+describe('Seed parser (seedExtractor.ts)', () => {
+  const NEW_FORMAT_SEED = `# SEED: Auth Strategy Thoughts
+
+- **Date**: 2026-03-07
+- **From**: Jérémie Lumbroso
+
+---
+
+## Brain Dump
+
+I've been thinking about whether to use JWT or session tokens.
+The main tension is between statelessness and revocability.
+
+---
+
+**Model Response Request:**
+
+- [ ] Chunk this into ADRs (I'm ready to formalize)
+- [X] Iterate with me (keep exploring)
+- [ ] Structure in place (organize but don't split)
+
+---
+
+## Thread
+
+### Sonnet 4.6 - 2026-03-07
+
+JWT gives you statelessness but makes revocation hard.
+Session tokens are easy to revoke but require server-side state.
+My recommendation: session tokens for now, JWT when you need multi-service.
+
+---
+
+**Model Response Request:**
+
+- [ ] Chunk this into ADRs (I'm ready to formalize)
+- [X] Iterate with me (keep exploring)
+- [ ] Structure in place (organize but don't split)
+
+### Jérémie - 2026-03-07
+
+OK, let's go with sessions. What about refresh tokens?
+
+---
+
+## Derived Into
+
+*(This seed has not yet been chunked into ADRs)*
+
+<!-- comment -->
+`
+
+  it('should parse title, topic, date, and from fields', () => {
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    expect(seed.title).toBe('SEED: Auth Strategy Thoughts')
+    expect(seed.topic).toBe('Auth Strategy Thoughts')
+    expect(seed.date).toBe('2026-03-07')
+    expect(seed.from).toBe('Jérémie Lumbroso')
+  })
+
+  it('should extract the Brain Dump section', () => {
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    expect(seed.brainDump).toBeDefined()
+    expect(seed.brainDump).toContain('JWT or session tokens')
+  })
+
+  it('should parse thread entries with authors and dates', () => {
+    // Real scenario: human and AI both contribute to a seed thread
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    expect(seed.threadEntries).toHaveLength(2)
+    expect(seed.threadEntries[0].author).toBe('Sonnet 4.6')
+    expect(seed.threadEntries[0].date).toBe('2026-03-07')
+    expect(seed.threadEntries[0].content).toContain('JWT gives you statelessness')
+    expect(seed.threadEntries[1].author).toBe('Jérémie')
+    expect(seed.threadEntries[1].content).toContain("let's go with sessions")
+  })
+
+  it('should parse Model Response Request checkboxes on thread entries', () => {
+    // Real scenario: AI marks [X] Iterate to signal intent to keep exploring
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    const firstEntry = seed.threadEntries[0]
+    expect(firstEntry.request).toBeDefined()
+    expect(firstEntry.request!.chunk).toBe(false)
+    expect(firstEntry.request!.iterate).toBe(true)
+    expect(firstEntry.request!.structure).toBe(false)
+  })
+
+  it('should report isProcessed=false when Derived Into has the placeholder', () => {
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    expect(seed.isProcessed).toBe(false)
+    expect(seed.derivedAdrs).toHaveLength(0)
+  })
+
+  it('should report isProcessed=true and parse derived ADRs when section has real content', () => {
+    // Real scenario: Jérémie has chunked the seed into ADRs
+    const processed = NEW_FORMAT_SEED.replace(
+      '*(This seed has not yet been chunked into ADRs)*',
+      '- ADR-0010: Open Questions UX\n- ADR-0011: Seeds as First-Class Artifacts',
+    )
+    const seed = parseSeed(processed, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    expect(seed.isProcessed).toBe(true)
+    expect(seed.derivedAdrs).toHaveLength(2)
+    expect(seed.derivedAdrs[0].number).toBe(10)
+    expect(seed.derivedAdrs[0].title).toBe('Open Questions UX')
+    expect(seed.derivedAdrs[1].number).toBe(11)
+  })
+
+  it('should parse an older-style seed gracefully (no Thread section)', () => {
+    // Real scenario: seeds written before the Thread format was established
+    const oldSeed = `# SEED: Bug Reports
+
+- **Date**: 2026-03-07
+- **From**: Jérémie Lumbroso
+
+---
+
+## Problems
+
+### Problem 1 — Markdown not rendering
+
+The open questions panel shows raw markdown.
+
+---
+`
+    const seed = parseSeed(oldSeed, '/fake/docs/adr/seed-2026-03-07-bug-reports.md')
+    expect(seed.title).toBe('SEED: Bug Reports')
+    expect(seed.topic).toBe('Bug Reports')
+    expect(seed.date).toBe('2026-03-07')
+    expect(seed.threadEntries).toHaveLength(0)
+    expect(seed.isProcessed).toBe(false)
   })
 })

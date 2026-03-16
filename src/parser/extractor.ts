@@ -219,12 +219,22 @@ function sectionSlug(heading: string): string {
 // ADR number extraction from filename
 // ---------------------------------------------------------------------------
 
-const ADR_FILENAME_RE = /^(\d{4})[-_]/;
+// ADR-0012: Accept any digit count (not just 4-digit) for variable-numbering projects.
+const ADR_FILENAME_RE = /^(\d+)[-_]/;
 
 export function extractAdrNumber(filePath: string): number {
   const basename = path.basename(filePath);
   const match = basename.match(ADR_FILENAME_RE);
   return match ? parseInt(match[1], 10) : 0;
+}
+
+/** True when the ADR filename uses a non-4-digit prefix (e.g., 001-foo.md or 1-foo.md). */
+export function hasNonstandardNumbering(filePath: string): boolean {
+  const basename = path.basename(filePath);
+  const match = basename.match(ADR_FILENAME_RE);
+  if (!match) return false;
+  // Canonical form is exactly 4 digits
+  return match[1].length !== 4;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +340,23 @@ const NEED_RE = /^-\s+Need:\s+(.+)$/;
 // Matches: **My recommendation**: text
 const RECOMMENDATION_RE = /^\*\*My recommendation\*\*:\s*(.*)/;
 
+// ADR-0012: Detect non-standard QST formats like "### QST-1:" or "**Your preference?**"
+const NONSTANDARD_QST_HEADING_RE = /^QST-\d+:/i;
+const NONSTANDARD_PREF_RE = /^\*\*[^*]*(?:preference|choice|option)\??\*\*/i;
+
+function detectNonstandardQstFormat(tokens: ReturnType<typeof tokenize>): boolean {
+  for (const token of tokens) {
+    if (token.kind === 'heading' && token.level === 3) {
+      if (NONSTANDARD_QST_HEADING_RE.test(token.text)) return true;
+    }
+    if (token.kind === 'body') {
+      const trimmed = token.text.trim();
+      if (NONSTANDARD_PREF_RE.test(trimmed)) return true;
+    }
+  }
+  return false;
+}
+
 function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string): Question {
   const lines = section.body.split('\n');
   let statusText = 'unanswered';
@@ -355,6 +382,7 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     }
 
     const statusMatch = line.match(STATUS_LINE_RE);
+    // ADR-0012: trim to handle "- Status:  answered " with trailing/leading spaces
     if (statusMatch) { statusText = statusMatch[1].trim(); inRecommendation = false; continue; }
 
     const whyMatch = line.match(WHY_ASKING_RE);
@@ -372,12 +400,21 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       continue;
     }
 
-    // Continue collecting recommendation lines until the ANS block or a blank line
-    // followed by a new bold/option line
+    // Continue collecting recommendation lines until hitting a new bold-key block,
+    // the ANS block, or a blank line followed by a heading-like continuation.
+    // ADR-0010: Fix greediness — stop at "**Caveat**:", "**Edge case**:", etc.
     if (inRecommendation) {
       if (line === '') { inRecommendation = false; continue; }
-      if (/^\*\*ANS:\*\*/.test(line)) { inRecommendation = false; /* fall through */ }
-      else { recommendationLines.push(line); continue; }
+      // Stop at any new **Key**: block that isn't the ANS marker
+      if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
+        inRecommendation = false;
+        /* fall through — process this line normally */
+      } else if (/^\*\*ANS:\*\*/.test(line)) {
+        inRecommendation = false; /* fall through */
+      } else {
+        recommendationLines.push(line);
+        continue;
+      }
     }
 
     const ansMatch = line.match(ANS_INLINE_RE);
@@ -401,12 +438,15 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       else break;
     }
     const answerText = answerLines.join('\n').trim();
-    if (answerText && answerText !== '[Fill this in]') {
+    // ADR-0012: Tolerant placeholder matching — treat "[Fill this in]" variants as no-answer.
+    const isPlaceholder = /^\[\s*fill\s+this\s+in[^\]]*\]$/i.test(answerText);
+    if (answerText && !isPlaceholder) {
       answer = { text: answerText, author: answerAuthor, line: answerLine! };
     }
   }
 
-  const isAnswered = statusText === 'answered' || !!answer;
+  // ADR-0012: Case-insensitive, trimmed comparison — human-typed values like "Answered" should work.
+  const isAnswered = statusText.toLowerCase().trim() === 'answered' || !!answer;
 
   if (recommendationLines.length > 0) {
     recommendation = recommendationLines.join('\n').trim() || undefined;
@@ -619,6 +659,23 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
 
   // Build deep link index
   const deepLinks = buildDeepLinks(sections, questions);
+
+  // ADR-0012: Warn when ADR filename uses non-4-digit prefix (e.g., 001-foo.md)
+  if (hasNonstandardNumbering(filePath)) {
+    warnings.push({
+      code: 'NONSTANDARD_NUMBERING',
+      message: `ADR filename "${path.basename(filePath)}" uses a non-4-digit number prefix. The canonical format is 4-digit zero-padded (0001). Displayed as ADR-${String(adrNumber).padStart(4, '0')} — no data loss.`,
+    });
+  }
+
+  // ADR-0012: Warn when non-standard QST format is detected (### QST-N: or **Preference?**)
+  const hasNonstandardQst = detectNonstandardQstFormat(tokens);
+  if (hasNonstandardQst) {
+    warnings.push({
+      code: 'NONSTANDARD_QST_FORMAT',
+      message: 'Some question blocks appear to use a non-standard format (e.g., ### QST-1: or **Your preference?**). The extension only extracts questions using the "### QST: text / - Status: unanswered" format. See the collab-adr-lean template for the canonical structure.',
+    });
+  }
 
   // Seeds (title starts with "SEED:") are brain dumps, not decisions.
   // They don't require a Status field — remove the MISSING_STATUS warning.

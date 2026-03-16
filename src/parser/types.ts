@@ -181,7 +181,10 @@ export type ParseWarningCode =
   | 'DUPLICATE_SLUG'           // two sections resolve to the same slug
   | 'UNKNOWN_FORMAT'           // file doesn't match any known format
   | 'MISSING_TITLE'            // no # Title heading found
-  | 'ANSWER_WITHOUT_QST';      // **ANS:** found but no preceding QST block
+  | 'ANSWER_WITHOUT_QST'       // **ANS:** found but no preceding QST block
+  | 'NONSTANDARD_NUMBERING'    // ADR filename uses non-4-digit prefix (e.g., 001-foo.md)
+  | 'DUPLICATE_NUMBER'         // two ADRs resolve to the same zero-padded number
+  | 'NONSTANDARD_QST_FORMAT';  // QST blocks use a non-standard format (### QST-N: or **Preference?**)
 
 export interface ParseWarning {
   code: ParseWarningCode;
@@ -197,4 +200,71 @@ export interface FormatDetectionResult {
   format: AdrFormat;
   confidence: 'high' | 'medium' | 'low';
   signals: string[];  // what signals led to this detection (for debugging)
+}
+
+// ---------------------------------------------------------------------------
+// Seed files (brain dumps, pre-decisional artifacts)
+// See ADR-0011: Seeds as First-Class Artifacts
+// ---------------------------------------------------------------------------
+
+/** The three Model Response Request checkbox options on a seed thread entry */
+export interface SeedRequest {
+  /** [X] Chunk this into ADRs */
+  chunk: boolean;
+  /** [X] Iterate with me */
+  iterate: boolean;
+  /** [X] Structure in place */
+  structure: boolean;
+}
+
+/** A single entry in a seed's discussion thread (model or human turn) */
+export interface SeedThreadEntry {
+  /** Author name from "### Author Name - Date" heading */
+  author: string;
+  /** Date string extracted from the heading (if present) */
+  date?: string;
+  /** The response content (everything below the heading until next heading or MRR block) */
+  content: string;
+  /** Model Response Request checkboxes at the end of this entry (if present) */
+  request?: SeedRequest;
+  /** 1-indexed line number of the ### heading */
+  lineStart: number;
+}
+
+/** A reference to an ADR derived from this seed (in the ## Derived Into section) */
+export interface DerivedAdr {
+  /** ADR number if parseable from "ADR-NNNN:" */
+  number?: number;
+  /** Title / brief description */
+  title: string;
+  /** Raw line text */
+  raw: string;
+}
+
+/** A parsed seed file (brain dump → decisions artifact) */
+export interface SeedFile {
+  /** Absolute path on disk */
+  path: string;
+  /** Full title from "# SEED: topic" heading */
+  title: string;
+  /** Topic text with "SEED: " prefix stripped */
+  topic: string;
+  /** Date from "- **Date**: YYYY-MM-DD" */
+  date?: string;
+  /** Author from "- **From**: Name" */
+  from?: string;
+  /** Content of the ## Brain Dump section */
+  brainDump?: string;
+  /** Thread entries from ## Thread section (new-format seeds) */
+  threadEntries: SeedThreadEntry[];
+  /** ADRs derived from this seed (from ## Derived Into section) */
+  derivedAdrs: DerivedAdr[];
+  /**
+   * True if the Derived Into section contains real ADR references.
+   * False if it still shows the default "(This seed has not yet been chunked into ADRs)" placeholder.
+   */
+  isProcessed: boolean;
+  /** sha1 hex of raw file content */
+  checksum: string;
+  parsedAt: number;
 }

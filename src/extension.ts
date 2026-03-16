@@ -11,6 +11,7 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { AdrIndex } from './index/adrIndex'
+import { SeedIndex } from './index/seedIndex'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
@@ -20,9 +21,11 @@ import { ADR_STATUSES } from './parser/statusInfo'
 // ---------------------------------------------------------------------------
 
 let index: AdrIndex | undefined;
+let seedIndex: SeedIndex | undefined;
 let treeProvider: AdrTreeProvider | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
+let seedFileWatcher: vscode.FileSystemWatcher | undefined;
 let diagnosticCollection: vscode.DiagnosticCollection | undefined;
 
 // ---------------------------------------------------------------------------
@@ -33,9 +36,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const config = vscode.workspace.getConfiguration('adrManager');
   const adrDir = config.get<string>('adrDirectory', 'docs/adr');
 
-  // Create the index (no files parsed yet — lazy init)
+  // Create the indices (no files parsed yet — lazy init)
   index = new AdrIndex();
-  treeProvider = new AdrTreeProvider(index);
+  seedIndex = new SeedIndex();
+  treeProvider = new AdrTreeProvider(index, seedIndex);
 
   // ── Diagnostics collection ────────────────────────────────────────────────
   diagnosticCollection = vscode.languages.createDiagnosticCollection('adr-manager');
@@ -156,19 +160,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  // ── File watcher ──────────────────────────────────────────────────────────
+  // ── File watchers ─────────────────────────────────────────────────────────
   setupFileWatcher(context, index, adrDir);
+  setupSeedFileWatcher(context, seedIndex, adrDir);
 
   // ── Initial index population ──────────────────────────────────────────────
   // Trigger when the sidebar is first revealed (lazy) OR immediately if already visible
   treeView.onDidChangeVisibility(e => {
     if (e.visible && index!.size === 0) {
-      reindexWorkspace(index!, adrDir);
+      reindexWorkspace(index!, seedIndex!, adrDir);
     }
   }, null, context.subscriptions);
 
   // Also index now if workspace is already open (common case: extension installed in existing project)
-  reindexWorkspace(index, adrDir);
+  reindexWorkspace(index, seedIndex, adrDir);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,19 +183,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export function deactivate(): void {
   fileWatcher?.dispose();
   fileWatcher = undefined;
+  seedFileWatcher?.dispose();
+  seedFileWatcher = undefined;
 }
 
 // ---------------------------------------------------------------------------
 // Workspace indexing
 // ---------------------------------------------------------------------------
 
-async function reindexWorkspace(idx: AdrIndex, adrDirRel: string): Promise<void> {
+async function reindexWorkspace(idx: AdrIndex, sidx: SeedIndex, adrDirRel: string): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders || workspaceFolders.length === 0) return;
 
   for (const folder of workspaceFolders) {
     const adrDir = path.join(folder.uri.fsPath, adrDirRel);
     await idx.indexDirectory(adrDir);
+    await sidx.indexDirectory(adrDir);
   }
 }
 
@@ -226,10 +234,42 @@ function setupFileWatcher(
 }
 
 function isAdrFile(filePath: string): boolean {
-  // Match ADR files (NNNN-title.md) but NOT seed files (seed-YYYY-MM-DD-title.md).
-  // Seeds are indexed separately from ADRs.
+  // Match ADR files (one-or-more-digits followed by - or _ then title.md).
+  // ADR-0012: Accept any digit count, not just 4 digits (3-digit projects are real).
+  // Exclude seed files (seed-YYYY-MM-DD-title.md) which are indexed separately.
   const base = path.basename(filePath);
-  return /^\d{4}[-_].+\.md$/.test(base) && !base.startsWith('seed-');
+  return /^\d+[-_].+\.md$/.test(base) && !base.startsWith('seed-');
+}
+
+function isSeedFile(filePath: string): boolean {
+  return path.basename(filePath).startsWith('seed-') && filePath.endsWith('.md');
+}
+
+function setupSeedFileWatcher(
+  context: vscode.ExtensionContext,
+  sidx: SeedIndex,
+  adrDirRel: string,
+): void {
+  const pattern = new vscode.RelativePattern(
+    vscode.workspace.workspaceFolders?.[0] ?? '',
+    `${adrDirRel}/seed-*.md`,
+  );
+
+  seedFileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+  seedFileWatcher.onDidCreate(uri => {
+    if (isSeedFile(uri.fsPath)) sidx.indexFile(uri.fsPath);
+  }, null, context.subscriptions);
+
+  seedFileWatcher.onDidChange(uri => {
+    if (isSeedFile(uri.fsPath)) sidx.indexFile(uri.fsPath);
+  }, null, context.subscriptions);
+
+  seedFileWatcher.onDidDelete(uri => {
+    sidx.removeFile(uri.fsPath);
+  }, null, context.subscriptions);
+
+  context.subscriptions.push(seedFileWatcher);
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +538,29 @@ function generateSeedTemplate(title: string, date: string, humanName: string): s
 
 ---
 
-**Model**: Please chunk this into ADRs using the collab-adr-lean template.
+**Model Response Request:**
+
+- [ ] Chunk this into ADRs (I'm ready to formalize)
+- [ ] Iterate with me (keep exploring)
+- [ ] Structure in place (organize but don't split)
+
+---
+
+## Thread
+
+*(No thread entries yet — paste the model's response below as ### Model Name - Date)*
+
+---
+
+## Derived Into
+
+*(This seed has not yet been chunked into ADRs)*
+
+<!-- When this seed is processed, the AI should update this section with:
+- ADR-NNNN: Brief title
+
+If anything in the seed remains unprocessed, make a note at the end of this section.
+-->
 `
 }
 

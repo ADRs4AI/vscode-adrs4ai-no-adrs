@@ -70,7 +70,9 @@ export class AdrIndex {
 
     const entries = fs.readdirSync(adrDir);
     const adrFiles = entries
-      .filter(name => name.endsWith('.md') && /^\d{4}[-_]/.test(name))
+      // ADR-0012: Accept any digit count (not just 4-digit). Projects using 3-digit numbers
+      // (001-foo.md) are real and should not be invisible to the extension.
+      .filter(name => name.endsWith('.md') && /^\d+[-_]/.test(name) && !name.startsWith('seed-'))
       .map(name => path.join(adrDir, name))
       .sort();
 
@@ -82,6 +84,27 @@ export class AdrIndex {
       } catch (err) {
         // Don't crash the index if one file is unreadable; log and continue
         console.error(`[ADR Index] Failed to parse ${filePath}:`, err);
+      }
+    }
+
+    // ADR-0012: Detect duplicate ADR numbers (e.g., 001-foo.md and 0001-bar.md both → number 1)
+    const numToFiles = new Map<number, AdrFile[]>();
+    for (const adr of results) {
+      const existing = numToFiles.get(adr.number) ?? [];
+      existing.push(adr);
+      numToFiles.set(adr.number, existing);
+    }
+    for (const [num, dupes] of numToFiles) {
+      if (dupes.length > 1) {
+        const names = dupes.map(a => path.basename(a.path)).join(', ');
+        for (const adr of dupes) {
+          adr.parseWarnings.push({
+            code: 'DUPLICATE_NUMBER',
+            message: `Two ADRs resolve to the same number ${String(num).padStart(4, '0')}: ${names}. Check filenames for duplicates.`,
+          });
+          // Re-emit so diagnostics are refreshed
+          this.emit({ type: 'updated', adr, previous: adr });
+        }
       }
     }
 
