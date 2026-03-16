@@ -310,10 +310,8 @@ body{
   font-size:var(--vscode-font-size);
   color:var(--vscode-foreground);
   background:var(--vscode-editor-background);
-  padding:20px 24px;
-  display:flex;gap:20px;align-items:flex-start;
+  padding:32px 24px;
 }
-#main{flex:1;min-width:0}
 #empty{
   display:none;
   flex-direction:column;
@@ -325,7 +323,7 @@ body{
   gap:12px;
 }
 #empty .icon{font-size:48px}
-#card{max-width:680px}
+#card{max-width:680px;margin:0 auto}
 .counter{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -526,35 +524,61 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 }
 .btn-back:hover{opacity:1}
 .btn-back:disabled{opacity:.3;cursor:not-allowed}
-#toc{
-  width:190px;flex-shrink:0;
-  position:sticky;top:20px;
-  max-height:calc(100vh - 40px);
-  overflow-y:auto;
+/* ADR-0010: Question list overlay */
+#q-overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.5);z-index:100;
+  align-items:flex-start;justify-content:center;
+  padding:40px 24px;
 }
-.toc-header{
-  font-size:10px;font-weight:600;
-  letter-spacing:.05em;text-transform:uppercase;
-  color:var(--vscode-descriptionForeground);
-  margin-bottom:6px;padding-bottom:5px;
+#q-overlay.open{display:flex}
+#q-panel{
+  background:var(--vscode-editor-background);
+  border:1px solid var(--vscode-widget-border,#555);
+  border-radius:6px;width:100%;max-width:640px;
+  max-height:calc(100vh - 80px);overflow-y:auto;
+  box-shadow:0 8px 32px rgba(0,0,0,.4);
+}
+.q-panel-hd{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;
   border-bottom:1px solid var(--vscode-widget-border,#555);
+  position:sticky;top:0;z-index:1;
+  background:var(--vscode-editor-background);
 }
-.toc-item{
-  display:block;width:100%;
-  padding:4px 6px;border-radius:3px;cursor:pointer;
-  font-size:11px;line-height:1.4;
-  color:var(--vscode-foreground);opacity:.7;
-  border:none;background:transparent;text-align:left;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.q-panel-title{
+  font-size:12px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.05em;
+  color:var(--vscode-descriptionForeground);
+}
+.q-close{
+  background:transparent;border:none;
+  color:var(--vscode-foreground);font-size:16px;
+  cursor:pointer;opacity:.7;padding:2px 6px;border-radius:3px;
   font-family:var(--vscode-font-family);
 }
-.toc-item:hover{opacity:1;background:var(--vscode-list-hoverBackground)}
-.toc-item.active{
-  opacity:1;font-weight:600;
+.q-close:hover{opacity:1;background:var(--vscode-list-hoverBackground)}
+.q-adr-hd{
+  padding:8px 16px;
+  background:var(--vscode-badge-background);
+  color:var(--vscode-badge-foreground);
+  font-size:12px;font-weight:600;
+  position:sticky;top:41px;z-index:1;
+}
+.q-item{
+  display:block;width:100%;
+  padding:8px 16px 8px 28px;
+  background:transparent;border:none;
+  border-bottom:1px solid var(--vscode-widget-border,rgba(128,128,128,.1));
+  text-align:left;cursor:pointer;
+  font-family:var(--vscode-font-family);font-size:13px;
+  color:var(--vscode-foreground);
+}
+.q-item:hover{background:var(--vscode-list-hoverBackground)}
+.q-item.current{
   background:var(--vscode-list-activeSelectionBackground);
   color:var(--vscode-list-activeSelectionForeground);
 }
-@media(max-width:600px){#toc{display:none}}
 .flash{
   display:none;align-items:center;gap:6px;
   color:var(--vscode-testing-iconPassed,#4ec9b0);
@@ -569,7 +593,6 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 </head>
 <body>
 
-<div id="main">
 <div id="empty">
   <div class="icon">✓</div>
   <div style="font-size:16px;font-weight:600">All caught up</div>
@@ -580,9 +603,10 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   <div class="counter" id="counter"></div>
   <div class="progress"><div class="progress-fill" id="pbar"></div></div>
 
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button class="adr-link" id="adr-link" style="margin-bottom:0"></button>
     <a id="open-in-file" href="#" style="font-size:11px;color:var(--vscode-textLink-foreground);text-decoration:none;opacity:.8">Open in file ↗</a>
+    <a id="q-list-link" href="#" style="font-size:11px;color:var(--vscode-textLink-foreground);text-decoration:none;opacity:.8">List all open questions ↗</a>
   </div>
 
   <!-- ADR-0010: Collapsible ADR context box (Human Context + AI Interpretation) -->
@@ -611,11 +635,15 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </div>
   <div class="error-msg" id="err"></div>
 </div>
-</div>
 
-<div id="toc" style="display:none">
-  <div class="toc-header" id="toc-count"></div>
-  <div id="toc-list"></div>
+<div id="q-overlay">
+  <div id="q-panel">
+    <div class="q-panel-hd">
+      <span class="q-panel-title" id="q-panel-title">Open Questions</span>
+      <button class="q-close" id="q-close" title="Close (Esc)">✕</button>
+    </div>
+    <div id="q-panel-body"></div>
+  </div>
 </div>
 
 <script>
@@ -759,12 +787,43 @@ $id('btn-back').addEventListener('click', () => {
   if (idx > 0) { idx--; render(); }
 });
 
-$id('toc-list').addEventListener('click', e => {
+function showOverlay() {
+  renderOverlay();
+  $id('q-overlay').classList.add('open');
+  const cur = $id('q-panel-body').querySelector('.current');
+  if (cur) cur.scrollIntoView({ block: 'center' });
+}
+function hideOverlay() { $id('q-overlay').classList.remove('open'); }
+function renderOverlay() {
+  $id('q-panel-title').textContent = 'Open Questions (' + questions.length + ')';
+  const byAdr = {};
+  questions.forEach((q, i) => {
+    if (!byAdr[q.adrNumber]) byAdr[q.adrNumber] = { title: q.adrTitle, number: q.adrNumber, items: [] };
+    byAdr[q.adrNumber].items.push({ q, i });
+  });
+  let html = '';
+  for (const k of Object.keys(byAdr).sort((a,b) => Number(a)-Number(b))) {
+    const g = byAdr[k];
+    const num = String(g.number).padStart(4,'0');
+    html += '<div class="q-adr-hd">ADR-' + num + ': ' + g.title + '</div>';
+    for (const {q,i} of g.items) {
+      html += '<button class="q-item' + (i===idx?' current':'') + '" data-qi="' + i + '">' + q.text + '</button>';
+    }
+  }
+  $id('q-panel-body').innerHTML = html;
+}
+
+$id('q-list-link').addEventListener('click', e => { e.preventDefault(); showOverlay(); });
+$id('q-close').addEventListener('click', hideOverlay);
+$id('q-overlay').addEventListener('click', e => { if (e.target === $id('q-overlay')) hideOverlay(); });
+$id('q-panel-body').addEventListener('click', e => {
   const btn = e.target.closest('[data-qi]');
   if (!btn) return;
   idx = parseInt(btn.dataset.qi, 10);
+  hideOverlay();
   render();
 });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideOverlay(); });
 
 $id('adr-link').addEventListener('click', () => {
   if (!questions[idx]) return;
@@ -781,20 +840,7 @@ function submit() {
   vscode.postMessage({ type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart, answerText: text, authorName: author });
 }
 
-function renderToc() {
-  if (questions.length === 0) { $id('toc').style.display = 'none'; return; }
-  $id('toc').style.display = '';
-  $id('toc-count').textContent = questions.length + ' question' + (questions.length===1?'':'s');
-  $id('toc-list').innerHTML = questions.map((q,i) => {
-    const num = String(q.adrNumber).padStart(4,'0');
-    const cls = i===idx ? 'toc-item active' : 'toc-item';
-    const title = q.text.replace(/"/g,'&quot;');
-    return '<button class="'+cls+'" data-qi="'+i+'" title="'+title+'">ADR-'+num+' · '+q.text+'</button>';
-  }).join('');
-}
-
 function render() {
-  renderToc();
   if (questions.length === 0) {
     $id('empty').style.display = 'flex';
     $id('card').style.display = 'none';
