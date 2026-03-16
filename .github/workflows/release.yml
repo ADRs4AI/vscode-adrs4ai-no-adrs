@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so generate_release_notes can diff
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Run tests
+        id: test
+        run: |
+          npm test -- --reporter=verbose 2>&1 | tee test-output.txt
+          PASSED=$(grep -oP '\d+ passed' test-output.txt | grep -oP '\d+' | head -1)
+          FAILED=$(grep -oP '\d+ failed' test-output.txt | grep -oP '\d+' | head -1)
+          echo "passed=${PASSED:-0}" >> $GITHUB_OUTPUT
+          echo "failed=${FAILED:-0}" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: npm run build
+
+      - name: Package extension
+        id: package
+        run: |
+          npm run package
+          VSIX=$(ls *.vsix | head -1)
+          SIZE=$(du -sh "$VSIX" | cut -f1)
+          echo "vsix=$VSIX" >> $GITHUB_OUTPUT
+          echo "size=$SIZE" >> $GITHUB_OUTPUT
+
+      - name: Write step summary
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VSIX="${{ steps.package.outputs.vsix }}"
+          SIZE="${{ steps.package.outputs.size }}"
+          PASSED="${{ steps.test.outputs.passed }}"
+          FAILED="${{ steps.test.outputs.failed }}"
+          TEST_ICON=$([ "$FAILED" = "0" ] && echo "✅" || echo "❌")
+          REPO="${{ github.repository }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 🚀 ADRs for AI — ${VERSION}
+
+          > Navigate and manage Architectural Decision Records for human-AI collaboration.
+
+          ## Build Pipeline
+
+          | Step | Result |
+          |------|--------|
+          | 🔍 Type check | ✅ Clean |
+          | 🧪 Tests | ${TEST_ICON} **${PASSED}** passing, **${FAILED}** failed |
+          | 📦 Build | ✅ Bundled |
+          | 🎁 Package | ✅ \`${VSIX}\` (${SIZE}) |
+
+          ## Install
+
+          Download **\`${VSIX}\`** from the assets below, then:
+
+          \`\`\`bash
+          code --install-extension ${VSIX}
+          \`\`\`
+
+          Or install directly from the [releases page](https://github.com/${REPO}/releases/tag/${VERSION}).
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.vsix }}
+          generate_release_notes: true
+          body: |
+            ## ADRs for AI ${{ github.ref_name }}
+
+            Navigate and manage Architectural Decision Records for human-AI collaboration (collab-adr-lean format).
+
+            ### Install
+
+            Download `${{ steps.package.outputs.vsix }}` from the assets below and run:
+
+            ```bash
+            code --install-extension ${{ steps.package.outputs.vsix }}
+            ```
+
+            ---
+            *Built from tag `${{ github.ref_name }}` · ${{ steps.test.outputs.passed }} tests passing*
