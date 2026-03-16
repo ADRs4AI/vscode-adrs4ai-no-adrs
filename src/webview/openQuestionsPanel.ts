@@ -310,8 +310,10 @@ body{
   font-size:var(--vscode-font-size);
   color:var(--vscode-foreground);
   background:var(--vscode-editor-background);
-  padding:32px 24px;
+  padding:20px 24px;
+  display:flex;gap:20px;align-items:flex-start;
 }
+#main{flex:1;min-width:0}
 #empty{
   display:none;
   flex-direction:column;
@@ -323,7 +325,7 @@ body{
   gap:12px;
 }
 #empty .icon{font-size:48px}
-#card{max-width:680px;margin:0 auto}
+#card{max-width:680px}
 .counter{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -513,6 +515,46 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   opacity:.8;
 }
 .btn-skip:hover{opacity:1}
+.btn-back{
+  padding:7px 14px;
+  background:transparent;
+  color:var(--vscode-textLink-foreground);
+  border:1px solid var(--vscode-textLink-foreground);
+  border-radius:3px;cursor:pointer;
+  font-family:var(--vscode-font-family);font-size:13px;
+  opacity:.8;
+}
+.btn-back:hover{opacity:1}
+.btn-back:disabled{opacity:.3;cursor:not-allowed}
+#toc{
+  width:190px;flex-shrink:0;
+  position:sticky;top:20px;
+  max-height:calc(100vh - 40px);
+  overflow-y:auto;
+}
+.toc-header{
+  font-size:10px;font-weight:600;
+  letter-spacing:.05em;text-transform:uppercase;
+  color:var(--vscode-descriptionForeground);
+  margin-bottom:6px;padding-bottom:5px;
+  border-bottom:1px solid var(--vscode-widget-border,#555);
+}
+.toc-item{
+  display:block;width:100%;
+  padding:4px 6px;border-radius:3px;cursor:pointer;
+  font-size:11px;line-height:1.4;
+  color:var(--vscode-foreground);opacity:.7;
+  border:none;background:transparent;text-align:left;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-family:var(--vscode-font-family);
+}
+.toc-item:hover{opacity:1;background:var(--vscode-list-hoverBackground)}
+.toc-item.active{
+  opacity:1;font-weight:600;
+  background:var(--vscode-list-activeSelectionBackground);
+  color:var(--vscode-list-activeSelectionForeground);
+}
+@media(max-width:600px){#toc{display:none}}
 .flash{
   display:none;align-items:center;gap:6px;
   color:var(--vscode-testing-iconPassed,#4ec9b0);
@@ -527,6 +569,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 </head>
 <body>
 
+<div id="main">
 <div id="empty">
   <div class="icon">✓</div>
   <div style="font-size:16px;font-weight:600">All caught up</div>
@@ -562,10 +605,17 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
+    <button class="btn-back" id="btn-back">← Back</button>
     <button class="btn-skip" id="btn-skip">Skip</button>
     <span class="flash" id="flash">✓ Answered</span>
   </div>
   <div class="error-msg" id="err"></div>
+</div>
+</div>
+
+<div id="toc" style="display:none">
+  <div class="toc-header" id="toc-count"></div>
+  <div id="toc-list"></div>
 </div>
 
 <script>
@@ -705,6 +755,17 @@ $id('btn-skip').addEventListener('click', () => {
   vscode.postMessage({ type: 'skip' });
 });
 
+$id('btn-back').addEventListener('click', () => {
+  if (idx > 0) { idx--; render(); }
+});
+
+$id('toc-list').addEventListener('click', e => {
+  const btn = e.target.closest('[data-qi]');
+  if (!btn) return;
+  idx = parseInt(btn.dataset.qi, 10);
+  render();
+});
+
 $id('adr-link').addEventListener('click', () => {
   if (!questions[idx]) return;
   vscode.postMessage({ type: 'jumpTo', adrPath: questions[idx].adrPath, lineNumber: questions[idx].lineStart });
@@ -720,7 +781,20 @@ function submit() {
   vscode.postMessage({ type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart, answerText: text, authorName: author });
 }
 
+function renderToc() {
+  if (questions.length === 0) { $id('toc').style.display = 'none'; return; }
+  $id('toc').style.display = '';
+  $id('toc-count').textContent = questions.length + ' question' + (questions.length===1?'':'s');
+  $id('toc-list').innerHTML = questions.map((q,i) => {
+    const num = String(q.adrNumber).padStart(4,'0');
+    const cls = i===idx ? 'toc-item active' : 'toc-item';
+    const title = q.text.replace(/"/g,'&quot;');
+    return '<button class="'+cls+'" data-qi="'+i+'" title="'+title+'">ADR-'+num+' · '+q.text+'</button>';
+  }).join('');
+}
+
 function render() {
+  renderToc();
   if (questions.length === 0) {
     $id('empty').style.display = 'flex';
     $id('card').style.display = 'none';
@@ -755,6 +829,7 @@ function render() {
   $id('ans').value = '';
   $id('flash').style.display = 'none';
   $id('btn-ans').disabled = false;
+  $id('btn-back').disabled = idx === 0;
   $id('err').style.display = 'none';
   setTimeout(() => $id('ans').focus(), 50);
 }
