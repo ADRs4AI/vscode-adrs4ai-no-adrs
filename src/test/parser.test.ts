@@ -606,3 +606,35 @@ The open questions panel shows raw markdown.
     expect(seed.isProcessed).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Regression tests
+// ---------------------------------------------------------------------------
+
+describe('Regression tests', () => {
+  it('should parse seed title when file starts with a leading blank line', () => {
+    // Bug: parseSeed checked lines[0]?.startsWith('# ') for the title heading.
+    // Files saved with a leading blank line (e.g. seed-2026-03-11-enforcing-adr-format-better.md)
+    // had lines[0] === '' so the title fell back to the filename.
+    // Fixed by scanning the first 5 lines instead of only lines[0].
+    const content = `\n# SEED: Enforcing ADR Format Better\n\n- **Date**: 2026-03-11\n- **From**: Jérémie Lumbroso\n`
+    const seed = parseSeed(content, '/fake/docs/adr/seed-2026-03-11-enforcing-adr-format-better.md')
+    expect(seed.title).toBe('SEED: Enforcing ADR Format Better')
+    expect(seed.topic).toBe('Enforcing ADR Format Better')
+    expect(seed.date).toBe('2026-03-11')
+  })
+
+  it('should strip "ADR NNN:" space-separator prefix as well as "ADR-NNNN:" hyphen prefix', () => {
+    // Bug: AdrTreeItem.makeLabel used /^ADR-\d+[:\s\-]+/i which required a hyphen between
+    // "ADR" and the digit sequence. Projects like penn-engineering-cv store titles as
+    // "ADR 001: Tech Stack & Architecture" (space separator), causing the tree to show
+    // "ADR-0001: ADR 001: Tech Stack & Architecture" (double prefix).
+    // Fixed by changing the separator character class to [-\s].
+    const STRIP_RE = /^ADR[-\s]\d+[:\s\-]+/i
+    expect('ADR 001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
+    expect('ADR-0001: Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
+    expect('ADR-0028: Read Path Scope'.replace(STRIP_RE, '').trim()).toBe('Read Path Scope')
+    // Should not strip if there is no ADR prefix
+    expect('Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
+  })
+})

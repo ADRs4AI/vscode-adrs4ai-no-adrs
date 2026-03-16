@@ -58,12 +58,16 @@ export function parseSeed(content: string, filePath: string): SeedFile {
 
   const lines = content.split('\n')
 
-  // --- Title (line 1: # SEED: topic) ---
+  // --- Title (first non-empty line that starts with "# ") ---
+  // We scan up to the first 5 lines to tolerate leading blank lines.
   let title = path.basename(filePath, '.md')
   let topic = title
-  if (lines[0]?.startsWith('# ')) {
-    title = lines[0].slice(2).trim()
-    topic = title.replace(/^SEED:\s*/i, '').trim() || title
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    if (lines[i].startsWith('# ')) {
+      title = lines[i].slice(2).trim()
+      topic = title.replace(/^SEED:\s*/i, '').trim() || title
+      break
+    }
   }
 
   // --- Metadata (date, from) from header bullet lines ---

@@ -138,8 +138,9 @@ export class AdrTreeItem extends vscode.TreeItem {
         return dateStr ? `SEED (${dateStr}): ${title}` : `SEED: ${title}`
       }
       const num = String(opts.adr.number).padStart(4, '0')
-      // Strip leading "ADR-NNNN:" from title to avoid "ADR-0001: ADR-0001: ..." duplication
-      const title = opts.adr.title.replace(/^ADR-\d+[:\s\-]+/i, '').trim() || opts.adr.title
+      // Strip leading "ADR-NNNN:" or "ADR NNN:" from title to avoid duplication.
+      // Handles both hyphen ("ADR-001:") and space ("ADR 001:") separators.
+      const title = opts.adr.title.replace(/^ADR[-\s]\d+[:\s\-]+/i, '').trim() || opts.adr.title
       return `ADR-${num}: ${title}`
     }
     if (opts.kind === 'question' && opts.question) {
