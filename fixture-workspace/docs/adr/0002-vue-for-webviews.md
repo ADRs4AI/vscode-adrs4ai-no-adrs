@@ -2,7 +2,8 @@
 
 - **Date**: 2026-03-03
 - **Iteration**: 1
-- **Status**: Draft
+- **Status**: Partially Implemented
+- **Scope Remaining**: Answer open questions (QST-1 and QST-2), implement Vue 3 webview component, set up type sharing strategy, integrate webview into extension UI
 - **Deciders**: Jérémie Lumbroso, Sonnet 4.6 (1M)
 
 ---
