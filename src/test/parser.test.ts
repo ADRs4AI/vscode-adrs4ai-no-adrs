@@ -27,79 +27,309 @@ function readAdr(filename: string): string {
   return readFileSync(resolve(ADR_ROOT, filename), 'utf8')
 }
 
-describe('Ground-truth benchmarks — ADR-0003 (real file)', () => {
-  const content = readAdr('0003-mcp-server-design.md')
-  const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
+// ---------------------------------------------------------------------------
+// Ground-truth benchmark helpers
+// ---------------------------------------------------------------------------
 
-  it('finds the Phase 4 QST', () => {
-    const q = adr.questions.find(q => q.text.includes('Phase 4'))
-    expect(q).toBeDefined()
+/** Wrap a QST section in a minimal ADR frame so parseAdr can process it. */
+function wrapQst(qstSection: string): string {
+  return `# ADR-0001: Benchmark\n\n---\n\n## Questions\n\n${qstSection}\n\n---\n`
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: ADR-0003 Phase 4 QST (lines 348–363)
+// Exact section text used as the fixture — every significant field asserted.
+// ---------------------------------------------------------------------------
+
+const BENCH_ADR0003_PHASE4 = wrapQst(`### QST: What does Phase 4 (AI features) need from Phase 3 (MCP) to work — and should those tools be specced in this ADR?
+- Status: unanswered
+- Why asking: Phase 4 (Haiku-powered question prioritization, CLAUDE.md directive management, smart answer drafting) is the first major consumer of Phase 3. If Phase 3's tools don't support what Phase 4 needs, Phase 4 requires a Phase 3 patch. The synergy should be explicit.
+- Need: a list of Phase 4's MCP tool requirements; confirm whether to add them to this ADR or an ADR-0008 tool spec
+
+**My recommendation**: Three tools Phase 4 specifically needs:
+1. \`list_open_questions(fields: 'rich')\` — already specced; needs \`whyAsking\`, \`need\`, \`recommendation\`, and \`adr_context\` fields in rich mode
+2. \`update_question_priority(question_id, priority: 1|2|3|4, reasoning?: string)\` — Haiku writes priorities back; not yet in any spec
+3. \`get_claude_md(fields?: 'directives' | 'all')\` — Phase 4's CLAUDE.md parser needs an MCP tool to read the parsed directive structure (not raw markdown)
+
+Add these to ADR-0003 supporting materials. The full tool spec should live in ADR-0008 (see below).
+
+**ANS:** (by Jérémie)
+[Fill this in]`)
+
+describe('Benchmark: ADR-0003 Phase 4 QST — all fields exhaustively asserted', () => {
+  const adr = parseAdr(BENCH_ADR0003_PHASE4, '/fake/0001-benchmark.md')
+  const q = adr.questions[0]
+
+  it('parses exactly one unanswered question', () => {
+    expect(adr.questions).toHaveLength(1)
+    expect(q.isAnswered).toBe(false)
   })
 
-  it('Phase 4 QST recommendation contains all three tool names', () => {
+  it('text: full question heading', () => {
+    expect(q.text).toBe('What does Phase 4 (AI features) need from Phase 3 (MCP) to work — and should those tools be specced in this ADR?')
+  })
+
+  it('whyAsking: full sentence including Haiku mention and patch consequence', () => {
+    expect(q.whyAsking).toContain('Haiku-powered question prioritization')
+    expect(q.whyAsking).toContain('CLAUDE.md directive management')
+    expect(q.whyAsking).toContain('Phase 4 requires a Phase 3 patch')
+    expect(q.whyAsking).toContain('The synergy should be explicit')
+  })
+
+  it('need: full sentence including ADR-0008 reference', () => {
+    expect(q.need).toContain('MCP tool requirements')
+    expect(q.need).toContain('ADR-0008 tool spec')
+  })
+
+  it('recommendation: all three numbered tool names present', () => {
+    expect(q.recommendation).toContain('Three tools Phase 4 specifically needs')
+    expect(q.recommendation).toContain('list_open_questions')
+    expect(q.recommendation).toContain('update_question_priority')
+    expect(q.recommendation).toContain('get_claude_md')
+  })
+
+  it('recommendation: includes rich-mode field list', () => {
+    // The first tool item says: needs whyAsking, need, recommendation, adr_context fields
+    expect(q.recommendation).toContain('whyAsking')
+    expect(q.recommendation).toContain('adr_context')
+  })
+
+  it('rawBody: orphaned sentence after blank-line recommendation stop', () => {
+    // This sentence comes AFTER the blank line that stops the recommendation parser.
+    // Previously silently dropped; now captured in rawBody.
+    expect(q.rawBody).toContain('Add these to ADR-0003 supporting materials')
+    expect(q.rawBody).toContain('ADR-0008')
+  })
+
+  it('rawBody: does NOT contain the recommendation text (separation of concerns)', () => {
+    expect(q.rawBody ?? '').not.toContain('list_open_questions')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Benchmark: ADR-0003 deep-link QST (lines 404–418)
+// ---------------------------------------------------------------------------
+
+const BENCH_ADR0003_DEEPLINK = wrapQst(`### QST: What is the complete syntax for ADR deep links — and should this be specced before Forma 3 implementation?
+- Status: unanswered
+- Why asking: The deep link format (\`adr:0001#qst-scope\`) is used throughout the codebase (parser, tree view, copy-deep-link command, MCP tools). If we implement the MCP tools without a stable link spec, the tools will use an ad-hoc format that breaks when we formalize.
+- Need: yes/no for creating a deep link protocol ADR before Forma 3; or confirm current format is sufficient for Forma 3
+
+**My recommendation**: Create a minimal deep link ADR (ADR-0008 or ADR-0009) that specifies:
+- **Local format** (Forma 1-4): \`adr:NNNN\` or \`adr:NNNN#section-slug\` — already implemented
+- **Global format** (Forma 5+): \`@namespace/NNNN#section-slug\` — needs to be specified now
+- **Version annotation** (Forma 5+): \`@NNNN@iter:2\` or \`@NNNN@HEAD\` — for versioned deep links
+- **Protocol version prefix** (Forma 6+): \`adr://v1/namespace/NNNN/section\` — future-proof URL scheme
+
+Speccing local + global now costs little but prevents a breaking change when Forma 5 arrives.
+
+**ANS:** (by Jérémie)
+[Fill this in]`)
+
+describe('Benchmark: ADR-0003 deep-link QST — all fields exhaustively asserted', () => {
+  const adr = parseAdr(BENCH_ADR0003_DEEPLINK, '/fake/0001-benchmark.md')
+  const q = adr.questions[0]
+
+  it('parses exactly one unanswered question', () => {
+    expect(adr.questions).toHaveLength(1)
+    expect(q.isAnswered).toBe(false)
+  })
+
+  it('whyAsking: contains the ad-hoc format breakage warning', () => {
+    expect(q.whyAsking).toContain('adr:0001#qst-scope')
+    expect(q.whyAsking).toContain('ad-hoc format that breaks when we formalize')
+  })
+
+  it('need: contains both options', () => {
+    expect(q.need).toContain('deep link protocol ADR before Forma 3')
+  })
+
+  it('recommendation: contains all four format bullet points', () => {
+    expect(q.recommendation).toContain('Create a minimal deep link ADR')
+    expect(q.recommendation).toContain('Local format')
+    expect(q.recommendation).toContain('Global format')
+    expect(q.recommendation).toContain('Version annotation')
+    expect(q.recommendation).toContain('Protocol version prefix')
+  })
+
+  it('recommendation: contains the actual format syntax examples', () => {
+    expect(q.recommendation).toContain('adr:NNNN#section-slug')
+    expect(q.recommendation).toContain('@namespace/NNNN#section-slug')
+  })
+
+  it('rawBody: orphaned closing sentence (previously dropped)', () => {
+    expect(q.rawBody).toContain('Speccing local + global now costs little')
+    expect(q.rawBody).toContain('Forma 5')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Benchmark: ADR-0008 local reference QST (lines 46–68)
+// ---------------------------------------------------------------------------
+
+const BENCH_ADR0008_LOCAL = wrapQst(`### QST: What is the canonical local reference format?
+- Status: unanswered
+- Why asking: We currently use \`adr:0001\` and \`adr:0001#qst-scope\`. This is not formally specified anywhere. Before implementing MCP tools that generate and consume these, we need to nail the grammar.
+- Need: confirm the grammar below or propose amendments
+
+**Proposed grammar (local, Forma 3):**
+\`\`\`
+local_ref     := "adr:" adr_num ("#" section_slug)?
+adr_num       := [0-9]{4}         # zero-padded: "0001"
+section_slug  := [a-z0-9-]+       # slugified section heading
+
+Examples:
+  adr:0001                         # entire ADR
+  adr:0001#decision                # decision section
+  adr:0001#qst-what-is-the-scope   # specific question
+  adr:0001#iterations              # iterations section
+\`\`\`
+
+**My recommendation**: Confirm as-is. The format is already in use and working. The only addition needed is the \`@version\` annotation for when we need to reference a specific iteration (Forma 5 concern, but spec it now).
+
+**ANS:** (by Jérémie)
+[Fill this in]`)
+
+describe('Benchmark: ADR-0008 local reference QST — all fields exhaustively asserted', () => {
+  const adr = parseAdr(BENCH_ADR0008_LOCAL, '/fake/0001-benchmark.md')
+  const q = adr.questions[0]
+
+  it('parses exactly one unanswered question', () => {
+    expect(adr.questions).toHaveLength(1)
+    expect(q.isAnswered).toBe(false)
+  })
+
+  it('whyAsking: mentions both informal forms already in use', () => {
+    expect(q.whyAsking).toContain('adr:0001')
+    expect(q.whyAsking).toContain('adr:0001#qst-scope')
+    expect(q.whyAsking).toContain('nail the grammar')
+  })
+
+  it('rawBody: contains the complete BNF grammar block', () => {
+    expect(q.rawBody).toContain('Proposed grammar (local, Forma 3)')
+    expect(q.rawBody).toContain('local_ref')
+    expect(q.rawBody).toContain('adr_num')
+    expect(q.rawBody).toContain('section_slug')
+  })
+
+  it('rawBody: contains all four examples', () => {
+    expect(q.rawBody).toContain('adr:0001')
+    expect(q.rawBody).toContain('adr:0001#decision')
+    expect(q.rawBody).toContain('adr:0001#qst-what-is-the-scope')
+    expect(q.rawBody).toContain('adr:0001#iterations')
+  })
+
+  it('recommendation: the confirm statement with @version note', () => {
+    expect(q.recommendation).toContain('Confirm as-is')
+    expect(q.recommendation).toContain('@version')
+    expect(q.recommendation).toContain('Forma 5 concern')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Benchmark: ADR-0008 global reference QST (lines 71–101)
+// ---------------------------------------------------------------------------
+
+const BENCH_ADR0008_GLOBAL = wrapQst(`### QST: What is the canonical global reference format for cross-project citations?
+- Status: unanswered
+- Why asking: We use \`elenchus-app.0001\` informally in conversation. This needs to be formally specified so the parser can detect it, the MCP server can resolve it, and the code lens feature can render it.
+- Need: confirm the cross-project format
+
+**Proposed grammar (cross-project, Forma 3):**
+\`\`\`
+xproject_ref  := namespace "." adr_num ("#" section_slug)?
+namespace     := [a-z0-9-]+       # project slug (e.g., "elenchus-app")
+
+Examples:
+  elenchus-app.0001              # ADR 0001 from elenchus-app
+  elenchus-app.0001#decision     # decision section from elenchus-app ADR-0001
+\`\`\`
+
+**How namespace is resolved in Forma 3 (local):**
+- If the referenced project is cloned locally (e.g., under \`docs/research/elenchus-app/\`), the extension can resolve the reference by finding the ADR directory within that clone
+- If not locally available, the reference is shown as unresolvable (no hover, no code lens) — graceful degradation
+- In Forma 5: namespace maps to \`@username/repo\` in the global index, resolvable via GitHub API
+
+**My recommendation**: Confirm. Additionally: the extension should maintain a small \`namespace_registry.json\` in \`.vscode/\` mapping namespace strings to local paths or future URLs.
+
+**ANS:** (by Jérémie)
+[Fill this in]`)
+
+describe('Benchmark: ADR-0008 global reference QST — all fields exhaustively asserted', () => {
+  const adr = parseAdr(BENCH_ADR0008_GLOBAL, '/fake/0001-benchmark.md')
+  const q = adr.questions[0]
+
+  it('parses exactly one unanswered question', () => {
+    expect(adr.questions).toHaveLength(1)
+    expect(q.isAnswered).toBe(false)
+  })
+
+  it('whyAsking: mentions all three consumers (parser, MCP server, code lens)', () => {
+    expect(q.whyAsking).toContain('elenchus-app.0001')
+    expect(q.whyAsking).toContain('parser can detect it')
+    expect(q.whyAsking).toContain('MCP server can resolve it')
+    expect(q.whyAsking).toContain('code lens feature can render it')
+  })
+
+  it('rawBody: contains the complete cross-project BNF grammar', () => {
+    expect(q.rawBody).toContain('Proposed grammar (cross-project, Forma 3)')
+    expect(q.rawBody).toContain('xproject_ref')
+    expect(q.rawBody).toContain('namespace')
+  })
+
+  it('rawBody: contains both cross-project examples', () => {
+    expect(q.rawBody).toContain('elenchus-app.0001')
+    expect(q.rawBody).toContain('elenchus-app.0001#decision')
+  })
+
+  it('rawBody: contains the namespace resolution section with all three rules', () => {
+    expect(q.rawBody).toContain('How namespace is resolved')
+    expect(q.rawBody).toContain('cloned locally')
+    expect(q.rawBody).toContain('graceful degradation')
+    expect(q.rawBody).toContain('@username/repo')
+  })
+
+  it('recommendation: confirm statement with namespace_registry mention', () => {
+    expect(q.recommendation).toContain('Confirm')
+    expect(q.recommendation).toContain('namespace_registry.json')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Real-file cross-check: parse actual committed ADRs and verify same results
+// ---------------------------------------------------------------------------
+
+describe('Real-file cross-check: ADR-0003 and ADR-0008 parse correctly from disk', () => {
+  it('ADR-0003: Phase 4 QST has all fields from disk', () => {
+    const content = readAdr('0003-mcp-server-design.md')
+    const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
     const q = adr.questions.find(q => q.text.includes('Phase 4'))
     expect(q?.recommendation).toContain('list_open_questions')
     expect(q?.recommendation).toContain('update_question_priority')
     expect(q?.recommendation).toContain('get_claude_md')
-  })
-
-  it('Phase 4 QST rawBody contains the orphaned sentence after the recommendation', () => {
-    // "Add these to ADR-0003 supporting materials. The full tool spec should
-    // live in ADR-0008 (see below)." appears AFTER the recommendation's blank-line
-    // stop and was previously silently dropped.
-    const q = adr.questions.find(q => q.text.includes('Phase 4'))
     expect(q?.rawBody).toContain('Add these to ADR-0003 supporting materials')
-    expect(q?.rawBody).toContain('ADR-0008')
   })
 
-  it('finds the deep-link syntax QST', () => {
-    const q = adr.questions.find(q => q.text.toLowerCase().includes('deep link'))
-    expect(q).toBeDefined()
+  it('ADR-0003: deep-link QST has orphaned sentence in rawBody from disk', () => {
+    const content = readAdr('0003-mcp-server-design.md')
+    const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
+    const q = adr.questions.find(q => q.text.includes('deep link'))
+    expect(q?.rawBody).toContain('Speccing local + global now costs little')
   })
 
-  it('deep-link QST recommendation contains the speccing rationale', () => {
-    // "Speccing local + global now costs little but prevents a breaking change
-    // when Forma 5 arrives." — previously dropped (orphaned after recommendation).
-    const q = adr.questions.find(q => q.text.toLowerCase().includes('deep link'))
-    // Either in recommendation (if blank-line stop was extended) or in rawBody
-    const combinedText = (q?.recommendation ?? '') + (q?.rawBody ?? '')
-    expect(combinedText).toContain('Speccing local + global now costs little')
-  })
-})
-
-describe('Ground-truth benchmarks — ADR-0008 (real file)', () => {
-  const content = readAdr('0008-deep-link-protocol.md')
-  const adr = parseAdr(content, resolve(ADR_ROOT, '0008-deep-link-protocol.md'))
-
-  it('finds the local reference format QST', () => {
+  it('ADR-0008: local reference QST has grammar in rawBody from disk', () => {
+    const content = readAdr('0008-deep-link-protocol.md')
+    const adr = parseAdr(content, resolve(ADR_ROOT, '0008-deep-link-protocol.md'))
     const q = adr.questions.find(q => q.text.includes('local reference format'))
-    expect(q).toBeDefined()
-  })
-
-  it('local reference QST rawBody contains the proposed grammar block', () => {
-    // The "**Proposed grammar (local, Forma 3):**" block with BNF grammar and
-    // examples was completely missing from the panel.
-    const q = adr.questions.find(q => q.text.includes('local reference format'))
-    expect(q?.rawBody).toContain('Proposed grammar')
     expect(q?.rawBody).toContain('local_ref')
     expect(q?.rawBody).toContain('adr:0001#decision')
   })
 
-  it('finds the global reference format QST', () => {
+  it('ADR-0008: global reference QST has grammar and resolution rules in rawBody from disk', () => {
+    const content = readAdr('0008-deep-link-protocol.md')
+    const adr = parseAdr(content, resolve(ADR_ROOT, '0008-deep-link-protocol.md'))
     const q = adr.questions.find(q => q.text.includes('global reference format'))
-    expect(q).toBeDefined()
-  })
-
-  it('global reference QST rawBody contains the cross-project grammar', () => {
-    const q = adr.questions.find(q => q.text.includes('global reference format'))
-    expect(q?.rawBody).toContain('Proposed grammar')
     expect(q?.rawBody).toContain('xproject_ref')
-    expect(q?.rawBody).toContain('elenchus-app.0001')
-  })
-
-  it('global reference QST rawBody contains the namespace resolution rules', () => {
-    // "**How namespace is resolved in Forma 3 (local):**" + bullet list
-    const q = adr.questions.find(q => q.text.includes('global reference format'))
     expect(q?.rawBody).toContain('How namespace is resolved')
     expect(q?.rawBody).toContain('graceful degradation')
   })
