@@ -918,12 +918,11 @@ function render() {
   if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
   else { $id('body').style.display = 'none'; }
 
-  if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
-  else { $id('body-post').style.display = 'none'; }
-  else { $id('body').style.display = 'none'; }
-
   if (q.recommendation) { $id('rec').style.display = 'block'; $id('rec').innerHTML = renderMarkdown(q.recommendation); }
   else { $id('rec').style.display = 'none'; }
+
+  if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
+  else { $id('body-post').style.display = 'none'; }
 
   $id('ans').value = '';
   $id('flash').style.display = 'none';
