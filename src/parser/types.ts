@@ -129,10 +129,12 @@ export interface Question {
   whyAsking?: string;
   need?: string;
   recommendation?: string;
-  /** Rich body content: proposed grammars, option lists, analysis blocks, etc.
-   *  Everything in the QST section that doesn't fit into the recognized field
-   *  lines (status/why/need/recommendation/answer) but precedes the ANS marker. */
+  /** Pre-recommendation body: proposed grammars, option lists, analysis —
+   *  unrecognized content that appears before **My recommendation**. */
   rawBody?: string;
+  /** Post-recommendation body: orphaned closing remarks that appear after
+   *  the recommendation's blank-line stop and before **ANS:**. */
+  rawBodyPost?: string;
   answer?: QuestionAnswer;
   adrNumber: number;
   adrPath: string;

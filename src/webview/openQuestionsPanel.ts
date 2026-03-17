@@ -27,6 +27,7 @@ interface WebviewQuestion {
   need?: string
   recommendation?: string
   body?: string
+  bodyPost?: string
   /** ADR-0010: Markdown content of sections before ## Questions (Human Context + AI Interpretation) */
   adrContext?: string
   adrNumber: number
@@ -124,6 +125,7 @@ export class OpenQuestionsPanel {
           need: q.need,
           recommendation: q.recommendation,
           body: q.rawBody,
+          bodyPost: q.rawBodyPost,
           adrContext,
           adrNumber: adr.number,
           adrTitle: cleanTitle,
@@ -654,9 +656,10 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </details>
 
   <div class="qtext" id="qtext"></div>
-  <div class="qst-body" id="body" style="display:none"></div>
   <div class="why" id="why" style="display:none"></div>
+  <div class="qst-body" id="body" style="display:none"></div>
   <div class="recommendation" id="rec" style="display:none"></div>
+  <div class="qst-body" id="body-post" style="display:none"></div>
 
   <div class="author-row">
     <label for="author">Answering as:</label>
@@ -913,6 +916,10 @@ function render() {
   else { $id('why').style.display = 'none'; }
 
   if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
+  else { $id('body').style.display = 'none'; }
+
+  if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
+  else { $id('body-post').style.display = 'none'; }
   else { $id('body').style.display = 'none'; }
 
   if (q.recommendation) { $id('rec').style.display = 'block'; $id('rec').innerHTML = renderMarkdown(q.recommendation); }

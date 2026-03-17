@@ -94,11 +94,17 @@ describe('Benchmark: ADR-0003 Phase 4 QST — all fields exhaustively asserted',
     expect(q.recommendation).toContain('adr_context')
   })
 
-  it('rawBody: orphaned sentence after blank-line recommendation stop', () => {
+  it('rawBodyPost: orphaned sentence after blank-line recommendation stop', () => {
     // This sentence comes AFTER the blank line that stops the recommendation parser.
-    // Previously silently dropped; now captured in rawBody.
-    expect(q.rawBody).toContain('Add these to ADR-0003 supporting materials')
-    expect(q.rawBody).toContain('ADR-0008')
+    // It is post-recommendation content → rawBodyPost, not rawBody.
+    expect(q.rawBodyPost).toContain('Add these to ADR-0003 supporting materials')
+    expect(q.rawBodyPost).toContain('ADR-0008')
+  })
+
+  it('rawBody: undefined for this QST (no pre-recommendation body content)', () => {
+    // The Phase 4 QST has no content between the field bullets and the recommendation.
+    // The blank separator line is trimmed away, leaving rawBody empty.
+    expect(q.rawBody).toBeUndefined()
   })
 
   it('rawBody: does NOT contain the recommendation text (separation of concerns)', () => {
@@ -157,9 +163,10 @@ describe('Benchmark: ADR-0003 deep-link QST — all fields exhaustively asserted
     expect(q.recommendation).toContain('@namespace/NNNN#section-slug')
   })
 
-  it('rawBody: orphaned closing sentence (previously dropped)', () => {
-    expect(q.rawBody).toContain('Speccing local + global now costs little')
-    expect(q.rawBody).toContain('Forma 5')
+  it('rawBodyPost: orphaned closing sentence (previously dropped)', () => {
+    // Comes after the recommendation's blank-line stop → rawBodyPost.
+    expect(q.rawBodyPost).toContain('Speccing local + global now costs little')
+    expect(q.rawBodyPost).toContain('Forma 5')
   })
 })
 
@@ -307,14 +314,14 @@ describe('Real-file cross-check: ADR-0003 and ADR-0008 parse correctly from disk
     expect(q?.recommendation).toContain('list_open_questions')
     expect(q?.recommendation).toContain('update_question_priority')
     expect(q?.recommendation).toContain('get_claude_md')
-    expect(q?.rawBody).toContain('Add these to ADR-0003 supporting materials')
+    expect(q?.rawBodyPost).toContain('Add these to ADR-0003 supporting materials')
   })
 
-  it('ADR-0003: deep-link QST has orphaned sentence in rawBody from disk', () => {
+  it('ADR-0003: deep-link QST has orphaned sentence in rawBodyPost from disk', () => {
     const content = readAdr('0003-mcp-server-design.md')
     const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
     const q = adr.questions.find(q => q.text.includes('deep link'))
-    expect(q?.rawBody).toContain('Speccing local + global now costs little')
+    expect(q?.rawBodyPost).toContain('Speccing local + global now costs little')
   })
 
   it('ADR-0008: local reference QST has grammar in rawBody from disk', () => {
@@ -1240,10 +1247,10 @@ Add these to ADR-0003 supporting materials. The full tool spec should live in AD
     expect(adr.questions).toHaveLength(1)
     expect(adr.questions[0].recommendation).toBeDefined()
     expect(adr.questions[0].recommendation).toContain('Three tools Phase 4')
-    // The orphaned sentence after the blank line must appear in rawBody
-    expect(adr.questions[0].rawBody).toBeDefined()
-    expect(adr.questions[0].rawBody).toContain('Add these to ADR-0003 supporting materials')
-    expect(adr.questions[0].rawBody).toContain('ADR-0008')
+    // The orphaned sentence after the blank line must appear in rawBodyPost
+    expect(adr.questions[0].rawBodyPost).toBeDefined()
+    expect(adr.questions[0].rawBodyPost).toContain('Add these to ADR-0003 supporting materials')
+    expect(adr.questions[0].rawBodyPost).toContain('ADR-0008')
   })
 
   it('captures cross-project grammar block (ADR-0008 global reference QST pattern)', () => {

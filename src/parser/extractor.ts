@@ -367,9 +367,14 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
 
   let inAnswer = false;
   let inRecommendation = false;
+  // pastRecommendation: true once we have seen AND exited a recommendation block.
+  // Lines before recommendation → rawBody (context/grammar/options).
+  // Lines after recommendation → rawBodyPost (orphaned closing remarks).
+  let pastRecommendation = false;
   const answerLines: string[] = [];
   const recommendationLines: string[] = [];
-  const rawBodyLines: string[] = [];
+  const rawBodyLinesPre: string[] = [];
+  const rawBodyLinesPost: string[] = [];
   let answerAuthor: string | undefined;
   let answerLine: number | undefined;
 
@@ -405,13 +410,13 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     // the ANS block, or a blank line followed by a heading-like continuation.
     // ADR-0010: Fix greediness — stop at "**Caveat**:", "**Edge case**:", etc.
     if (inRecommendation) {
-      if (line === '') { inRecommendation = false; continue; }
+      if (line === '') { inRecommendation = false; pastRecommendation = true; continue; }
       // Stop at any new **Key**: block that isn't the ANS marker
       if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
-        inRecommendation = false;
+        inRecommendation = false; pastRecommendation = true;
         /* fall through — process this line normally */
       } else if (/^\*\*ANS:\*\*/.test(line)) {
-        inRecommendation = false; /* fall through */
+        inRecommendation = false; pastRecommendation = true; /* fall through */
       } else {
         recommendationLines.push(line);
         continue;
@@ -429,14 +434,23 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       continue;
     }
 
-    // Every line that didn't match a recognized field goes into rawBody
-    rawBodyLines.push(lines[i]);
+    // Every line that didn't match a recognized field: route by position
+    if (pastRecommendation) {
+      rawBodyLinesPost.push(lines[i]);
+    } else {
+      rawBodyLinesPre.push(lines[i]);
+    }
   }
 
-  // Trim leading/trailing blank lines from rawBody
-  while (rawBodyLines.length > 0 && rawBodyLines[0].trim() === '') rawBodyLines.shift()
-  while (rawBodyLines.length > 0 && rawBodyLines[rawBodyLines.length - 1].trim() === '') rawBodyLines.pop()
-  const rawBody = rawBodyLines.length > 0 ? rawBodyLines.join('\n') : undefined
+  // Trim leading/trailing blank lines from both body sections
+  const trimBlanks = (arr: string[]) => {
+    while (arr.length > 0 && arr[0].trim() === '') arr.shift()
+    while (arr.length > 0 && arr[arr.length - 1].trim() === '') arr.pop()
+  }
+  trimBlanks(rawBodyLinesPre)
+  trimBlanks(rawBodyLinesPost)
+  const rawBody = rawBodyLinesPre.length > 0 ? rawBodyLinesPre.join('\n') : undefined
+  const rawBodyPost = rawBodyLinesPost.length > 0 ? rawBodyLinesPost.join('\n') : undefined
 
   if (answerLines.length > 0) {
     // Strip trailing horizontal rules and blank lines (--- separators between sections
@@ -471,6 +485,7 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     need,
     recommendation,
     rawBody,
+    rawBodyPost,
     answer,
     adrNumber,
     adrPath,
