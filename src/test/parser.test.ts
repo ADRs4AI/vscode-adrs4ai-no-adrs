@@ -845,6 +845,151 @@ describe('Zoarium D1 — "Open Questions" section name: current parser behavior'
 })
 
 // ---------------------------------------------------------------------------
+// Regression tests: rawBody capture (ADR-0003 / ADR-0008 parsing failures)
+// ---------------------------------------------------------------------------
+
+describe('Regression tests: QST rawBody — content beyond recognized fields', () => {
+  it('captures proposed grammar block between field lines and ANS (ADR-0008 pattern)', () => {
+    // Bug: lines not matching STATUS/WHY/NEED/RECOMMENDATION/ANS were silently dropped.
+    // ADR-0008 QSTs have "**Proposed grammar:**" + code block after the field lines.
+    // These completely disappeared from the Open Questions panel.
+    const content = `# ADR-0008: Deep Link Protocol
+
+---
+
+## Questions
+
+### QST: What is the canonical local reference format?
+
+- Status: unanswered
+- Why asking: We use adr:0001 informally already.
+- Need: Formal grammar so the parser can validate citations.
+
+**Proposed grammar (local, Forma 3):**
+\`\`\`
+local_ref := "adr:" adr_num ("#" section_slug)?
+adr_num   := [0-9]{4}
+\`\`\`
+
+Example: \`adr:0001#decision\`
+
+**ANS:** (by Human)
+
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0008-deep-link.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.questions[0].rawBody).toBeDefined()
+    expect(adr.questions[0].rawBody).toContain('Proposed grammar')
+    expect(adr.questions[0].rawBody).toContain('local_ref')
+    expect(adr.questions[0].rawBody).toContain('adr:0001#decision')
+  })
+
+  it('captures orphaned sentence after recommendation blank-line stop (ADR-0003 pattern)', () => {
+    // Bug: recommendation parser stops at the first blank line. Sentences after the
+    // blank line (e.g., "Add these to ADR-0003 supporting materials...") were dropped.
+    // ADR-0003 line 358: "Add these to ADR-0003 supporting materials. The full tool
+    // spec should live in ADR-0008 (see below)." — completely missing from panel.
+    const content = `# ADR-0003: MCP Server Design
+
+---
+
+## Questions
+
+### QST: What does Phase 4 need from Phase 3?
+
+- Status: unanswered
+- Why asking: Phase 4 is the first consumer of Phase 3 tools.
+- Need: List of Phase 4 tool requirements.
+
+**My recommendation**: Three tools Phase 4 specifically needs:
+1. \`list_open_questions(fields: 'rich')\` — already specced
+2. \`update_question_priority\` — not yet in any spec
+3. \`get_claude_md\` — needed for directive management
+
+Add these to ADR-0003 supporting materials. The full tool spec should live in ADR-0008.
+
+**ANS:** (by Human)
+
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0003-mcp.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].recommendation).toBeDefined()
+    expect(adr.questions[0].recommendation).toContain('Three tools Phase 4')
+    // The orphaned sentence after the blank line must appear in rawBody
+    expect(adr.questions[0].rawBody).toBeDefined()
+    expect(adr.questions[0].rawBody).toContain('Add these to ADR-0003 supporting materials')
+    expect(adr.questions[0].rawBody).toContain('ADR-0008')
+  })
+
+  it('captures cross-project grammar block (ADR-0008 global reference QST pattern)', () => {
+    // ADR-0008 line 71: "**Proposed grammar (cross-project, Forma 3):**" + code block
+    // + "**How namespace is resolved in Forma 3 (local):**" + bullet list — all missing.
+    const content = `# ADR-0008: Deep Link Protocol
+
+---
+
+## Questions
+
+### QST: What is the canonical global reference format?
+
+- Status: unanswered
+- Why asking: We use elenchus-app.0001 informally.
+- Need: Formal cross-project grammar.
+
+**Proposed grammar (cross-project, Forma 3):**
+\`\`\`
+xproject_ref := namespace "." adr_num ("#" section_slug)?
+namespace    := [a-z0-9-]+
+\`\`\`
+
+**How namespace is resolved in Forma 3 (local):**
+- If cloned locally, resolve via the local ADR directory
+- If not available, show as unresolvable — graceful degradation
+
+**ANS:** (by Human)
+
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0008-deep-link.md')
+    expect(adr.questions[0].rawBody).toBeDefined()
+    expect(adr.questions[0].rawBody).toContain('Proposed grammar (cross-project')
+    expect(adr.questions[0].rawBody).toContain('xproject_ref')
+    expect(adr.questions[0].rawBody).toContain('How namespace is resolved')
+  })
+
+  it('does not include recognized field lines in rawBody', () => {
+    // Status, Why asking, Need lines must NOT appear in rawBody
+    const content = `# ADR-0001: Test
+
+---
+
+## Questions
+
+### QST: Simple question with only field lines?
+
+- Status: unanswered
+- Why asking: Just a simple test.
+- Need: Confirmation.
+
+**ANS:** (by Human)
+
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    // rawBody should be empty or undefined — no extra content
+    const body = adr.questions[0].rawBody
+    if (body !== undefined) {
+      expect(body).not.toContain('Why asking')
+      expect(body).not.toContain('Status')
+      expect(body).not.toContain('Need:')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Regression tests
 // ---------------------------------------------------------------------------
 

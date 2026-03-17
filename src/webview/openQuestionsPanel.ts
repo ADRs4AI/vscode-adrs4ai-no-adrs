@@ -26,6 +26,7 @@ interface WebviewQuestion {
   whyAsking?: string
   need?: string
   recommendation?: string
+  body?: string
   /** ADR-0010: Markdown content of sections before ## Questions (Human Context + AI Interpretation) */
   adrContext?: string
   adrNumber: number
@@ -122,6 +123,7 @@ export class OpenQuestionsPanel {
           whyAsking: q.whyAsking,
           need: q.need,
           recommendation: q.recommendation,
+          body: q.rawBody,
           adrContext,
           adrNumber: adr.number,
           adrTitle: cleanTitle,
@@ -439,7 +441,6 @@ body{
   padding:10px 14px;
   border-radius:0 4px 4px 0;
   margin-bottom:12px;
-  white-space:pre-wrap;
   line-height:1.5;
 }
 .recommendation{
@@ -450,7 +451,6 @@ body{
   padding:10px 14px;
   border-radius:0 4px 4px 0;
   margin-bottom:20px;
-  white-space:pre-wrap;
   line-height:1.5;
 }
 .recommendation::before{
@@ -579,6 +579,29 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   background:var(--vscode-list-activeSelectionBackground);
   color:var(--vscode-list-activeSelectionForeground);
 }
+.qst-body{
+  font-size:13px;line-height:1.6;
+  margin-bottom:16px;
+}
+.qst-body code{
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;
+  background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
+  padding:1px 4px;border-radius:3px;
+}
+.qst-body pre{
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;
+  background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
+  padding:8px 12px;border-radius:4px;
+  overflow-x:auto;margin:6px 0;white-space:pre;
+}
+.qst-body ul,.qst-body ol{padding-left:20px;margin:4px 0}
+.qst-body li{margin:2px 0}
+.qst-body strong{font-weight:600}
+.qst-body em{font-style:italic}
+.qst-body p{margin:0 0 8px}
+.qst-body p:last-child{margin-bottom:0}
 .flash{
   display:none;align-items:center;gap:6px;
   color:var(--vscode-testing-iconPassed,#4ec9b0);
@@ -616,6 +639,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </details>
 
   <div class="qtext" id="qtext"></div>
+  <div class="qst-body" id="body" style="display:none"></div>
   <div class="why" id="why" style="display:none"></div>
   <div class="recommendation" id="rec" style="display:none"></div>
 
@@ -855,7 +879,7 @@ function render() {
   $id('pbar').style.width = pct + '%';
   $id('adr-link').textContent = 'ADR-' + String(q.adrNumber).padStart(4,'0') + ': ' + q.adrTitle;
 
-  $id('qtext').textContent = q.text;
+  $id('qtext').innerHTML = renderMarkdown(q.text || '');
 
   // ADR-0010: Collapsible context box
   if (q.adrContext) {
@@ -865,11 +889,14 @@ function render() {
     $id('ctx-details').style.display = 'none';
   }
 
-  const ctx = [q.whyAsking, q.need ? 'Need: ' + q.need : null].filter(Boolean).join('\\n');
-  if (ctx) { $id('why').style.display = 'block'; $id('why').textContent = ctx; }
+  const ctx = [q.whyAsking, q.need ? '**Need:** ' + q.need : null].filter(Boolean).join('\\n\\n');
+  if (ctx) { $id('why').style.display = 'block'; $id('why').innerHTML = renderMarkdown(ctx); }
   else { $id('why').style.display = 'none'; }
 
-  if (q.recommendation) { $id('rec').style.display = 'block'; $id('rec').textContent = q.recommendation; }
+  if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
+  else { $id('body').style.display = 'none'; }
+
+  if (q.recommendation) { $id('rec').style.display = 'block'; $id('rec').innerHTML = renderMarkdown(q.recommendation); }
   else { $id('rec').style.display = 'none'; }
 
   $id('ans').value = '';

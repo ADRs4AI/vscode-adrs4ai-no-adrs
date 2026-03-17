@@ -128,6 +128,11 @@ export interface Question {
   isAnswered: boolean;
   whyAsking?: string;
   need?: string;
+  recommendation?: string;
+  /** Rich body content: proposed grammars, option lists, analysis blocks, etc.
+   *  Everything in the QST section that doesn't fit into the recognized field
+   *  lines (status/why/need/recommendation/answer) but precedes the ANS marker. */
+  rawBody?: string;
   answer?: QuestionAnswer;
   adrNumber: number;
   adrPath: string;

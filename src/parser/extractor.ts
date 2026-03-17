@@ -369,6 +369,7 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
   let inRecommendation = false;
   const answerLines: string[] = [];
   const recommendationLines: string[] = [];
+  const rawBodyLines: string[] = [];
   let answerAuthor: string | undefined;
   let answerLine: number | undefined;
 
@@ -427,7 +428,15 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       if (afterMarker) answerLines.push(afterMarker);
       continue;
     }
+
+    // Every line that didn't match a recognized field goes into rawBody
+    rawBodyLines.push(lines[i]);
   }
+
+  // Trim leading/trailing blank lines from rawBody
+  while (rawBodyLines.length > 0 && rawBodyLines[0].trim() === '') rawBodyLines.shift()
+  while (rawBodyLines.length > 0 && rawBodyLines[rawBodyLines.length - 1].trim() === '') rawBodyLines.pop()
+  const rawBody = rawBodyLines.length > 0 ? rawBodyLines.join('\n') : undefined
 
   if (answerLines.length > 0) {
     // Strip trailing horizontal rules and blank lines (--- separators between sections
@@ -461,6 +470,7 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     whyAsking,
     need,
     recommendation,
+    rawBody,
     answer,
     adrNumber,
     adrPath,
