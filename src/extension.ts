@@ -10,11 +10,26 @@
 
 import * as vscode from 'vscode'
 import * as path from 'path'
+import * as fs from 'fs'
 import { AdrIndex } from './index/adrIndex'
 import { SeedIndex } from './index/seedIndex'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
+import { Coordinator } from './normalizer/coordinator'
+import { D1OpenQuestionsSectionHandler } from './normalizer/handlers/d1-open-questions-section'
+import { D2BoldStatusFieldHandler } from './normalizer/handlers/d2-bold-status-field'
+import { D4CollapsedAnsBlockHandler } from './normalizer/handlers/d4-collapsed-ans-block'
+
+// ---------------------------------------------------------------------------
+// Normalizer — runs passively on every index update (ADR-0013 Stage 2)
+// ---------------------------------------------------------------------------
+
+const normalizerCoordinator = new Coordinator([
+  new D1OpenQuestionsSectionHandler(),
+  new D2BoldStatusFieldHandler(),
+  new D4CollapsedAnsBlockHandler(),
+])
 
 // ---------------------------------------------------------------------------
 // Extension state
@@ -147,6 +162,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             actions.push(fix);
           }
           return actions;
+        },
+      },
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
+    ),
+
+    // ── Quick Fix: apply normalizer patches (ADR-0013 Stage 2) ─────────────
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file', language: 'markdown' },
+      {
+        provideCodeActions(document, _range, context) {
+          const normDiags = context.diagnostics.filter(d => d.source === 'adr-normalizer');
+          if (normDiags.length === 0) return [];
+
+          const adr = index?.allAdrs().find(a => a.path === document.uri.fsPath);
+          if (!adr) return [];
+
+          const content = document.getText();
+          const { patches } = normalizerCoordinator.processAll(content, adr);
+          if (patches.length === 0) return [];
+
+          const label = `Normalize to collab-adr-lean format (${patches.length} fix${patches.length > 1 ? 'es' : ''})`;
+          const action = new vscode.CodeAction(label, vscode.CodeActionKind.QuickFix);
+          action.diagnostics = normDiags;
+          action.isPreferred = false;
+          action.edit = new vscode.WorkspaceEdit();
+
+          // Apply patches in reverse line order to preserve earlier offsets
+          const sorted = [...patches].sort((a, b) => b.lineStart - a.lineStart);
+          for (const patch of sorted) {
+            const startPos = new vscode.Position(patch.lineStart - 1, 0);
+            const endLine = patch.lineEnd - 1;
+            const endCol = document.lineAt(Math.min(endLine, document.lineCount - 1)).text.length;
+            const endPos = new vscode.Position(endLine, endCol);
+            action.edit.replace(document.uri, new vscode.Range(startPos, endPos), patch.replacement);
+          }
+
+          return [action];
         },
       },
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
@@ -610,7 +662,9 @@ function updateDiagnostics(
   adr: import('./parser/types').AdrFile,
 ): void {
   const uri = vscode.Uri.file(adr.path);
-  const diags = adr.parseWarnings.map(w => {
+
+  // Parser warnings (existing)
+  const diags: vscode.Diagnostic[] = adr.parseWarnings.map(w => {
     const line = Math.max(0, (w.line ?? 1) - 1);
     const range = new vscode.Range(line, 0, line, 999);
     const severity =
@@ -622,6 +676,23 @@ function updateDiagnostics(
     diag.code = w.code;
     return diag;
   });
+
+  // Normalizer dry-run (ADR-0013 Stage 2) — INFO diagnostics for format deviations
+  try {
+    const content = fs.readFileSync(adr.path, 'utf8');
+    const violations = normalizerCoordinator.detectAll(content, adr);
+    for (const v of violations) {
+      const line = Math.max(0, v.lineStart - 1);
+      const range = new vscode.Range(line, 0, line, 999);
+      const diag = new vscode.Diagnostic(range, v.description, vscode.DiagnosticSeverity.Information);
+      diag.source = 'adr-normalizer';
+      diag.code = v.handlerId;
+      diags.push(diag);
+    }
+  } catch {
+    // File unreadable — skip normalizer pass silently
+  }
+
   collection.set(uri, diags.length > 0 ? diags : []);
 }
 
