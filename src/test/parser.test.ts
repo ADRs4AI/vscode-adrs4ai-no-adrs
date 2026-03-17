@@ -608,6 +608,243 @@ The open questions panel shows raw markdown.
 })
 
 // ---------------------------------------------------------------------------
+// Question field extraction (coverage gaps from zoarium README)
+// ---------------------------------------------------------------------------
+
+/** ADR with rich QST fields in standard collab-adr-lean format */
+const ADR_RICH_QUESTIONS = `# ADR-0001: Test ADR
+
+- **Date**: 2026-03-16
+- **Status**: Draft
+- **Deciders**: Jérémie, Sonnet 4.6
+
+---
+
+## Questions
+
+### QST: Should we use server-side rendering?
+
+- Status: unanswered
+- Why asking: Client-side hydration is expensive on low-end devices.
+- Need: A clear preference before we start the build.
+
+**My recommendation**: Use SSR for initial load, hydrate only interactive components.
+
+**ANS:** (by Jérémie)
+
+[Fill this in]
+
+---
+
+### QST: What caching strategy?
+
+- Status: answered
+- Why asking: Cache invalidation is the hardest part.
+- Need: Specific TTLs per resource type.
+
+**ANS:** (by Jérémie)
+
+Use stale-while-revalidate with a 60s TTL for API responses.
+`
+
+describe('Question field extraction — standard collab-adr-lean format', () => {
+  it('extracts whyAsking from a QST block', () => {
+    const adr = parseAdr(ADR_RICH_QUESTIONS, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].whyAsking).toBe('Client-side hydration is expensive on low-end devices.')
+  })
+
+  it('extracts need from a QST block', () => {
+    const adr = parseAdr(ADR_RICH_QUESTIONS, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].need).toBe('A clear preference before we start the build.')
+  })
+
+  it('extracts recommendation from a QST block', () => {
+    const adr = parseAdr(ADR_RICH_QUESTIONS, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].recommendation).toBe(
+      'Use SSR for initial load, hydrate only interactive components.',
+    )
+  })
+
+  it('marks question with [Fill this in] placeholder as unanswered', () => {
+    const adr = parseAdr(ADR_RICH_QUESTIONS, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].isAnswered).toBe(false)
+  })
+
+  it('marks question with real answer text as answered', () => {
+    const adr = parseAdr(ADR_RICH_QUESTIONS, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[1].isAnswered).toBe(true)
+    expect(adr.questions[1].answer?.text).toBe(
+      'Use stale-while-revalidate with a 60s TTL for API responses.',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Zoarium: D2/D3 — bold field variants (current parser behavior)
+// ---------------------------------------------------------------------------
+
+const ZOO_D2_BOLD_FIELDS = `# ADR-0003: Widget Rendering
+
+- **Date**: 2026-03-16
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: Should we support client-side hydration?
+
+- **Status**: unanswered
+- **Why asking**: Some widgets need interactivity.
+- **Need**: Decision on whether hydration is in scope.
+
+**ANS:** (by Human)
+
+[Fill this in]
+
+---
+
+### QST: Was this already decided?
+
+- **Status**: answered
+- **Why asking**: Double-checking prior decisions.
+
+**ANS:** (by Human)
+
+Yes, decided in the kickoff meeting.
+`
+
+describe('Zoarium D2/D3 — bold field variants: current parser behavior', () => {
+  it('question with bold "- **Status**: unanswered" still surfaces (isAnswered=false)', () => {
+    // Bold Status does not match STATUS_LINE_RE (/^-\s+Status:\s+/).
+    // statusText stays as default 'unanswered' → isAnswered=false.
+    const adr = parseAdr(ZOO_D2_BOLD_FIELDS, '/fake/docs/adr/zoo/0003-widget.md')
+    expect(adr.questions).toHaveLength(2)
+    expect(adr.questions[0].isAnswered).toBe(false)
+  })
+
+  it('bold "- **Why asking**:" is NOT parsed — whyAsking is undefined (display degradation)', () => {
+    // WHY_ASKING_RE = /^-\s+Why asking:\s+/ requires plain field name.
+    // Bold variant silently dropped → panel shows empty "Why asking" context.
+    const adr = parseAdr(ZOO_D2_BOLD_FIELDS, '/fake/docs/adr/zoo/0003-widget.md')
+    expect(adr.questions[0].whyAsking).toBeUndefined()
+  })
+
+  it('bold "- **Need**:" is NOT parsed — need is undefined', () => {
+    const adr = parseAdr(ZOO_D2_BOLD_FIELDS, '/fake/docs/adr/zoo/0003-widget.md')
+    expect(adr.questions[0].need).toBeUndefined()
+  })
+
+  it('question with bold "- **Status**: answered" AND real answer text is still answered', () => {
+    // Bold Status not parsed, but !!answer fallback makes isAnswered=true.
+    // statusText defaults to 'unanswered' — the field was never read from the file.
+    const adr = parseAdr(ZOO_D2_BOLD_FIELDS, '/fake/docs/adr/zoo/0003-widget.md')
+    expect(adr.questions[1].isAnswered).toBe(true)
+    expect(adr.questions[1].statusText).toBe('unanswered') // not read — bold not parsed
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Zoarium: D4 — collapsed ANS block (current parser behavior)
+// ---------------------------------------------------------------------------
+
+const ZOO_D4_COLLAPSED_ANS = `# ADR-0002: Python Package Toolchain
+
+- **Date**: 2026-03-16
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: Should we pin to a specific version?
+
+- Status: unanswered
+- Why asking: Latest install may include breaking changes.
+
+**ANS:** (fill in)
+
+---
+
+### QST: Should we publish to PyPI?
+
+- Status: unanswered
+- Why asking: Affects install story for end users.
+
+**ANS:** (fill in)
+`
+
+describe('Zoarium D4 — collapsed ANS block: current parser behavior', () => {
+  it('"**ANS:** (fill in)" causes question to be treated as ANSWERED — the primary blocker', () => {
+    // Mechanism: ANS_INLINE_RE matches "**ANS:**" and captures "(fill in)" as answer text.
+    // "(fill in)" does NOT match /^\[\s*fill\s+this\s+in[^\]]*\]$/ (missing square brackets).
+    // Therefore answer = { text: "(fill in)" } → isAnswered = true.
+    // Questions exist in adr.questions but are all "answered" — silently hidden from panel.
+    // Empirically confirmed root cause — see zoarium README.
+    const adr = parseAdr(ZOO_D4_COLLAPSED_ANS, '/fake/docs/adr/zoo/0002-toolchain.md')
+    expect(adr.questions).toHaveLength(2)                           // parsed, but...
+    expect(adr.questions.filter(q => !q.isAnswered)).toHaveLength(0) // ...all treated as answered!
+  })
+
+  it('after D4 normalization, both questions surface correctly', () => {
+    const normalized = ZOO_D4_COLLAPSED_ANS
+      .replaceAll('**ANS:** (fill in)', '**ANS:** (by Human)\n\n[Fill this in]')
+    const adr = parseAdr(normalized, '/fake/docs/adr/zoo/0002-toolchain.md')
+    expect(adr.questions).toHaveLength(2)
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.questions[1].isAnswered).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Zoarium: D1 — "Open Questions" section name (current parser behavior)
+// ---------------------------------------------------------------------------
+
+const ZOO_D1_OPEN_QUESTIONS = `# ADR-0001: Storage Backend
+
+- **Date**: 2026-03-16
+- **Status**: Draft
+
+---
+
+## Context
+
+Some background context here.
+
+---
+
+## Open Questions
+
+### QST: Which database?
+
+- Status: unanswered
+- Why asking: Affects deployment complexity.
+
+**ANS:** (by Human)
+
+[Fill this in]
+`
+
+describe('Zoarium D1 — "Open Questions" section name: current parser behavior', () => {
+  it('QST headings inside "## Open Questions" ARE indexed — questions surface', () => {
+    // The parser finds ### QST: headings by navCode, not by parent section name.
+    // D1 does NOT prevent questions from appearing in the tree.
+    const adr = parseAdr(ZOO_D1_OPEN_QUESTIONS, '/fake/docs/adr/zoo/0001-storage.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].text).toBe('Which database?')
+  })
+
+  it('"Open Questions" section heading is NOT "Questions" — exact-match lookup fails', () => {
+    // The Open Questions panel uses: adr.sections.find(s => s.heading === 'Questions')
+    // This exact match returns undefined for "Open Questions" → context boundary = Infinity
+    // → all sections included as context (ADR context box shows entire file).
+    const adr = parseAdr(ZOO_D1_OPEN_QUESTIONS, '/fake/docs/adr/zoo/0001-storage.md')
+    expect(adr.sections.find(s => s.heading === 'Questions')).toBeUndefined()
+    expect(adr.sections.find(s => s.heading === 'Open Questions')).toBeDefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Regression tests
 // ---------------------------------------------------------------------------
 

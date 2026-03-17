@@ -1,0 +1,385 @@
+/**
+ * Normalizer Tests — ADR-0013 (TDD)
+ *
+ * Tests written BEFORE implementation to drive design.
+ * Each describe block corresponds to one module in src/normalizer/.
+ *
+ * Zoarium specimens provide realistic fixtures — each deviation type was
+ * empirically confirmed against real project ADRs (temp/misc-adr, 2026-03-16).
+ */
+
+import { describe, it, expect } from 'vitest'
+import { applyPatches, contentChecksum } from '../normalizer/patch-applicator'
+import { Coordinator } from '../normalizer/coordinator'
+import { D1OpenQuestionsSectionHandler } from '../normalizer/handlers/d1-open-questions-section'
+import { D2BoldStatusFieldHandler } from '../normalizer/handlers/d2-bold-status-field'
+import { D4CollapsedAnsBlockHandler } from '../normalizer/handlers/d4-collapsed-ans-block'
+import { parseAdr } from '../parser/extractor'
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+/** zoo-001: D1 + D2 + D3 + D4 combined (the common real-world cluster) */
+const ZOO_001 = `# ADR-0003: Widget Rendering Strategy
+
+- **Date**: 2026-03-16
+- **Iteration**: 1
+- **Status**: Draft
+- **Deciders**: Jérémie Lumbroso, Claude Sonnet 4.6
+
+---
+
+## Context
+
+When rendering widgets, use client-side JS or server-side HTML?
+
+---
+
+## Open Questions
+
+### QST: Should we support client-side hydration for interactive widgets?
+
+- **Status**: unanswered
+- **Why asking**: Some widgets (date pickers, sliders) need client-side interactivity.
+- **Need**: Decision on whether hydration is in scope for v1.
+
+**ANS:** (fill in)
+
+---
+
+### QST: Should the widget registry be static or dynamic?
+
+- **Status**: unanswered
+- **Why asking**: A static registry is simpler but requires a rebuild to add new widgets.
+- **Options**:
+  1. Static registry — simpler, faster
+  2. Dynamic registry — extensible, but requires a plugin API
+
+**ANS:** (fill in)
+`
+
+/** zoo-003: D2b — status with trailing parenthetical */
+const ZOO_003 = `# ADR-0005: Deployment Strategy
+
+- **Date**: 2026-03-16
+- **Status**: Draft
+
+---
+
+## Open Questions
+
+### QST: Should we auto-commit deployment artifacts?
+
+- **Status**: unanswered (linked to ADR 0004 decision on git permissions)
+- **Why asking**: Auto-commit requires write permissions.
+
+**ANS:** (fill in)
+`
+
+/** Conformant ADR — no violations */
+const CONFORMANT_ADR = `# ADR-0001: Storage Backend
+
+- **Date**: 2026-03-16
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: Which database?
+
+- Status: unanswered
+- Why asking: Affects deployment complexity.
+
+**ANS:** (by Human)
+
+[Fill this in]
+`
+
+// ---------------------------------------------------------------------------
+// PatchApplicator
+// ---------------------------------------------------------------------------
+
+describe('applyPatches', () => {
+  it('returns content unchanged when no patches', () => {
+    expect(applyPatches('line1\nline2\nline3', [])).toBe('line1\nline2\nline3')
+  })
+
+  it('replaces a single line', () => {
+    const result = applyPatches('line1\nOLD\nline3', [
+      { lineStart: 2, lineEnd: 2, replacement: 'NEW' },
+    ])
+    expect(result).toBe('line1\nNEW\nline3')
+  })
+
+  it('replaces a line with multiple lines (expansion)', () => {
+    const result = applyPatches('line1\nOLD\nline3', [
+      { lineStart: 2, lineEnd: 2, replacement: 'NEW_A\n\nNEW_B' },
+    ])
+    expect(result).toBe('line1\nNEW_A\n\nNEW_B\nline3')
+  })
+
+  it('deletes a line when replacement is empty string', () => {
+    const result = applyPatches('line1\nDELETE_ME\nline3', [
+      { lineStart: 2, lineEnd: 2, replacement: '' },
+    ])
+    expect(result).toBe('line1\nline3')
+  })
+
+  it('applies multiple patches preserving offsets (reverse order)', () => {
+    // Two patches on different lines — applying last-first preserves earlier offsets
+    const content = 'A\nB\nC\nD'
+    const result = applyPatches(content, [
+      { lineStart: 1, lineEnd: 1, replacement: 'AA' },
+      { lineStart: 3, lineEnd: 3, replacement: 'CC' },
+    ])
+    expect(result).toBe('AA\nB\nCC\nD')
+  })
+})
+
+describe('contentChecksum', () => {
+  it('returns a hex string', () => {
+    expect(contentChecksum('hello')).toMatch(/^[0-9a-f]+$/)
+  })
+
+  it('returns different values for different content', () => {
+    expect(contentChecksum('hello')).not.toBe(contentChecksum('world'))
+  })
+
+  it('returns same value for same content', () => {
+    expect(contentChecksum('hello')).toBe(contentChecksum('hello'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D4: CollapsedAnsBlockHandler
+// ---------------------------------------------------------------------------
+
+describe('D4CollapsedAnsBlockHandler', () => {
+  const handler = new D4CollapsedAnsBlockHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects "**ANS:** (fill in)" as a violation', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    expect(records.length).toBeGreaterThan(0)
+    expect(records.every(r => r.handlerId === 'd4-collapsed-ans-block')).toBe(true)
+  })
+
+  it('detects all occurrences in zoo-001 (2 violations)', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    expect(records).toHaveLength(2)
+  })
+
+  it('does NOT flag "**ANS:** (by Human)" as a violation', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('does NOT flag "**ANS:** (by Jérémie)" as a violation', () => {
+    const content = CONFORMANT_ADR.replace('(by Human)', '(by Jérémie)')
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() expands collapsed ANS to standard two-line form', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    const patch = handler.fix(ZOO_001, records[0])
+    expect(patch.replacement).toBe('**ANS:** (by Human)\n\n[Fill this in]')
+  })
+
+  it('fix() targets the exact violating line', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    const patch = handler.fix(ZOO_001, records[0])
+    expect(patch.lineStart).toBe(records[0].lineStart)
+    expect(patch.lineEnd).toBe(records[0].lineEnd)
+  })
+
+  it('process() on zoo-001 returns 2 patches', () => {
+    const patches = handler.process(ZOO_001, parseResult)
+    expect(patches).toHaveLength(2)
+  })
+
+  it('applying process() patches makes both questions surface as open', () => {
+    const patches = handler.process(ZOO_001, parseResult)
+    const normalized = applyPatches(ZOO_001, patches)
+    const adr = parseAdr(normalized, '/fake/zoo/0003-widget.md')
+    // After normalization, questions should appear and be open
+    const openQuestions = adr.questions.filter(q => !q.isAnswered)
+    expect(openQuestions.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D2: BoldStatusFieldHandler
+// ---------------------------------------------------------------------------
+
+describe('D2BoldStatusFieldHandler', () => {
+  const handler = new D2BoldStatusFieldHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects "- **Status**: unanswered" as a violation', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    expect(records.length).toBeGreaterThan(0)
+    expect(records.every(r => r.handlerId === 'd2-bold-status-field')).toBe(true)
+  })
+
+  it('does NOT flag "- Status: unanswered" (plain) as a violation', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() removes bold markers from status field', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    const patch = handler.fix(ZOO_001, records[0])
+    expect(patch.replacement).toBe('- Status: unanswered')
+  })
+
+  it('fix() normalizes status value to lowercase', () => {
+    const content = 'some content\n- **Status**: Unanswered\nmore content'
+    const records = handler.detect(content, parseResult)
+    const patch = handler.fix(content, records[0])
+    expect(patch.replacement).toBe('- Status: unanswered')
+  })
+
+  it('D2b: fix() strips trailing parenthetical from status value', () => {
+    // "- **Status**: unanswered (linked to ADR 0004)" → "- Status: unanswered"
+    const records = handler.detect(ZOO_003, parseResult)
+    expect(records).toHaveLength(1)
+    const patch = handler.fix(ZOO_003, records[0])
+    expect(patch.replacement).toBe('- Status: unanswered')
+  })
+
+  it('applying process() patches makes QST status lines parseable', () => {
+    const patches = handler.process(ZOO_001, parseResult)
+    const normalized = applyPatches(ZOO_001, patches)
+    // QST-body status fields are now plain
+    expect(normalized).toContain('- Status: unanswered')
+    // QST-body bold variants are gone
+    expect(normalized).not.toContain('- **Status**: unanswered')
+    expect(normalized).not.toContain('- **Status**: answered')
+    // ADR header bold status is PRESERVED (correct format)
+    expect(normalized).toContain('- **Status**: Draft')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D1: OpenQuestionsSectionHandler
+// ---------------------------------------------------------------------------
+
+describe('D1OpenQuestionsSectionHandler', () => {
+  const handler = new D1OpenQuestionsSectionHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects "## Open Questions" as a violation', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    expect(records).toHaveLength(1)
+    expect(records[0].handlerId).toBe('d1-open-questions-section')
+  })
+
+  it('does NOT flag "## Questions" as a violation', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() renames section to "## Questions"', () => {
+    const records = handler.detect(ZOO_001, parseResult)
+    const patch = handler.fix(ZOO_001, records[0])
+    expect(patch.replacement).toBe('## Questions')
+  })
+
+  it('fix() preserves heading level for ### Open Questions', () => {
+    const content = '### Open Questions\nsome content'
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(1)
+    const patch = handler.fix(content, records[0])
+    expect(patch.replacement).toBe('### Questions')
+  })
+
+  it('fix() is case-insensitive — detects "## open questions"', () => {
+    const content = '## open questions\n### QST: Something?\n- Status: unanswered'
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(1)
+  })
+
+  it('applying process() patches restores correct section boundary', () => {
+    const patches = handler.process(ZOO_001, parseResult)
+    const normalized = applyPatches(ZOO_001, patches)
+    const adr = parseAdr(normalized, '/fake/zoo/0003-widget.md')
+    // After D1 fix, the section exists with the correct name
+    expect(adr.sections.find(s => s.heading === 'Questions')).toBeDefined()
+    expect(adr.sections.find(s => s.heading === 'Open Questions')).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Coordinator
+// ---------------------------------------------------------------------------
+
+describe('Coordinator', () => {
+  it('detectAll collects violations from all handlers', () => {
+    const coordinator = new Coordinator([
+      new D1OpenQuestionsSectionHandler(),
+      new D2BoldStatusFieldHandler(),
+      new D4CollapsedAnsBlockHandler(),
+    ])
+    const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+    const records = coordinator.detectAll(ZOO_001, parseResult)
+    // zoo-001 has: 1× D1, 2× D2, 2× D4 = 5 violations
+    expect(records).toHaveLength(5)
+  })
+
+  it('detectAll returns zero records for a conformant ADR', () => {
+    const coordinator = new Coordinator([
+      new D1OpenQuestionsSectionHandler(),
+      new D2BoldStatusFieldHandler(),
+      new D4CollapsedAnsBlockHandler(),
+    ])
+    const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+    const records = coordinator.detectAll(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('processAll returns normalized content with all violations fixed', () => {
+    const coordinator = new Coordinator([
+      new D1OpenQuestionsSectionHandler(),
+      new D2BoldStatusFieldHandler(),
+      new D4CollapsedAnsBlockHandler(),
+    ])
+    const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+    const { result } = coordinator.processAll(ZOO_001, parseResult)
+    // After full normalization, re-parsing should surface open questions
+    const adr = parseAdr(result, '/fake/zoo/0003-widget.md')
+    expect(adr.questions.filter(q => !q.isAnswered).length).toBeGreaterThan(0)
+    // No violations should remain
+    const remaining = coordinator.detectAll(result, adr)
+    expect(remaining).toHaveLength(0)
+  })
+
+  it('processAll provides full audit trail (records + patches)', () => {
+    const coordinator = new Coordinator([
+      new D4CollapsedAnsBlockHandler(),
+    ])
+    const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+    const { records, patches } = coordinator.processAll(ZOO_001, parseResult)
+    expect(records).toHaveLength(2)
+    expect(patches).toHaveLength(2)
+  })
+
+  it('topological sort: D1 runs before D2 when D2 declares dependsOn D1', () => {
+    // Create a D2 variant that depends on D1
+    class D2WithDep extends D2BoldStatusFieldHandler {
+      override readonly dependsOn = ['d1-open-questions-section'] as const
+    }
+    const coordinator = new Coordinator([
+      new D2WithDep(),            // registered first
+      new D1OpenQuestionsSectionHandler(), // registered second
+    ])
+    const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+    const records = coordinator.detectAll(ZOO_001, parseResult)
+    // D1 records should appear before D2 records in the result
+    const d1Idx = records.findIndex(r => r.handlerId === 'd1-open-questions-section')
+    const d2Idx = records.findIndex(r => r.handlerId === 'd2-bold-status-field')
+    expect(d1Idx).toBeLessThan(d2Idx)
+  })
+})
