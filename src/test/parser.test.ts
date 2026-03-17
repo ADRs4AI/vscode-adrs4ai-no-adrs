@@ -1174,6 +1174,104 @@ describe('Zoarium D1 — "Open Questions" section name: current parser behavior'
 })
 
 // ---------------------------------------------------------------------------
+// Zoarium: D5 — multi-line field values (word-wrapped by LLM at ~80 chars)
+// Source: temp/misc-problem-adr-02/009-pdf-visual-review-mcp.md
+// All three QSTs in that file have 2-space-indented continuation lines.
+// Bug: WHY_ASKING_RE only captured the first line; continuation lines fell
+// into rawBody and were displayed in the wrong position/context.
+// ---------------------------------------------------------------------------
+
+const ZOO_D5_MULTILINE_WHY = `# ADR-0009: PDF Visual Review MCP Server
+
+---
+
+## Questions
+
+### QST: PyMuPDF vs pdf2image preference
+
+- Status: unanswered
+- Why asking: PyMuPDF has zero system deps (ships its own libmupdf binary);
+  pdf2image requires poppler.  PyMuPDF is my preference but you may already
+  have poppler installed via MacTeX.
+- Need: yes/no + which you prefer
+
+**ANS:** (by Jérémie Lumbroso)
+[Fill this in]
+
+---
+
+### QST: MCP server process lifecycle
+
+- Status: unanswered
+- Why asking: Does Claude Code on your machine keep MCP servers running between
+  sessions, or restart them each time?  Affects whether we need startup
+  optimisation.
+- Need: brief observation
+
+**ANS:** (by Jérémie Lumbroso)
+[Fill this in]
+
+---
+
+### QST: Reference PDF for diffs
+
+- Status: unanswered
+- Why asking: For \`pdf_diff_page\` to be useful we need a "golden" reference PDF
+  checked into the repo (or stored somewhere).  Should we commit a reference
+  PDF, or generate one on-demand and stash it locally?
+- Need: preferred approach
+
+**ANS:** (by Jérémie Lumbroso)
+[Fill this in]
+`
+
+describe('Zoarium D5 — multi-line field values (word-wrapped continuations)', () => {
+  const adr = parseAdr(ZOO_D5_MULTILINE_WHY, '/fake/docs/adr/zoo/0009-pdf-mcp.md')
+
+  it('parses all three questions as unanswered', () => {
+    expect(adr.questions).toHaveLength(3)
+    expect(adr.questions.every(q => !q.isAnswered)).toBe(true)
+  })
+
+  it('QST-1: whyAsking includes ALL continuation lines, not just the first', () => {
+    // Bug: only "PyMuPDF has zero system deps (ships its own libmupdf binary);"
+    // was captured; continuation lines went to rawBody instead.
+    const q = adr.questions[0]
+    expect(q.whyAsking).toContain('PyMuPDF has zero system deps')
+    expect(q.whyAsking).toContain('pdf2image requires poppler')
+    expect(q.whyAsking).toContain('poppler installed via MacTeX')
+  })
+
+  it('QST-1: need is correctly parsed (field after multi-line whyAsking)', () => {
+    expect(adr.questions[0].need).toBe('yes/no + which you prefer')
+  })
+
+  it('QST-1: rawBody is empty — continuation lines must NOT appear there', () => {
+    // Before the fix, "pdf2image requires poppler..." appeared in rawBody,
+    // showing below the Need box instead of as part of Why asking.
+    const q = adr.questions[0]
+    expect(q.rawBody ?? '').not.toContain('pdf2image requires poppler')
+    expect(q.rawBody ?? '').not.toContain('poppler installed via MacTeX')
+  })
+
+  it('QST-2: multi-line whyAsking spanning 3 lines fully captured', () => {
+    const q = adr.questions[1]
+    expect(q.whyAsking).toContain('keep MCP servers running between')
+    expect(q.whyAsking).toContain('restart them each time')
+    expect(q.whyAsking).toContain('startup')
+    expect(q.whyAsking).toContain('optimisation')
+  })
+
+  it('QST-3: whyAsking with inline backtick code across continuation lines', () => {
+    const q = adr.questions[2]
+    expect(q.whyAsking).toContain('pdf_diff_page')
+    expect(q.whyAsking).toContain('golden')
+    expect(q.whyAsking).toContain('checked into the repo')
+    expect(q.whyAsking).toContain('generate one on-demand')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Regression tests: rawBody capture (ADR-0003 / ADR-0008 parsing failures)
 // ---------------------------------------------------------------------------
 

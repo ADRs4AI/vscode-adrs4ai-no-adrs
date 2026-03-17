@@ -371,6 +371,11 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
   // Lines before recommendation → rawBody (context/grammar/options).
   // Lines after recommendation → rawBodyPost (orphaned closing remarks).
   let pastRecommendation = false;
+  // Multi-line field continuation: LLMs often word-wrap field values at ~80 chars.
+  // A continuation line starts with whitespace (2-space indent) and is not a new
+  // bullet field or block element. Join with ' ' (space) since it's word-wrapping.
+  let inWhyAsking = false;
+  let inNeed = false;
   const answerLines: string[] = [];
   const recommendationLines: string[] = [];
   const rawBodyLinesPre: string[] = [];
@@ -387,15 +392,29 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       continue;
     }
 
+    // Multi-line field continuation: an indented line (starts with whitespace)
+    // that is not blank, not a new bullet field, and not a block element.
+    const isContinuation = /^\s+\S/.test(lines[i]) && line !== ''
+      && !/^-\s+/.test(line) && !/^\*\*/.test(line);
+
+    if (inWhyAsking) {
+      if (isContinuation) { whyAsking = (whyAsking ?? '') + ' ' + line; continue; }
+      inWhyAsking = false; // fall through to process this line normally
+    }
+    if (inNeed) {
+      if (isContinuation) { need = (need ?? '') + ' ' + line; continue; }
+      inNeed = false; // fall through
+    }
+
     const statusMatch = line.match(STATUS_LINE_RE);
     // ADR-0012: trim to handle "- Status:  answered " with trailing/leading spaces
-    if (statusMatch) { statusText = statusMatch[1].trim(); inRecommendation = false; continue; }
+    if (statusMatch) { statusText = statusMatch[1].trim(); inRecommendation = false; inWhyAsking = false; inNeed = false; continue; }
 
     const whyMatch = line.match(WHY_ASKING_RE);
-    if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; continue; }
+    if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; inWhyAsking = true; inNeed = false; continue; }
 
     const needMatch = line.match(NEED_RE);
-    if (needMatch) { need = needMatch[1].trim(); inRecommendation = false; continue; }
+    if (needMatch) { need = needMatch[1].trim(); inRecommendation = false; inNeed = true; inWhyAsking = false; continue; }
 
     // Recommendation: starts with **My recommendation**: and may span multiple lines
     const recMatch = line.match(RECOMMENDATION_RE);
