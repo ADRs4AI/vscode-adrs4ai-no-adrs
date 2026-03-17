@@ -14,6 +14,7 @@ import { Coordinator } from '../normalizer/coordinator'
 import { D1OpenQuestionsSectionHandler } from '../normalizer/handlers/d1-open-questions-section'
 import { D2BoldStatusFieldHandler } from '../normalizer/handlers/d2-bold-status-field'
 import { D4CollapsedAnsBlockHandler } from '../normalizer/handlers/d4-collapsed-ans-block'
+import { D6NonStandardPreambleFieldHandler } from '../normalizer/handlers/d6-non-standard-preamble-field'
 import { parseAdr } from '../parser/extractor'
 
 // ---------------------------------------------------------------------------
@@ -367,6 +368,7 @@ describe('Coordinator', () => {
   })
 
   it('topological sort: D1 runs before D2 when D2 declares dependsOn D1', () => {
+    // NOTE: the Coordinator test below is the last one — D6 tests follow separately
     // Create a D2 variant that depends on D1
     class D2WithDep extends D2BoldStatusFieldHandler {
       override readonly dependsOn = ['d1-open-questions-section'] as const
@@ -381,5 +383,110 @@ describe('Coordinator', () => {
     const d1Idx = records.findIndex(r => r.handlerId === 'd1-open-questions-section')
     const d2Idx = records.findIndex(r => r.handlerId === 'd2-bold-status-field')
     expect(d1Idx).toBeLessThan(d2Idx)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D6: NonStandardPreambleFieldHandler
+// Specimen: temp/misc-problem-adr-03/8001-freirean-problem-posing-pedagogy.md
+// ---------------------------------------------------------------------------
+
+const ZOO_006_COLON_INSIDE = `# ADR-8001: Freirean Problem-Posing Pedagogy
+
+**Status:** Accepted
+**Type:** General — Philosophical
+**Date:** 2026-03-17
+**Authors:** Jérémie Lumbroso + Claude Sonnet 4.5
+
+---
+
+## Context
+
+Some context here.
+`
+
+const ZOO_006_COLON_OUTSIDE_NO_DASH = `# ADR-0005: Some Decision
+
+**Status**: Draft
+**Date**: 2026-03-17
+
+---
+
+## Context
+`
+
+const ZOO_006_WITH_DASH_COLON_INSIDE = `# ADR-0007: Another Decision
+
+- **Status:** Accepted
+- **Date:** 2026-03-17
+
+---
+
+## Context
+`
+
+describe('D6NonStandardPreambleFieldHandler', () => {
+  const handler = new D6NonStandardPreambleFieldHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects "**Key:** value" (colon inside, no dash) — exact zoo-006 specimen', () => {
+    const records = handler.detect(ZOO_006_COLON_INSIDE, parseResult)
+    // Should detect Status, Type, Date, Authors (4 fields; all non-standard)
+    expect(records.length).toBeGreaterThanOrEqual(3)
+    expect(records.every(r => r.handlerId === 'd6-non-standard-preamble-field')).toBe(true)
+  })
+
+  it('detects "**Key**: value" (colon outside, no dash)', () => {
+    const records = handler.detect(ZOO_006_COLON_OUTSIDE_NO_DASH, parseResult)
+    expect(records.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('detects "- **Key:** value" (has dash, colon inside)', () => {
+    const records = handler.detect(ZOO_006_WITH_DASH_COLON_INSIDE, parseResult)
+    expect(records.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('does NOT flag "- **Status**: Accepted" (standard format)', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() converts "**Status:** Accepted" to "- **Status**: Accepted"', () => {
+    const records = handler.detect(ZOO_006_COLON_INSIDE, parseResult)
+    const statusRecord = records.find(r => r.originalText.includes('Status'))!
+    const patch = handler.fix(ZOO_006_COLON_INSIDE, statusRecord)
+    expect(patch.replacement).toBe('- **Status**: Accepted')
+  })
+
+  it('fix() converts "- **Date:** 2026-03-17" to "- **Date**: 2026-03-17"', () => {
+    const records = handler.detect(ZOO_006_WITH_DASH_COLON_INSIDE, parseResult)
+    const dateRecord = records.find(r => r.originalText.includes('Date'))!
+    const patch = handler.fix(ZOO_006_WITH_DASH_COLON_INSIDE, dateRecord)
+    expect(patch.replacement).toBe('- **Date**: 2026-03-17')
+  })
+
+  it('applying process() makes the Status field parseable by extractMetadata', () => {
+    // After normalization, the ADR header should have a recognized Status
+    const patches = handler.process(ZOO_006_COLON_INSIDE, parseResult)
+    const normalized = applyPatches(ZOO_006_COLON_INSIDE, patches)
+    const adr = parseAdr(normalized, '/fake/zoo/8001-freirean.md')
+    // Status should now be parsed from the preamble
+    expect(adr.status).toBe('Accepted')
+  })
+
+  it('does NOT flag content lines inside ## sections', () => {
+    // Handler must stop scanning at the first ## heading
+    const content = `# ADR-0001: Test
+
+- **Status**: Accepted
+
+---
+
+## Context
+
+**Bold text in context**: this should not be flagged.
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
   })
 })
