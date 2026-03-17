@@ -453,11 +453,26 @@ body{
   margin-bottom:20px;
   line-height:1.5;
 }
-.recommendation::before{
-  content:'→ ';
-  font-weight:600;
-  opacity:.7;
+/* Markdown HTML rendering inside why/recommendation/body containers */
+.why code,.recommendation code,.qst-body code{
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;
+  background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
+  padding:1px 4px;border-radius:3px;
 }
+.why pre,.recommendation pre,.qst-body pre{
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;
+  background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
+  padding:8px 12px;border-radius:4px;
+  overflow-x:auto;margin:6px 0;white-space:pre;
+}
+.why ul,.why ol,.recommendation ul,.recommendation ol{padding-left:20px;margin:6px 0}
+.why li,.recommendation li{margin:3px 0}
+.why p,.recommendation p,.qst-body p{margin:0 0 6px}
+.why p:last-child,.recommendation p:last-child,.qst-body p:last-child{margin-bottom:0}
+.why strong,.recommendation strong{font-weight:600}
+.why em,.recommendation em{font-style:italic}
 .author-row{
   display:flex;align-items:center;gap:8px;
   margin-bottom:10px;
@@ -710,11 +725,15 @@ function renderMarkdown(md) {
 
   function renderInline(s) {
     s = esc(s);
-    s = s.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+    // Protect backtick spans FIRST — their content must not be processed by bold/italic
+    const codes = [];
+    s = s.replace(/\`([^\`]+)\`/g, (_, c) => { codes.push(c); return '\\x02' + (codes.length-1) + '\\x02'; });
     s = s.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
     s = s.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
     s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
+    // Restore backtick spans as <code> elements
+    s = s.replace(/\\x02(\\d+)\\x02/g, (_, i) => '<code>' + codes[+i] + '</code>');
     return s;
   }
 
@@ -879,7 +898,7 @@ function render() {
   $id('pbar').style.width = pct + '%';
   $id('adr-link').textContent = 'ADR-' + String(q.adrNumber).padStart(4,'0') + ': ' + q.adrTitle;
 
-  $id('qtext').innerHTML = renderMarkdown(q.text || '');
+  $id('qtext').textContent = q.text;
 
   // ADR-0010: Collapsible context box
   if (q.adrContext) {

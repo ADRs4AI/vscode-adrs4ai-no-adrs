@@ -9,9 +9,101 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
+
+// ---------------------------------------------------------------------------
+// Real-file fixtures — ground-truth benchmarks (user-reported failures)
+// These tests read the actual committed ADR files. If parsing silently drops
+// content a human can see in the file, one of these tests will catch it.
+// ---------------------------------------------------------------------------
+
+const ADR_ROOT = resolve(__dirname, '../../docs/adr')
+
+function readAdr(filename: string): string {
+  return readFileSync(resolve(ADR_ROOT, filename), 'utf8')
+}
+
+describe('Ground-truth benchmarks — ADR-0003 (real file)', () => {
+  const content = readAdr('0003-mcp-server-design.md')
+  const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
+
+  it('finds the Phase 4 QST', () => {
+    const q = adr.questions.find(q => q.text.includes('Phase 4'))
+    expect(q).toBeDefined()
+  })
+
+  it('Phase 4 QST recommendation contains all three tool names', () => {
+    const q = adr.questions.find(q => q.text.includes('Phase 4'))
+    expect(q?.recommendation).toContain('list_open_questions')
+    expect(q?.recommendation).toContain('update_question_priority')
+    expect(q?.recommendation).toContain('get_claude_md')
+  })
+
+  it('Phase 4 QST rawBody contains the orphaned sentence after the recommendation', () => {
+    // "Add these to ADR-0003 supporting materials. The full tool spec should
+    // live in ADR-0008 (see below)." appears AFTER the recommendation's blank-line
+    // stop and was previously silently dropped.
+    const q = adr.questions.find(q => q.text.includes('Phase 4'))
+    expect(q?.rawBody).toContain('Add these to ADR-0003 supporting materials')
+    expect(q?.rawBody).toContain('ADR-0008')
+  })
+
+  it('finds the deep-link syntax QST', () => {
+    const q = adr.questions.find(q => q.text.toLowerCase().includes('deep link'))
+    expect(q).toBeDefined()
+  })
+
+  it('deep-link QST recommendation contains the speccing rationale', () => {
+    // "Speccing local + global now costs little but prevents a breaking change
+    // when Forma 5 arrives." — previously dropped (orphaned after recommendation).
+    const q = adr.questions.find(q => q.text.toLowerCase().includes('deep link'))
+    // Either in recommendation (if blank-line stop was extended) or in rawBody
+    const combinedText = (q?.recommendation ?? '') + (q?.rawBody ?? '')
+    expect(combinedText).toContain('Speccing local + global now costs little')
+  })
+})
+
+describe('Ground-truth benchmarks — ADR-0008 (real file)', () => {
+  const content = readAdr('0008-deep-link-protocol.md')
+  const adr = parseAdr(content, resolve(ADR_ROOT, '0008-deep-link-protocol.md'))
+
+  it('finds the local reference format QST', () => {
+    const q = adr.questions.find(q => q.text.includes('local reference format'))
+    expect(q).toBeDefined()
+  })
+
+  it('local reference QST rawBody contains the proposed grammar block', () => {
+    // The "**Proposed grammar (local, Forma 3):**" block with BNF grammar and
+    // examples was completely missing from the panel.
+    const q = adr.questions.find(q => q.text.includes('local reference format'))
+    expect(q?.rawBody).toContain('Proposed grammar')
+    expect(q?.rawBody).toContain('local_ref')
+    expect(q?.rawBody).toContain('adr:0001#decision')
+  })
+
+  it('finds the global reference format QST', () => {
+    const q = adr.questions.find(q => q.text.includes('global reference format'))
+    expect(q).toBeDefined()
+  })
+
+  it('global reference QST rawBody contains the cross-project grammar', () => {
+    const q = adr.questions.find(q => q.text.includes('global reference format'))
+    expect(q?.rawBody).toContain('Proposed grammar')
+    expect(q?.rawBody).toContain('xproject_ref')
+    expect(q?.rawBody).toContain('elenchus-app.0001')
+  })
+
+  it('global reference QST rawBody contains the namespace resolution rules', () => {
+    // "**How namespace is resolved in Forma 3 (local):**" + bullet list
+    const q = adr.questions.find(q => q.text.includes('global reference format'))
+    expect(q?.rawBody).toContain('How namespace is resolved')
+    expect(q?.rawBody).toContain('graceful degradation')
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Fixtures: real ADR content patterns
