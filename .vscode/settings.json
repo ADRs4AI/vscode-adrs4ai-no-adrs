@@ -19,12 +19,14 @@
         "titleBar.inactiveForeground": "#e7e7e799"
     },
     "peacock.color": "#B45309",
+    "vitest.enable": true,
     "vitest.vitestConfig": "${workspaceFolder}/vite.config.ts",
+    "vitest.nodeExecutable": "/Users/jlumbroso/.asdf/shims/node",
     "vitest.nodeEnv": {
-        "PATH": "/opt/homebrew/bin:${env:HOME}/.asdf/shims:/usr/local/bin:/usr/bin:/bin",
-        "ASDF_DIR": "${env:HOME}/.asdf"
+        "PATH": "/opt/homebrew/bin:/Users/jlumbroso/.asdf/shims:/usr/local/bin:/usr/bin:/bin",
+        "ASDF_DIR": "/opt/homebrew/opt/asdf/libexec",
+        "ASDF_DATA_DIR": "/Users/jlumbroso/.asdf"
     },
-    "vitest.nodeExecutable": "${env:HOME}/.asdf/shims/node",
     "python.terminal.activateEnvironment": false,
     "terminal.integrated.env.osx": {
         "PATH": "/opt/homebrew/bin:${env:HOME}/.asdf/shims:${env:PATH}",
