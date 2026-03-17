@@ -1,0 +1,65 @@
+/**
+ * Webview Script Syntax Tests
+ *
+ * The webview JS lives inside a template string in openQuestionsPanel.ts.
+ * TypeScript has zero visibility into that string — syntax errors are invisible
+ * to tsc, vitest, and vite. This test extracts the <script> block and validates
+ * it with Node's vm.Script, catching syntax errors in under 50ms.
+ *
+ * This test exists because of a real incident: a blank panel regression shipped
+ * undetected because all 120 parser/normalizer tests passed while the webview
+ * script had a broken if/else structure. See ADR-0010 action items for the
+ * deeper fix (extract webview JS into a separately bundled file).
+ */
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import vm from 'node:vm'
+import { describe, it, expect } from 'vitest'
+
+const PANEL_SRC = readFileSync(
+  resolve(__dirname, '../webview/openQuestionsPanel.ts'),
+  'utf8',
+)
+
+describe('Webview script block syntax', () => {
+  it('extracts a non-empty <script> block from the panel template', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    expect(match).toBeTruthy()
+    expect(match![1].trim().length).toBeGreaterThan(100)
+  })
+
+  it('webview script is syntactically valid JavaScript (catches blank-panel class of bug)', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const scriptContent = match![1]
+    // vm.Script parses and compiles without executing — safe and fast
+    expect(() => new vm.Script(scriptContent)).not.toThrow()
+  })
+
+  it('render() function is defined in the script', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    expect(match![1]).toContain('function render()')
+  })
+
+  it('all expected DOM element IDs are referenced in the script', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    // Every element referenced in render() must actually exist in the HTML
+    const ids = ['qtext', 'why', 'body', 'rec', 'body-post',
+                 'counter', 'pbar', 'adr-link', 'ans', 'btn-ans', 'btn-back']
+    for (const id of ids) {
+      expect(script, `script must reference element #${id}`).toContain(`'${id}'`)
+    }
+  })
+
+  it('all referenced DOM IDs exist in the HTML template', () => {
+    const ids = ['qtext', 'why', 'body', 'rec', 'body-post',
+                 'counter', 'pbar', 'adr-link', 'ans', 'btn-ans', 'btn-back']
+    for (const id of ids) {
+      expect(
+        PANEL_SRC,
+        `HTML must contain element with id="${id}"`,
+      ).toMatch(new RegExp(`id="${id}"`))
+    }
+  })
+})
