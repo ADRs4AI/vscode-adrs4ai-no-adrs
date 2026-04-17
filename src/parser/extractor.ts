@@ -155,6 +155,14 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
       }
       case 'status': {
         result.status = value;
+        // INTENTIONALLY strict: do NOT add prefix-match tolerance here.
+        // Even a "short" annotation like "Accepted (updated)" pollutes the status
+        // taxonomy and sends the wrong signal — that ad-hoc annotations in the
+        // status field are acceptable. The field encodes workflow state only.
+        // The right fix is ADR-0014's D7 Socratic handler, which detects annotated
+        // values and guides models toward structured alternatives (**Awaiting**:,
+        // **Scope Remaining**:, etc.) instead of silently accepting them.
+        // See: seed-2026-03-18-case-studies-on-models-experience-with-extension-feedback-ho.md
         if (!KNOWN_STATUS_VALUES.includes(value)) {
           result.warnings.push({
             code: 'UNKNOWN_STATUS',
