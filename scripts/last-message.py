@@ -80,6 +80,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -288,6 +289,235 @@ def cmd_discover(args: argparse.Namespace) -> None:
         print(f"{mtime:25s}  {uuid:40s}  {alias:12s}  {first_user}")
 
 
+def read_jsonl_tail(jsonl: Path, max_bytes: int = 65536) -> list[dict]:
+    """Read the last ~max_bytes of a JSONL, parse backwards to get final messages.
+
+    Returns messages in chronological order (oldest to newest from the tail window).
+    Efficient for large files — only reads the end.
+    """
+    if not jsonl.exists():
+        return []
+    size = jsonl.stat().st_size
+    if size == 0:
+        return []
+
+    # Read last max_bytes (or whole file if smaller)
+    read_size = min(size, max_bytes)
+    with jsonl.open('rb') as f:
+        f.seek(size - read_size)
+        tail_bytes = f.read()
+
+    # Decode and split into lines
+    try:
+        tail_text = tail_bytes.decode('utf-8', errors='ignore')
+    except Exception:
+        return []
+
+    lines = tail_text.split('\n')
+    # First line might be partial (we seeked mid-line), skip it
+    if len(lines) > 1:
+        lines = lines[1:]
+
+    messages = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            messages.append(obj)
+        except json.JSONDecodeError:
+            continue
+
+    return messages
+
+
+def classify_seat(jsonl: Path, stale_threshold_hours: float = 6.0) -> dict:
+    """Classify a seat's health status from its JSONL tail.
+
+    Returns dict with: state (ERROR/WAITING/STALE/OK), emoji, model, age_str, text_preview
+    """
+    # Read tail efficiently
+    messages = read_jsonl_tail(jsonl, max_bytes=65536)
+
+    # Find last assistant message
+    last_assistant = None
+    for msg in reversed(messages):
+        msg_obj = msg.get("message", {})
+        role = msg_obj.get("role") or msg.get("type")
+        if role == "assistant":
+            last_assistant = msg
+            break
+
+    if not last_assistant:
+        # No assistant messages in tail — treat as stale
+        mtime = datetime.fromtimestamp(jsonl.stat().st_mtime, tz=timezone.utc)
+        age = datetime.now(timezone.utc) - mtime
+        age_str = format_age(age)
+        return {
+            "state": "STALE",
+            "emoji": "🟡",
+            "model": "—",
+            "age_str": age_str,
+            "text_preview": "(no assistant messages in tail)",
+        }
+
+    # Extract fields
+    msg_obj = last_assistant.get("message", {})
+    model = msg_obj.get("model") or "—"
+    text = extract_text(last_assistant).strip()
+    preview = text[:80].replace("\n", " ") if text else "(empty)"
+
+    # Get age from timestamp
+    ts_str = last_assistant.get("timestamp") or ""
+    if ts_str:
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            age = datetime.now(timezone.utc) - ts
+            age_str = format_age(age)
+            age_hours = age.total_seconds() / 3600
+        except (ValueError, TypeError):
+            age_str = "?"
+            age_hours = 0
+    else:
+        # Fall back to file mtime
+        mtime = datetime.fromtimestamp(jsonl.stat().st_mtime, tz=timezone.utc)
+        age = datetime.now(timezone.utc) - mtime
+        age_str = format_age(age)
+        age_hours = age.total_seconds() / 3600
+
+    # Classification logic
+
+    # 🔴 ERROR — model=<synthetic> OR body matches ^API Error
+    if model == "<synthetic>" or text.startswith("API Error"):
+        return {
+            "state": "ERROR",
+            "emoji": "🔴",
+            "model": model,
+            "age_str": age_str,
+            "text_preview": preview,
+        }
+
+    # 🟡 WAITING — ends in question + age > threshold
+    last_lines = [line for line in text.split('\n')[-3:] if line.strip()]
+    ends_with_question = any('?' in line for line in last_lines[-2:])
+    if ends_with_question and age_hours > 1.0:  # 1 hour threshold for waiting
+        return {
+            "state": "WAITING",
+            "emoji": "🟡",
+            "model": model,
+            "age_str": age_str,
+            "text_preview": preview,
+        }
+
+    # 🟡 STALE — no JSONL append in > threshold, no terminal question
+    if age_hours > stale_threshold_hours and not ends_with_question:
+        return {
+            "state": "STALE",
+            "emoji": "🟡",
+            "model": model,
+            "age_str": age_str,
+            "text_preview": preview,
+        }
+
+    # 🟢 OK — anything else
+    return {
+        "state": "OK",
+        "emoji": "🟢",
+        "model": model,
+        "age_str": age_str,
+        "text_preview": preview,
+    }
+
+
+def format_age(delta) -> str:
+    """Format a timedelta as compact age string (e.g., '2h', '45m', '3d')."""
+    seconds = delta.total_seconds()
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        return f"{int(seconds / 60)}m"
+    elif seconds < 86400:
+        return f"{int(seconds / 3600)}h"
+    else:
+        return f"{int(seconds / 86400)}d"
+
+
+def cmd_pulse(args: argparse.Namespace) -> None:
+    """One-line health check per registered seat.
+
+    Detects stalls, errors, and blocked states across all agents.
+    Output format: <emoji> <alias> <state> age=<time> model=<model> "<preview>"
+    """
+    cfg = load_config()
+    aliases = _real_aliases(cfg)
+
+    if not aliases:
+        print("(no aliases configured)")
+        return
+
+    # Collect all seat statuses
+    results = []
+    for alias in sorted(aliases):
+        try:
+            jsonl = resolve_jsonl(alias, cfg)
+            status = classify_seat(jsonl, stale_threshold_hours=args.stale_threshold)
+            results.append((alias, status))
+        except SystemExit:
+            # JSONL not found — treat as missing
+            results.append((alias, {
+                "state": "MISSING",
+                "emoji": "⚫",
+                "model": "—",
+                "age_str": "—",
+                "text_preview": "(JSONL not found)",
+            }))
+
+    # Print results
+    for alias, status in results:
+        # Get display name or role (if --verbose)
+        alias_meta = aliases.get(alias)
+        name_suffix = ""
+        if isinstance(alias_meta, dict):
+            if args.verbose and alias_meta.get("role"):
+                # Verbose mode: show full role paragraph (no truncation in name field,
+                # but still cap text preview at 60 to keep some structure)
+                name_suffix = f" ({alias_meta['role']})"
+            elif alias_meta.get("display_name"):
+                # Default: show short display_name if available
+                name_suffix = f" ({alias_meta['display_name']})"
+            # Else: no suffix (just alias)
+
+        # Format line: in default mode, keep tight; in verbose mode, let name expand
+        if args.verbose:
+            # Verbose: no width limit on name, but keep preview at 60
+            print(
+                f"{status['emoji']} {alias:15s}{name_suffix} "
+                f"{status['state']:8s} age={status['age_str']:6s} "
+                f"model={status['model']:20s} \"{status['text_preview'][:60]}\""
+            )
+        else:
+            # Default: tight layout with fixed widths
+            print(
+                f"{status['emoji']} {alias:15s}{name_suffix[:25]:25s} "
+                f"{status['state']:8s} age={status['age_str']:6s} "
+                f"model={status['model']:20s} \"{status['text_preview'][:60]}\""
+            )
+
+    # Summary counts
+    error_count = sum(1 for _, s in results if s['state'] == 'ERROR')
+    waiting_count = sum(1 for _, s in results if s['state'] == 'WAITING')
+    stale_count = sum(1 for _, s in results if s['state'] == 'STALE')
+    ok_count = sum(1 for _, s in results if s['state'] == 'OK')
+
+    print()
+    print(f"Summary: {error_count} ERROR, {waiting_count} WAITING, {stale_count} STALE, {ok_count} OK")
+
+    # Exit code: non-zero if any errors
+    if error_count > 0:
+        sys.exit(1)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("alias", nargs="?", help="Agent alias (see --list)")
@@ -301,6 +531,9 @@ def main() -> None:
     )
     p.add_argument("--list", action="store_true", help="List configured aliases")
     p.add_argument("--discover", action="store_true", help="List recent JSONLs to help populate aliases")
+    p.add_argument("--pulse", action="store_true", help="Health check: one line per seat, detect stalls/errors")
+    p.add_argument("--stale-threshold", type=float, default=6.0, help="Hours before marking STALE (default 6)")
+    p.add_argument("--verbose", action="store_true", help="Show full role descriptions in pulse output (default: display_name only)")
     p.add_argument("--limit", type=int, default=15, help="Limit on --discover output (default 15)")
     args = p.parse_args()
 
@@ -308,6 +541,8 @@ def main() -> None:
         cmd_list(args)
     elif args.discover:
         cmd_discover(args)
+    elif args.pulse:
+        cmd_pulse(args)
     elif args.alias:
         cmd_last(args)
     else:
