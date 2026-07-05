@@ -307,21 +307,28 @@ describe('Benchmark: ADR-0008 global reference QST — all fields exhaustively a
 // ---------------------------------------------------------------------------
 
 describe('Real-file cross-check: ADR-0003 and ADR-0008 parse correctly from disk', () => {
-  it('ADR-0003: Phase 4 QST has all fields from disk', () => {
+  // These two QSTs were reformatted (2026-06-10) from legacy **My recommendation**:
+  // prose to the protocol form (**Recommendation**: (by Author, date) + multi-
+  // paragraph body). The recommendation content — including what was once an
+  // "orphaned sentence" in rawBodyPost — now lives inside the recommendation field.
+  it('ADR-0003: Phase 4 QST has all fields from disk (protocol form)', () => {
     const content = readAdr('0003-mcp-server-design.md')
     const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
     const q = adr.questions.find(q => q.text.includes('Phase 4'))
     expect(q?.recommendation).toContain('list_open_questions')
     expect(q?.recommendation).toContain('update_question_priority')
     expect(q?.recommendation).toContain('get_claude_md')
-    expect(q?.rawBodyPost).toContain('Add these to ADR-0003 supporting materials')
+    expect(q?.recommendation).toContain('Add these to ADR-0003 supporting materials')
   })
 
-  it('ADR-0003: deep-link QST has orphaned sentence in rawBodyPost from disk', () => {
+  it('ADR-0003: deep-link QST carries the full stacked recommendations from disk', () => {
     const content = readAdr('0003-mcp-server-design.md')
     const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
     const q = adr.questions.find(q => q.text.includes('deep link'))
-    expect(q?.rawBodyPost).toContain('Speccing local + global now costs little')
+    expect(q?.recommendation).toContain('Speccing local + global now costs little')
+    // Stacked blocks: both models' attributions survive in the bridged field
+    expect(q?.recommendation).toContain('(by Sonnet 4.6, 2026-03-05)')
+    expect(q?.recommendation).toContain('(by Fable 5, 2026-05-24)')
   })
 
   it('ADR-0008: local reference QST has grammar in rawBody from disk', () => {
@@ -734,6 +741,100 @@ More content here.
     const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
     expect(adr.questions).toHaveLength(1)
     expect(adr.questions[0].recommendation).toBe('Option A with HTML comment override as opt-in.')
+  })
+
+  it('should extract a protocol-form recommendation spanning blank lines (ADR-0019 bridge)', () => {
+    // Regression (2026-07-05): the extractor only knew the legacy
+    // **My recommendation**: pattern, so QSTs reformatted to the protocol form
+    // (**Recommendation**: (by Author, date) + multi-paragraph body, commit
+    // 3b49a8e) parsed with recommendation === undefined and rendered nothing
+    // in the Open Questions panel. Interim bridge documented in ADR-0019
+    // ("the bridge is small and ships first"); caught live by the real-file
+    // cross-check tests after Jérémie's first-wave answer edits to ADR-0003.
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+- Why asking: Affects stability of cross-file references.
+- Need: pick one
+
+**Recommendation**: (by Sonnet 4.6, 2026-03-05)
+
+First paragraph of the recommendation.
+
+Second paragraph after a blank line, with \`list_tools\` detail.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    expect(adr.questions).toHaveLength(1)
+    const rec = adr.questions[0].recommendation
+    expect(rec).toContain('(by Sonnet 4.6, 2026-03-05)')
+    expect(rec).toContain('First paragraph of the recommendation.')
+    expect(rec).toContain('Second paragraph after a blank line')
+  })
+
+  it('should accumulate stacked protocol-form recommendations from multiple models', () => {
+    // Regression companion (2026-07-05): stacked blocks — several models
+    // recommending on the same QST — are the live shape of ADR-0003 after the
+    // 2026-06-10 reformat. Until ADR-0019's multi-recommendation model lands,
+    // the bridge concatenates the stack (no silent loss of the later blocks).
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**Recommendation**: (by Sonnet 4.6, 2026-03-05)
+
+Original proposal text.
+
+**Recommendation**: (by Fable 5, 2026-05-24)
+
+Overtaken by events — recommend closing.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    const rec = adr.questions[0].recommendation
+    expect(rec).toContain('Original proposal text.')
+    expect(rec).toContain('(by Fable 5, 2026-05-24)')
+    expect(rec).toContain('Overtaken by events')
+  })
+
+  it('should keep legacy recommendation blank-line termination intact (ADR-0010 behavior)', () => {
+    // Guard: the bridge must not change how legacy **My recommendation**:
+    // blocks terminate — a blank line still ends them, and trailing orphaned
+    // prose still lands in rawBodyPost (the pre-reformat ADR-0003 shape).
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**My recommendation**: Option A, single paragraph.
+
+Orphaned closing remark after the block.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    const q = adr.questions[0]
+    expect(q.recommendation).toBe('Option A, single paragraph.')
+    expect(q.rawBodyPost).toContain('Orphaned closing remark after the block.')
   })
 
   it('should exclude answered questions from the unanswered list after status changes', () => {

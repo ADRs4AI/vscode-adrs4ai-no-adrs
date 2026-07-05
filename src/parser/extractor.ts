@@ -345,8 +345,12 @@ const STATUS_LINE_RE = /^-\s+Status:\s+(.+)$/;
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
 // Matches: - Need: value
 const NEED_RE = /^-\s+Need:\s+(.+)$/;
-// Matches: **My recommendation**: text
-const RECOMMENDATION_RE = /^\*\*My recommendation\*\*:\s*(.*)/;
+// Matches the legacy form (**My recommendation**: text, ADR-0002 Iteration 3)
+// and the protocol form (**Recommendation**: (by Author, date), ADR-0019).
+const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*:\s*(.*)/;
+// Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)".
+// Their body spans blank lines (paragraphs), unlike legacy single-paragraph prose.
+const REC_ATTRIBUTION_ONLY_RE = /^\((?:by|from)[^)]*\)\s*$/;
 
 // ADR-0012: Detect non-standard QST formats like "### QST-1:" or "**Your preference?**"
 const NONSTANDARD_QST_HEADING_RE = /^QST-\d+:/i;
@@ -375,6 +379,9 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
 
   let inAnswer = false;
   let inRecommendation = false;
+  // ADR-0019 interim bridge: protocol-form blocks span blank lines; legacy
+  // blocks end at the first blank line (preserving ADR-0010 behavior).
+  let recProtocolForm = false;
   // pastRecommendation: true once we have seen AND exited a recommendation block.
   // Lines before recommendation → rawBody (context/grammar/options).
   // Lines after recommendation → rawBodyPost (orphaned closing remarks).
@@ -427,8 +434,12 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     // Recommendation: starts with **My recommendation**: and may span multiple lines
     const recMatch = line.match(RECOMMENDATION_RE);
     if (recMatch) {
+      // A second **Recommendation**: label lands here too — stacked blocks
+      // (multiple models on one QST) accumulate into a single field until
+      // ADR-0019's multi-recommendation model replaces this bridge.
       inRecommendation = true;
       const firstLine = recMatch[1].trim();
+      recProtocolForm = REC_ATTRIBUTION_ONLY_RE.test(firstLine);
       if (firstLine) recommendationLines.push(firstLine);
       continue;
     }
@@ -437,7 +448,12 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     // the ANS block, or a blank line followed by a heading-like continuation.
     // ADR-0010: Fix greediness — stop at "**Caveat**:", "**Edge case**:", etc.
     if (inRecommendation) {
-      if (line === '') { inRecommendation = false; pastRecommendation = true; continue; }
+      if (line === '') {
+        // Protocol-form bodies are multi-paragraph: keep collecting across
+        // blank lines until ANS / a new bold-key block / the QST's end.
+        if (recProtocolForm) { recommendationLines.push(''); continue; }
+        inRecommendation = false; pastRecommendation = true; continue;
+      }
       // Stop at any new **Key**: block that isn't the ANS marker
       if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
         inRecommendation = false; pastRecommendation = true;
