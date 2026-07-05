@@ -195,8 +195,9 @@ function parseCanonicalRef(ref: string): ParsedDeepLink | undefined {
     return undefined
   }
 
-  const artifact = parts[artifactIdx]
-  if (artifact !== 'adr' && artifact !== 'seed') return undefined
+  const artifactRaw = parts[artifactIdx]
+  if (artifactRaw !== 'adr' && artifactRaw !== 'seed') return undefined
+  const artifact = artifactRaw as DeepLinkArtifact
 
   const locator = parts.slice(artifactIdx + 1).join('/')
   if (!locator) return undefined

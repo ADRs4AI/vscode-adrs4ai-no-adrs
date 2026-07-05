@@ -227,7 +227,7 @@ export class OpenQuestionsPanel {
   private async openAtLine(adrPath: string, lineNumber: number): Promise<void> {
     const uri = vscode.Uri.file(adrPath)
     const doc = await vscode.workspace.openTextDocument(uri)
-    const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Two, { preserveFocus: true })
+    const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Two, true)
     const pos = new vscode.Position(Math.max(0, lineNumber - 1), 0)
     editor.selection = new vscode.Selection(pos, pos)
     editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter)

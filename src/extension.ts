@@ -101,7 +101,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.refresh', () => {
-      reindexWorkspace(index!, adrDir);
+      reindexWorkspace(index!, seedIndex!, adrDir);
     }),
 
     vscode.commands.registerCommand('adrManager.openAdr', (filePath: string, lineNumber?: number) => {

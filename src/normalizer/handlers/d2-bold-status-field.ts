@@ -33,7 +33,7 @@ const BOLD_STATUS_RE = /^(\s*)-\s+\*\*Status\*\*:\s+(unanswered|answered)\b(.*)?
 
 export class D2BoldStatusFieldHandler implements ViolationHandler {
   readonly id = 'd2-bold-status-field'
-  readonly dependsOn = undefined
+  readonly dependsOn: readonly string[] | undefined = undefined
   readonly description = '- **Status**: ... uses bold field name; writeAnswer() cannot update it'
 
   detect(content: string, _parseResult: AdrFile): ViolationRecord[] {

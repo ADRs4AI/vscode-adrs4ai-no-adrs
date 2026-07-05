@@ -29,6 +29,18 @@ import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
 
 type AdrTreeItemKind = 'adr' | 'question' | 'open-questions-header' | 'adr-group' | 'seed-group' | 'seed';
 
+/** The broad implementation parameter type shared by all constructor overloads and static helpers.
+ *  Using AdrTreeItemOpts resolves to the LAST overload only,
+ *  causing type errors. This alias avoids that. */
+type AdrTreeItemOpts = {
+  kind: AdrTreeItemKind;
+  adr?: AdrFile;
+  question?: Question;
+  seed?: SeedFile;
+  count?: number;
+  collapsibleState?: vscode.TreeItemCollapsibleState;
+};
+
 export class AdrTreeItem extends vscode.TreeItem {
   public readonly kind: AdrTreeItemKind;
   public readonly adr?: AdrFile;
@@ -117,7 +129,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     }
   }
 
-  private static makeCollapsible(opts: ConstructorParameters<typeof AdrTreeItem>[0]): vscode.TreeItemCollapsibleState {
+  private static makeCollapsible(opts: AdrTreeItemOpts): vscode.TreeItemCollapsibleState {
     if (opts.kind === 'adr-group' || opts.kind === 'seed-group') {
       return (opts as { count?: number }).count! > 0
         ? vscode.TreeItemCollapsibleState.Expanded
@@ -126,7 +138,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     return opts.collapsibleState ?? vscode.TreeItemCollapsibleState.None
   }
 
-  private static makeLabel(opts: ConstructorParameters<typeof AdrTreeItem>[0]): string {
+  private static makeLabel(opts: AdrTreeItemOpts): string {
     if (opts.kind === 'adr' && opts.adr) {
       // Defensive guard: seeds should not reach the ADR tree (they're excluded by
       // indexDirectory's /^\d+[-_]/ filter), but if a legacy numeric-prefix seed
@@ -166,7 +178,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     return ''
   }
 
-  private static makeDescription(opts: ConstructorParameters<typeof AdrTreeItem>[0]): string {
+  private static makeDescription(opts: AdrTreeItemOpts): string {
     if (opts.kind === 'adr' && opts.adr) {
       const openCount = opts.adr.questions.filter(q => !q.isAnswered).length
       const statusPart = `[${opts.adr.status}]`
@@ -179,7 +191,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     return ''
   }
 
-  private static makeTooltip(opts: ConstructorParameters<typeof AdrTreeItem>[0]): string {
+  private static makeTooltip(opts: AdrTreeItemOpts): string {
     if (opts.kind === 'adr' && opts.adr) {
       const a = opts.adr
       const parts = [
@@ -220,7 +232,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     return ''
   }
 
-  private static makeIcon(opts: ConstructorParameters<typeof AdrTreeItem>[0]): vscode.ThemeIcon {
+  private static makeIcon(opts: AdrTreeItemOpts): vscode.ThemeIcon {
     if (opts.kind === 'adr' && opts.adr) {
       return statusThemeIcon(opts.adr.status, vscode.ThemeIcon, vscode.ThemeColor)
     }
