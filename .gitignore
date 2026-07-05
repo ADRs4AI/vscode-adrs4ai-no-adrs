@@ -6,6 +6,7 @@
 
 # Temporary files
 ~*
+temp
 
 # Node
 node_modules
@@ -35,3 +36,15 @@ coverage/
 # Editor
 *.swp
 *.swo
+
+# Packaged extension builds (regenerable via `npx @vscode/vsce package`; kept locally in releases/)
+releases/
+*.vsix
+
+# LaTeX build artifacts (docs/submissions keeps .tex + .pdf tracked)
+docs/submissions/*.aux
+docs/submissions/*.log
+docs/submissions/*.out
+
+# Local research clones — external repos, reproducible from URLs in docs/research/README.md
+docs/research/*/
