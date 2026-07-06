@@ -114,9 +114,14 @@ interface ExtractedMetadata {
   iteration: number;
   status?: AdrStatus;
   scopeRemaining?: string;
+  awaiting?: string;
+  awaitingCondition?: { adr: string; predicate: string };
   deciders: string[];
   warnings: ParseWarning[];
 }
+
+// ADR-0014 Iteration 2: "- **Awaiting**: ADR-0035 == implemented" (or "ADR 0035", "== accepted", etc.)
+const AWAITING_DSL_RE = /^ADR[-\s]?(\d+)\s*==\s*(.+)$/i;
 
 function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
   const result: ExtractedMetadata = { iteration: 1, deciders: [], warnings: [] };
@@ -190,6 +195,14 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
       }
       case 'scope remaining': {
         result.scopeRemaining = value;
+        break;
+      }
+      case 'awaiting': {
+        result.awaiting = value;
+        const dslMatch = value.match(AWAITING_DSL_RE);
+        if (dslMatch) {
+          result.awaitingCondition = { adr: dslMatch[1], predicate: dslMatch[2].trim() };
+        }
         break;
       }
     }
@@ -773,6 +786,8 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
     iteration: metadata.iteration,
     status: metadata.status ?? 'Draft',
     scopeRemaining: metadata.scopeRemaining,
+    awaiting: metadata.awaiting,
+    awaitingCondition: metadata.awaitingCondition,
     deciders: metadata.deciders,
     format,
     sections,

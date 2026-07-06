@@ -54,6 +54,18 @@ export interface AdrFile {
    * The parser emits MISSING_SCOPE_REMAINING if this is absent and status is Partially Implemented.
    */
   scopeRemaining?: string;
+  /**
+   * ADR-0014 Decision 2: optional free-form preamble field naming what
+   * blocks this ADR from progressing. Parsed from `- **Awaiting**: value`.
+   */
+  awaiting?: string;
+  /**
+   * ADR-0014 Iteration 2 refinement: optional structured reading of `awaiting`
+   * when it follows the `ADR-NNNN == predicate` DSL (e.g. `ADR-0035 == implemented`).
+   * Populated alongside `awaiting` (the raw text); undefined when the value
+   * is free-form prose.
+   */
+  awaitingCondition?: { adr: string; predicate: string };
   deciders: string[];
   format: AdrFormat;
 

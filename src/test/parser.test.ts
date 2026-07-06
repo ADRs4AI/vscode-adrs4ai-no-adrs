@@ -631,6 +631,20 @@ describe('parseAdr', () => {
     expect(statusWarnings).toHaveLength(1)
   })
 
+  it('ADR-0014 Decision 2: parses the "awaiting" preamble field as free-form text', () => {
+    const content = '# My ADR\n\n- **Status**: Partially Implemented\n- **Scope Remaining**: MCP\n- **Awaiting**: human review of the tool spec\n\n## Context\nSome context.'
+    const adr = parseAdr(content, '/fake/docs/adr/0008-awaiting.md')
+    expect(adr.awaiting).toBe('human review of the tool spec')
+    expect(adr.awaitingCondition).toBeUndefined()
+  })
+
+  it('ADR-0014 Iteration 2: parses the "ADR-NNNN == predicate" DSL inside "awaiting"', () => {
+    const content = '# My ADR\n\n- **Status**: Draft\n- **Awaiting**: ADR-0035 == implemented\n\n## Context\nSome context.'
+    const adr = parseAdr(content, '/fake/docs/adr/0009-awaiting-dsl.md')
+    expect(adr.awaiting).toBe('ADR-0035 == implemented')
+    expect(adr.awaitingCondition).toEqual({ adr: '0035', predicate: 'implemented' })
+  })
+
   it('ADR-0014 D6.5: tolerates unbold preamble Status field ("- Status: Draft") — no false MISSING_STATUS', () => {
     // Regression: temp/misc-problem-adr-08-with-tooltip/README.md — an unbold
     // "- Status: Draft" preamble field previously fired MISSING_STATUS even

@@ -199,6 +199,7 @@ export class AdrTreeItem extends vscode.TreeItem {
         `Status: ${a.status} ${statusEmoji(a.status)}`,
         `Format: ${a.format}`,
         a.date ? `Date: ${a.date}` : null,
+        a.awaiting ? `Awaiting: ${a.awaiting}` : null,
         a.deciders.length > 0 ? `Deciders: ${a.deciders.join(', ')}` : null,
         a.questions.length > 0
           ? `Questions: ${a.questions.filter(q => q.isAnswered).length}/${a.questions.length} answered`
