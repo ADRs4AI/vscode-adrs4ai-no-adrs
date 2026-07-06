@@ -17,6 +17,7 @@ import { D4CollapsedAnsBlockHandler } from '../normalizer/handlers/d4-collapsed-
 import { D6NonStandardPreambleFieldHandler } from '../normalizer/handlers/d6-non-standard-preamble-field'
 import { D62StatusWithAnnotationHandler } from '../normalizer/handlers/d6-2-status-with-annotation'
 import { D65MissingBoldPreambleFieldHandler } from '../normalizer/handlers/d6-5-missing-bold-preamble-field'
+import { D96NoncanonicalNavCodeHeadingHandler } from '../normalizer/handlers/d9-6-noncanonical-nav-code-heading'
 import { parseAdr } from '../parser/extractor'
 
 // ---------------------------------------------------------------------------
@@ -676,5 +677,84 @@ describe('D62StatusWithAnnotationHandler', () => {
 `
     const records = handler.detect(content, parseResult)
     expect(records).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D9.6: NoncanonicalNavCodeHeadingHandler (ADR-0024)
+// Specimen: the "panel shows nothing" symptom — case/glued-colon QST headings
+// ---------------------------------------------------------------------------
+
+const ZOO_0096_LOWERCASE = `# ADR-0013: Storage choice
+
+---
+
+## Questions
+
+### qst: Which database?
+
+- Status: unanswered
+`
+
+const ZOO_0096_GLUED_COLON = `# ADR-0013: Storage choice
+
+---
+
+## Questions
+
+### QST:Which database?
+
+- Status: unanswered
+`
+
+describe('D96NoncanonicalNavCodeHeadingHandler', () => {
+  const handler = new D96NoncanonicalNavCodeHeadingHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects a lowercase nav code heading ("### qst:")', () => {
+    const records = handler.detect(ZOO_0096_LOWERCASE, parseResult)
+    expect(records).toHaveLength(1)
+    expect(records[0].handlerId).toBe('d9-6-noncanonical-nav-code-heading')
+  })
+
+  it('detects a glued-colon nav code heading ("### QST:Question")', () => {
+    const records = handler.detect(ZOO_0096_GLUED_COLON, parseResult)
+    expect(records).toHaveLength(1)
+  })
+
+  it('does NOT flag a canonical "### QST: text" heading', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() rewrites the lowercase heading to canonical case, preserving heading level', () => {
+    const records = handler.detect(ZOO_0096_LOWERCASE, parseResult)
+    const patch = handler.fix(ZOO_0096_LOWERCASE, records[0])
+    expect(patch.replacement).toBe('### QST: Which database?')
+  })
+
+  it('fix() rewrites the glued colon to canonical spacing', () => {
+    const records = handler.detect(ZOO_0096_GLUED_COLON, parseResult)
+    const patch = handler.fix(ZOO_0096_GLUED_COLON, records[0])
+    expect(patch.replacement).toBe('### QST: Which database?')
+  })
+
+  it('DMA: message is faithful — recognized, not missing/wrong data', () => {
+    const records = handler.detect(ZOO_0096_LOWERCASE, parseResult)
+    expect(records[0].description).toContain('Recognized anyway — no data lost')
+  })
+
+  it('test discipline (ADR-0014): message contains the deviation-type slug', () => {
+    const records = handler.detect(ZOO_0096_LOWERCASE, parseResult)
+    expect(records[0].description).toContain('NONCANONICAL_NAV_CODE_HEADING')
+  })
+
+  it('applying process() makes the heading parse as a canonical QST', () => {
+    const patches = handler.process(ZOO_0096_GLUED_COLON, parseResult)
+    const normalized = applyPatches(ZOO_0096_GLUED_COLON, patches)
+    expect(normalized).toContain('### QST: Which database?')
+    const adr = parseAdr(normalized, '/fake/zoo/0013-storage.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(false)
   })
 })
