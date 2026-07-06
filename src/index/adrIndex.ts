@@ -72,7 +72,11 @@ export class AdrIndex {
     const adrFiles = entries
       // ADR-0012: Accept any digit count (not just 4-digit). Projects using 3-digit numbers
       // (001-foo.md) are real and should not be invisible to the extension.
-      .filter(name => name.endsWith('.md') && /^\d+[-_]/.test(name) && !name.startsWith('seed-'))
+      // ADR-0023: explicit dot-entry exclusion (belt-and-suspenders — the
+      // digit-prefix requirement already can't match a dot-prefixed name,
+      // but this guards docs/adr/.working/ explicitly against any future
+      // change to the filter, e.g. a recursive multi-root scan).
+      .filter(name => !name.startsWith('.') && name.endsWith('.md') && /^\d+[-_]/.test(name) && !name.startsWith('seed-'))
       .map(name => path.join(adrDir, name))
       .sort();
 

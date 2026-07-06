@@ -109,8 +109,14 @@ export class SeedIndex {
     // Content-based fallback (ADR-0016 Iteration 2 precondition): a .md file
     // that isn't ADR-numbered and isn't already matched by filename might
     // still be a seed with a drifted filename — check its title.
+    // ADR-0023: exclude dot-prefixed entries explicitly — this fallback's
+    // broad ".md, not seed-, not numbered" match would otherwise be the one
+    // path that could accidentally sweep up a stray dotfile (docs/adr/.working/
+    // itself is a subdirectory readdirSync won't descend into, but this
+    // guards the content-based path specifically, which is broader than the
+    // filename-only checks).
     const candidates = entries.filter(name =>
-      name.endsWith('.md') && !name.startsWith('seed-') && !ADR_FILENAME_RE.test(name),
+      !name.startsWith('.') && name.endsWith('.md') && !name.startsWith('seed-') && !ADR_FILENAME_RE.test(name),
     )
     const byContent = candidates.filter(name => {
       try {
