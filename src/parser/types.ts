@@ -141,6 +141,14 @@ export interface Question {
   whyAsking?: string;
   need?: string;
   recommendation?: string;
+  /**
+   * ADR-0019 bridge: recommendation blocks split by source order (one entry
+   * per **Recommendation**:/**My recommendation**: marker), for stacked
+   * per-block rendering. `recommendation` above stays the flat concatenation
+   * for backward compatibility. Full author/date attribution is a separate,
+   * not-yet-implemented ADR-0019 deliverable — this is display-mode only.
+   */
+  recommendations?: string[];
   /** Pre-recommendation body: proposed grammars, option lists, analysis —
    *  unrecognized content that appears before **My recommendation**. */
   rawBody?: string;

@@ -46,7 +46,7 @@ describe('Webview script block syntax', () => {
     const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
     const script = match![1]
     // Every element referenced in render() must actually exist in the HTML
-    const ids = ['qtext', 'why', 'body', 'rec', 'body-post',
+    const ids = ['qtext', 'why', 'body', 'rec-wrap', 'body-post',
                  'counter', 'pbar', 'adr-link', 'ans', 'btn-ans', 'btn-back']
     for (const id of ids) {
       expect(script, `script must reference element #${id}`).toContain(`'${id}'`)
@@ -54,7 +54,7 @@ describe('Webview script block syntax', () => {
   })
 
   it('all referenced DOM IDs exist in the HTML template', () => {
-    const ids = ['qtext', 'why', 'body', 'rec', 'body-post',
+    const ids = ['qtext', 'why', 'body', 'rec-wrap', 'body-post',
                  'counter', 'pbar', 'adr-link', 'ans', 'btn-ans', 'btn-back']
     for (const id of ids) {
       expect(
@@ -66,6 +66,20 @@ describe('Webview script block syntax', () => {
 
   it('getHtml() interpolates the computed body max-width into #card', () => {
     expect(PANEL_SRC).toContain('#card{max-width:${bodyMaxWidth}')
+  })
+
+  it('renderRecommendations() function is defined and wired into render()', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    expect(match![1]).toContain('function renderRecommendations(list)')
+    expect(match![1]).toContain('renderRecommendations(q.recommendations')
+  })
+
+  it('stacked recommendations: older-than-N collapse behind a disclosure, per adrManager.panel.recommendationCollapseThreshold', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('recCollapseThreshold')
+    expect(script).toContain('earlier recommendation')
+    expect(script).toContain('recommendationCollapseThreshold')
   })
 })
 

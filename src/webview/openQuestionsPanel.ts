@@ -27,6 +27,8 @@ interface WebviewQuestion {
   whyAsking?: string
   need?: string
   recommendation?: string
+  /** ADR-0019 display bridge: recommendation split into per-block text, source order. */
+  recommendations?: string[]
   body?: string
   bodyPost?: string
   /** ADR-0010: Markdown content of sections before ## Questions (Human Context + AI Interpretation) */
@@ -125,6 +127,7 @@ export class OpenQuestionsPanel {
           whyAsking: q.whyAsking,
           need: q.need,
           recommendation: q.recommendation,
+          recommendations: q.recommendations,
           body: q.rawBody,
           bodyPost: q.rawBodyPost,
           adrContext,
@@ -142,6 +145,7 @@ export class OpenQuestionsPanel {
       questions,
       // Priority: settings > git config > top name from ADR index
       gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.index)[0],
+      recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
     })
   }
 
@@ -668,7 +672,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   <div class="qtext" id="qtext"></div>
   <div class="why" id="why" style="display:none"></div>
   <div class="qst-body" id="body" style="display:none"></div>
-  <div class="recommendation" id="rec" style="display:none"></div>
+  <div id="rec-wrap"></div>
   <div class="qst-body" id="body-post" style="display:none"></div>
 
   <div class="author-row">
@@ -701,6 +705,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 <script>
 const vscode = acquireVsCodeApi();
 let questions = [], idx = 0;
+let recCollapseThreshold = 0;
 const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
@@ -812,6 +817,32 @@ function renderMarkdown(md) {
   }
 
   return out.join('\\n');
+}
+
+// ---------------------------------------------------------------------------
+// Stacked recommendation rendering (ADR-0010 ANS + ADR-0019 display bridge)
+// Default: every recommendation stays expanded ("thinking traces" — Jérémie).
+// When adrManager.panel.recommendationCollapseThreshold (N) > 0 and there
+// are more than N blocks, older-than-N collapse behind a disclosure; the
+// most recent N always stay expanded.
+// ---------------------------------------------------------------------------
+function renderRecommendations(list) {
+  const wrap = $id('rec-wrap');
+  if (!list || list.length === 0) { wrap.innerHTML = ''; return; }
+
+  const threshold = recCollapseThreshold > 0 ? recCollapseThreshold : list.length;
+  const older = list.slice(0, Math.max(0, list.length - threshold));
+  const recent = list.slice(Math.max(0, list.length - threshold));
+
+  let html = '';
+  if (older.length > 0) {
+    const label = older.length + ' earlier recommendation' + (older.length > 1 ? 's' : '');
+    html += '<details class="ctx-details rec-older"><summary>' + label + '</summary><div class="ctx-body">' +
+      older.map(r => '<div class="recommendation">' + renderMarkdown(r) + '</div>').join('') +
+      '</div></details>';
+  }
+  html += recent.map(r => '<div class="recommendation">' + renderMarkdown(r) + '</div>').join('');
+  wrap.innerHTML = html;
 }
 
 // Restore author from persisted state
@@ -928,8 +959,7 @@ function render() {
   if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
   else { $id('body').style.display = 'none'; }
 
-  if (q.recommendation) { $id('rec').style.display = 'block'; $id('rec').innerHTML = renderMarkdown(q.recommendation); }
-  else { $id('rec').style.display = 'none'; }
+  renderRecommendations(q.recommendations && q.recommendations.length ? q.recommendations : (q.recommendation ? [q.recommendation] : []));
 
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
   else { $id('body-post').style.display = 'none'; }
@@ -946,6 +976,7 @@ window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.type === 'questions') {
     questions = msg.questions;
+    recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
     // Clamp idx: if the list shrank (answered question removed), idx may now
     // point past the end. Clamp to last item rather than wrapping to 0 —
     // this keeps the user on the question they just skipped past, not the first.

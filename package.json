@@ -207,6 +207,12 @@
           "type": "string",
           "default": "1100",
           "description": "Max width of the Open Questions panel body. A pixel value (e.g. '1100') is combined with a 94% viewport cap so it never overflows a narrow window; 'full' removes the cap entirely (fit the whole question in your window)."
+        },
+        "adrManager.panel.recommendationCollapseThreshold": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "When a question has stacked recommendations (ADR-0019), collapse all but the most recent N behind an \"N earlier recommendation(s)\" disclosure. 0 (default) never collapses — every recommendation stays expanded, like an LLM harness's thinking traces."
         }
       }
     }

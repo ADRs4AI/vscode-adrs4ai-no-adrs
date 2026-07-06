@@ -418,6 +418,10 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
   let inNeed = false;
   const answerLines: string[] = [];
   const recommendationLines: string[] = [];
+  // ADR-0019 display bridge: index into recommendationLines where each new
+  // **Recommendation**:/**My recommendation**: block starts, so the flat
+  // array can be re-split into per-block text for stacked rendering.
+  const recommendationBlockStarts: number[] = [];
   const rawBodyLinesPre: string[] = [];
   const rawBodyLinesPost: string[] = [];
   let answerAuthor: string | undefined;
@@ -462,7 +466,9 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       // A second **Recommendation**: label lands here too — stacked blocks
       // (multiple models on one QST) accumulate into a single field until
       // ADR-0019's multi-recommendation model replaces this bridge.
+      // Each marker also opens a new block boundary (see recommendations[] below).
       inRecommendation = true;
+      recommendationBlockStarts.push(recommendationLines.length);
       const firstLine = recMatch[1].trim();
       recProtocolForm = REC_ATTRIBUTION_ONLY_RE.test(firstLine);
       if (firstLine) recommendationLines.push(firstLine);
@@ -543,6 +549,17 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     recommendation = recommendationLines.join('\n').trim() || undefined;
   }
 
+  let recommendations: string[] | undefined;
+  if (recommendationBlockStarts.length > 0) {
+    const bounds = [...recommendationBlockStarts, recommendationLines.length];
+    const blocks: string[] = [];
+    for (let i = 0; i < recommendationBlockStarts.length; i++) {
+      const text = recommendationLines.slice(bounds[i], bounds[i + 1]).join('\n').trim();
+      if (text) blocks.push(text);
+    }
+    if (blocks.length > 0) recommendations = blocks;
+  }
+
   return {
     id: `adr-${String(adrNumber).padStart(4, '0')}-${section.slug}`,
     slug: section.slug,
@@ -552,6 +569,7 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     whyAsking,
     need,
     recommendation,
+    recommendations,
     rawBody,
     rawBodyPost,
     answer,

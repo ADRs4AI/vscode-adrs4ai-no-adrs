@@ -837,6 +837,76 @@ Overtaken by events — recommend closing.
     expect(rec).toContain('Overtaken by events')
   })
 
+  it('should split stacked protocol-form recommendations into recommendations[] (ADR-0019 display bridge)', () => {
+    // Same fixture as the accumulation test above, but asserting the new
+    // per-block array used for stacked panel rendering (item 7 of the
+    // diagnostics+UI batch) — distinct blocks, not one flat string.
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**Recommendation**: (by Sonnet 4.6, 2026-03-05)
+
+Original proposal text.
+
+**Recommendation**: (by Fable 5, 2026-05-24)
+
+Overtaken by events — recommend closing.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    const recs = adr.questions[0].recommendations
+    expect(recs).toHaveLength(2)
+    expect(recs![0]).toContain('(by Sonnet 4.6, 2026-03-05)')
+    expect(recs![0]).toContain('Original proposal text.')
+    expect(recs![0]).not.toContain('Fable 5')
+    expect(recs![1]).toContain('(by Fable 5, 2026-05-24)')
+    expect(recs![1]).toContain('Overtaken by events')
+  })
+
+  it('recommendations[] has a single entry for a single (non-stacked) recommendation', () => {
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**My recommendation**: Option A with HTML comment override as opt-in.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    expect(adr.questions[0].recommendations).toEqual(['Option A with HTML comment override as opt-in.'])
+  })
+
+  it('recommendations[] is undefined when there is no recommendation block', () => {
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    expect(adr.questions[0].recommendations).toBeUndefined()
+  })
+
   it('should keep legacy recommendation blank-line termination intact (ADR-0010 behavior)', () => {
     // Guard: the bridge must not change how legacy **My recommendation**:
     // blocks terminate — a blank line still ends them, and trailing orphaned
