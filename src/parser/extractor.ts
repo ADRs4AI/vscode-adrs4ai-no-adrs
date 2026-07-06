@@ -104,6 +104,8 @@ export function detectFormat(tokens: ReturnType<typeof tokenize>): FormatDetecti
 
 // Matches: - **Key**: value  OR  - **Key (with spaces)**: value
 const BOLD_BULLET_RE = /^-\s+\*\*([^*:]+)\*\*:\s+(.+)$/;
+// Matches: - Key: value  (dash bullet, unbold key — ADR-0014 D6.5 MISSING_BOLD_ON_PREAMBLE_FIELD)
+const DASH_PLAIN_BULLET_RE = /^-\s+([^*:]+):\s+(.+)$/;
 // Matches: * Key: value  (old-style MADR)
 const PLAIN_BULLET_RE = /^\*\s+([^:]+):\s+(.+)$/;
 
@@ -132,15 +134,25 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
       key = boldMatch[1].toLowerCase().trim();
       value = boldMatch[2].trim();
     } else {
-      const plainMatch = text.match(PLAIN_BULLET_RE);
-      if (plainMatch) {
-        key = plainMatch[1].toLowerCase().trim();
-        value = plainMatch[2].trim();
-        result.warnings.push({
-          code: 'BULLET_FORMAT',
-          message: `Metadata field "${plainMatch[1]}" uses "* Key:" format instead of "- **Key**:". This may render poorly in some markdown viewers.`,
-          line: token.line,
-        });
+      // ADR-0014 D6.5 MISSING_BOLD_ON_PREAMBLE_FIELD: field present, key unbold
+      // ("- Status: Draft"). Postel's Law (ADR-0012): accept and extract the
+      // value silently here — no ParseWarning, the field IS present, it's a
+      // format deviation the normalizer's D6.5 handler proposes fixing.
+      const dashPlainMatch = text.match(DASH_PLAIN_BULLET_RE);
+      if (dashPlainMatch) {
+        key = dashPlainMatch[1].toLowerCase().trim();
+        value = dashPlainMatch[2].trim();
+      } else {
+        const plainMatch = text.match(PLAIN_BULLET_RE);
+        if (plainMatch) {
+          key = plainMatch[1].toLowerCase().trim();
+          value = plainMatch[2].trim();
+          result.warnings.push({
+            code: 'BULLET_FORMAT',
+            message: `Metadata field "${plainMatch[1]}" uses "* Key:" format instead of "- **Key**:". This may render poorly in some markdown viewers.`,
+            line: token.line,
+          });
+        }
       }
     }
 

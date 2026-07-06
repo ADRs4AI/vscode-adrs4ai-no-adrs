@@ -15,6 +15,7 @@ import { D1OpenQuestionsSectionHandler } from '../normalizer/handlers/d1-open-qu
 import { D2BoldStatusFieldHandler } from '../normalizer/handlers/d2-bold-status-field'
 import { D4CollapsedAnsBlockHandler } from '../normalizer/handlers/d4-collapsed-ans-block'
 import { D6NonStandardPreambleFieldHandler } from '../normalizer/handlers/d6-non-standard-preamble-field'
+import { D65MissingBoldPreambleFieldHandler } from '../normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { parseAdr } from '../parser/extractor'
 
 // ---------------------------------------------------------------------------
@@ -488,5 +489,80 @@ describe('D6NonStandardPreambleFieldHandler', () => {
 `
     const records = handler.detect(content, parseResult)
     expect(records).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D6.5: MissingBoldPreambleFieldHandler
+// Specimen: temp/misc-problem-adr-08-with-tooltip/README.md
+// ---------------------------------------------------------------------------
+
+const ZOO_0065_UNBOLD_STATUS = `# ADR-0009: Phonemize Tool Integration
+
+- Status: Draft
+- Date: 2026-05-11
+
+---
+
+## Context
+
+Some context here.
+`
+
+describe('D65MissingBoldPreambleFieldHandler', () => {
+  const handler = new D65MissingBoldPreambleFieldHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects "- Status: Draft" (unbold key, dash bullet) — exact specimen', () => {
+    const records = handler.detect(ZOO_0065_UNBOLD_STATUS, parseResult)
+    expect(records.length).toBeGreaterThanOrEqual(2) // Status + Date
+    expect(records.every(r => r.handlerId === 'd6-5-missing-bold-preamble-field')).toBe(true)
+  })
+
+  it('does NOT flag "- **Status**: Accepted" (standard bold format)', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() converts "- Status: Draft" to "- **Status**: Draft"', () => {
+    const records = handler.detect(ZOO_0065_UNBOLD_STATUS, parseResult)
+    const statusRecord = records.find(r => r.originalText.includes('Status'))!
+    const patch = handler.fix(ZOO_0065_UNBOLD_STATUS, statusRecord)
+    expect(patch.replacement).toBe('- **Status**: Draft')
+  })
+
+  it('DMA: diagnostic message never says "missing" — the field is present', () => {
+    const records = handler.detect(ZOO_0065_UNBOLD_STATUS, parseResult)
+    const statusRecord = records.find(r => r.originalText.includes('Status'))!
+    expect(statusRecord.description.toLowerCase()).not.toContain('missing status')
+    expect(statusRecord.description).toContain('Draft')
+  })
+
+  it('test discipline (ADR-0014): message contains the deviation-type slug', () => {
+    const records = handler.detect(ZOO_0065_UNBOLD_STATUS, parseResult)
+    expect(records.every(r => r.description.includes('MISSING_BOLD_ON_PREAMBLE_FIELD'))).toBe(true)
+  })
+
+  it('applying process() makes the Status field bold and parseable', () => {
+    const patches = handler.process(ZOO_0065_UNBOLD_STATUS, parseResult)
+    const normalized = applyPatches(ZOO_0065_UNBOLD_STATUS, patches)
+    expect(normalized).toContain('- **Status**: Draft')
+    const adr = parseAdr(normalized, '/fake/zoo/0009-phonemize.md')
+    expect(adr.status).toBe('Draft')
+  })
+
+  it('does NOT flag content lines inside ## sections', () => {
+    const content = `# ADR-0001: Test
+
+- Status: Accepted
+
+---
+
+## Context
+
+Not a preamble field: this should not be flagged.
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(1) // only the Status line
   })
 })

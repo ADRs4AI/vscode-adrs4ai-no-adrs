@@ -630,6 +630,17 @@ describe('parseAdr', () => {
     const statusWarnings = adr.parseWarnings.filter(w => w.code === 'UNKNOWN_STATUS')
     expect(statusWarnings).toHaveLength(1)
   })
+
+  it('ADR-0014 D6.5: tolerates unbold preamble Status field ("- Status: Draft") — no false MISSING_STATUS', () => {
+    // Regression: temp/misc-problem-adr-08-with-tooltip/README.md — an unbold
+    // "- Status: Draft" preamble field previously fired MISSING_STATUS even
+    // though the field is present. Postel's Law (ADR-0012): parser accepts
+    // and extracts the value; the normalizer's D6.5 handler proposes the bold form.
+    const content = '# My ADR\n\n- Status: Draft\n\n## Context\nSome context.'
+    const adr = parseAdr(content, '/fake/docs/adr/0007-unbold-status.md')
+    expect(adr.status).toBe('Draft')
+    expect(adr.parseWarnings.some(w => w.code === 'MISSING_STATUS')).toBe(false)
+  })
 })
 
 // ---------------------------------------------------------------------------

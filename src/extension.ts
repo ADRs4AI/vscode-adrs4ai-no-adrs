@@ -21,6 +21,7 @@ import { D1OpenQuestionsSectionHandler } from './normalizer/handlers/d1-open-que
 import { D2BoldStatusFieldHandler } from './normalizer/handlers/d2-bold-status-field'
 import { D4CollapsedAnsBlockHandler } from './normalizer/handlers/d4-collapsed-ans-block'
 import { D6NonStandardPreambleFieldHandler } from './normalizer/handlers/d6-non-standard-preamble-field'
+import { D65MissingBoldPreambleFieldHandler } from './normalizer/handlers/d6-5-missing-bold-preamble-field'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -31,6 +32,7 @@ const normalizerCoordinator = new Coordinator([
   new D2BoldStatusFieldHandler(),
   new D4CollapsedAnsBlockHandler(),
   new D6NonStandardPreambleFieldHandler(),
+  new D65MissingBoldPreambleFieldHandler(),
 ])
 
 // ---------------------------------------------------------------------------
