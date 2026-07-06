@@ -662,6 +662,23 @@ describe('D62StatusWithAnnotationHandler', () => {
     expect(records[0].description).toContain('STATUS_WITH_ANNOTATION')
   })
 
+  // DMA (ADR-0014): buildMessage() always re-synthesized the quoted example with
+  // an em-dash ("Accepted — updated"), even when the source used parens or a
+  // colon. A user who wrote "Accepted (updated)" then reads a diagnostic
+  // claiming to quote them back with a different separator — not what they
+  // wrote. Fixed by quoting the actual matched value verbatim instead of
+  // reconstructing base/annotation with a hardcoded separator.
+  it('DMA: quotes the actual separator used, not always an em-dash (paren case)', () => {
+    const records = handler.detect(ZOO_0062_PAREN, parseResult)
+    expect(records[0].description).toContain('"Accepted (updated)"')
+    expect(records[0].description).not.toContain('Accepted — updated')
+  })
+
+  it('DMA: quotes the actual separator used, not always an em-dash (colon case)', () => {
+    const records = handler.detect(ZOO_0062_COLON, parseResult)
+    expect(records[0].description).toContain('"Draft: awaiting review"')
+  })
+
   it('does NOT confuse QST-body "- Status: answered" (D2 scope) with preamble Status', () => {
     // D6.2 must stop scanning at the first ## heading — QST bodies are out of scope
     const content = `# ADR-0001: Test

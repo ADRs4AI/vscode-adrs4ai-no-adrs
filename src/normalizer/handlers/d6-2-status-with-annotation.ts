@@ -88,12 +88,13 @@ export class D62StatusWithAnnotationHandler implements ViolationHandler {
       const m = lines[i].match(STATUS_FIELD_RE)
       if (!m) continue
 
-      const split = splitAnnotation(m[2].trim())
+      const rawValue = m[2].trim()
+      const split = splitAnnotation(rawValue)
       if (!split) continue
 
       records.push({
         handlerId: this.id,
-        description: this.buildMessage(split),
+        description: this.buildMessage(rawValue),
         lineStart: i + 1,
         lineEnd: i + 1,
         originalText: lines[i],
@@ -119,8 +120,13 @@ export class D62StatusWithAnnotationHandler implements ViolationHandler {
     return this.detect(content, parseResult).map(r => this.fix(content, r))
   }
 
-  private buildMessage(split: Split): string {
-    return `STATUS_WITH_ANNOTATION: your status value contains a description ("${split.base} — ${split.annotation}").
+  private buildMessage(rawValue: string): string {
+    // DMA (ADR-0014): quote the value exactly as written. Reconstructing
+    // "base — annotation" here would silently substitute an em-dash even when
+    // the author used parens or a colon — a message that misquotes what the
+    // user actually typed is exactly the "obviously not true" failure mode
+    // this ADR exists to prevent.
+    return `STATUS_WITH_ANNOTATION: your status value contains a description ("${rawValue}").
 
 THIS IS A STRUCTURED FIELD. Its value drives the tree view, the Open Questions panel, and the MCP outputs — LLMs and humans depend on it being pickable from a controlled set.
 
