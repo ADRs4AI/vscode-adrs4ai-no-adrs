@@ -15,6 +15,7 @@ import { D1OpenQuestionsSectionHandler } from '../normalizer/handlers/d1-open-qu
 import { D2BoldStatusFieldHandler } from '../normalizer/handlers/d2-bold-status-field'
 import { D4CollapsedAnsBlockHandler } from '../normalizer/handlers/d4-collapsed-ans-block'
 import { D6NonStandardPreambleFieldHandler } from '../normalizer/handlers/d6-non-standard-preamble-field'
+import { D62StatusWithAnnotationHandler } from '../normalizer/handlers/d6-2-status-with-annotation'
 import { D65MissingBoldPreambleFieldHandler } from '../normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { parseAdr } from '../parser/extractor'
 
@@ -564,5 +565,100 @@ Not a preamble field: this should not be flagged.
 `
     const records = handler.detect(content, parseResult)
     expect(records).toHaveLength(1) // only the Status line
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D6.2: StatusWithAnnotationHandler (was "D7")
+// Specimen: seed-2026-03-18 Interaction 1 — "Draft — awaiting human answers"
+// ---------------------------------------------------------------------------
+
+const ZOO_0062_EM_DASH = `# ADR-0010: Some Decision
+
+- **Status**: Draft — awaiting human answers
+- **Date**: 2026-04-17
+
+---
+
+## Context
+`
+
+const ZOO_0062_PAREN = `# ADR-0011: Another Decision
+
+- **Status**: Accepted (updated)
+
+---
+
+## Context
+`
+
+const ZOO_0062_COLON = `# ADR-0012: Yet Another Decision
+
+- Status: Draft: awaiting review
+
+---
+
+## Context
+`
+
+describe('D62StatusWithAnnotationHandler', () => {
+  const handler = new D62StatusWithAnnotationHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects em-dash annotation: "Draft — awaiting human answers"', () => {
+    const records = handler.detect(ZOO_0062_EM_DASH, parseResult)
+    expect(records).toHaveLength(1)
+    expect(records[0].handlerId).toBe('d6-2-status-with-annotation')
+  })
+
+  it('detects parenthetical annotation: "Accepted (updated)" — no short-decoratives exemption', () => {
+    const records = handler.detect(ZOO_0062_PAREN, parseResult)
+    expect(records).toHaveLength(1)
+  })
+
+  it('detects colon-extended annotation: "Draft: awaiting review" (unbold key too)', () => {
+    const records = handler.detect(ZOO_0062_COLON, parseResult)
+    expect(records).toHaveLength(1)
+  })
+
+  it('does NOT flag a plain status value with no annotation', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() strips the annotation, keeping the bold canonical form', () => {
+    const records = handler.detect(ZOO_0062_EM_DASH, parseResult)
+    const patch = handler.fix(ZOO_0062_EM_DASH, records[0])
+    expect(patch.replacement).toBe('- **Status**: Draft')
+  })
+
+  it('pedagogical message validates the impulse and offers a pattern menu (not prescription)', () => {
+    const records = handler.detect(ZOO_0062_EM_DASH, parseResult)
+    expect(records[0].description).toContain('not wrong to add')
+    expect(records[0].description).toContain('**Awaiting**:')
+    expect(records[0].description).toContain('**Scope Remaining**:')
+    expect(records[0].description).toContain('**Last Updated**:')
+  })
+
+  it('test discipline (ADR-0014): message contains the deviation-type slug', () => {
+    const records = handler.detect(ZOO_0062_EM_DASH, parseResult)
+    expect(records[0].description).toContain('STATUS_WITH_ANNOTATION')
+  })
+
+  it('does NOT confuse QST-body "- Status: answered" (D2 scope) with preamble Status', () => {
+    // D6.2 must stop scanning at the first ## heading — QST bodies are out of scope
+    const content = `# ADR-0001: Test
+
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: Something?
+- Status: answered (see ADR 4)
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
   })
 })
