@@ -12,7 +12,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
 import { AdrIndex } from './index/adrIndex'
-import { SeedIndex } from './index/seedIndex'
+import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
@@ -74,6 +74,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } else {
       updateDiagnostics(diagnosticCollection, event.adr);
     }
+    // ADR-0016: an ADR add/update may be the first cross-reference that
+    // resolves a seed's SEED_INCOMPLETE — recompute seed diagnostics too.
+    updateAllSeedDiagnostics(diagnosticCollection, seedIndex!, index!);
+  });
+
+  // ADR-0016 SEED_INCOMPLETE: recompute whenever the seed index changes
+  // (scoped to the current workspace only — Iteration 3 scoping note).
+  seedIndex.onChange(() => {
+    if (!diagnosticCollection) return;
+    updateAllSeedDiagnostics(diagnosticCollection, seedIndex!, index!);
   });
 
   // ── Status bar item ──────────────────────────────────────────────────────
@@ -700,6 +710,65 @@ function updateDiagnostics(
   }
 
   collection.set(uri, diags.length > 0 ? diags : []);
+}
+
+// ---------------------------------------------------------------------------
+// Seed diagnostics — SEED_INCOMPLETE (ADR-0016)
+// ---------------------------------------------------------------------------
+
+function updateAllSeedDiagnostics(
+  collection: vscode.DiagnosticCollection,
+  sidx: SeedIndex,
+  idx: AdrIndex,
+): void {
+  for (const seed of sidx.allSeeds()) {
+    updateSeedDiagnostics(collection, seed, idx);
+  }
+}
+
+function updateSeedDiagnostics(
+  collection: vscode.DiagnosticCollection,
+  seed: import('./parser/types').SeedFile,
+  idx: AdrIndex,
+): void {
+  const uri = vscode.Uri.file(seed.path);
+
+  if (!seed.derivedIntoHasPlaceholder) {
+    collection.delete(uri);
+    return;
+  }
+
+  const adrEntries = idx.allAdrs().map(a => {
+    let content = '';
+    try { content = fs.readFileSync(a.path, 'utf8'); } catch { /* unreadable — skip */ }
+    return { number: a.number, title: a.title, content };
+  });
+  const detected = findReferencingAdrs(seed.path, adrEntries);
+
+  if (detected.length === 0) {
+    collection.delete(uri);
+    return;
+  }
+
+  let derivedIntoLine = 0;
+  try {
+    const seedContent = fs.readFileSync(seed.path, 'utf8');
+    const lineIdx = seedContent.split('\n').findIndex(l => /^##\s+Derived Into/i.test(l.trim()));
+    if (lineIdx >= 0) derivedIntoLine = lineIdx;
+  } catch { /* fall back to line 0 */ }
+
+  const detectedList = detected.map(a => `  - ADR-${String(a.number).padStart(4, '0')}: ${a.title}`).join('\n');
+  const suggestedList = detected.map(a => `- ADR-${String(a.number).padStart(4, '0')}: ${a.title}`).join('\n');
+  const message = `SEED_INCOMPLETE: "Derived Into" section has placeholder text\n\n` +
+    `DETECTED DERIVED ADRs (found in index):\n${detectedList}\n\n` +
+    `SUGGESTED UPDATE:\n## Derived Into\n\n${suggestedList}\n\n` +
+    `SEE: docs/adr/0016-seed-incomplete-diagnostic.md`;
+
+  const range = new vscode.Range(derivedIntoLine, 0, derivedIntoLine, 999);
+  const diag = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Information);
+  diag.source = 'ADR Manager';
+  diag.code = 'SEED_INCOMPLETE';
+  collection.set(uri, [diag]);
 }
 
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {

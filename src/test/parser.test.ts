@@ -14,6 +14,7 @@ import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
+import { findReferencingAdrs } from '../index/seedIndex'
 
 // ---------------------------------------------------------------------------
 // Real-file fixtures — ground-truth benchmarks (user-reported failures)
@@ -1020,6 +1021,7 @@ OK, let's go with sessions. What about refresh tokens?
     const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
     expect(seed.isProcessed).toBe(false)
     expect(seed.derivedAdrs).toHaveLength(0)
+    expect(seed.derivedIntoHasPlaceholder).toBe(true) // ADR-0016 precondition
   })
 
   it('should report isProcessed=true and parse derived ADRs when section has real content', () => {
@@ -1034,6 +1036,7 @@ OK, let's go with sessions. What about refresh tokens?
     expect(seed.derivedAdrs[0].number).toBe(10)
     expect(seed.derivedAdrs[0].title).toBe('Open Questions UX')
     expect(seed.derivedAdrs[1].number).toBe(11)
+    expect(seed.derivedIntoHasPlaceholder).toBe(false)
   })
 
   it('should parse an older-style seed gracefully (no Thread section)', () => {
@@ -1059,6 +1062,42 @@ The open questions panel shows raw markdown.
     expect(seed.date).toBe('2026-03-07')
     expect(seed.threadEntries).toHaveLength(0)
     expect(seed.isProcessed).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SEED_INCOMPLETE cross-reference detection (ADR-0016 Decision 1, condition b)
+// ---------------------------------------------------------------------------
+
+describe('findReferencingAdrs (seedIndex.ts)', () => {
+  const seedPath = '/fake/docs/adr/seed-2026-03-07-bug-reports.md'
+
+  it('detects an ADR whose content mentions the seed filename stem', () => {
+    const adrs = [
+      { number: 10, title: 'Open Questions UX', content: 'Triggered by: seed-2026-03-07-bug-reports.md (Problems 1, 4, 6)' },
+      { number: 11, title: 'Seeds as First-Class Artifacts', content: 'No relation here.' },
+    ]
+    const detected = findReferencingAdrs(seedPath, adrs)
+    expect(detected).toEqual([{ number: 10, title: 'Open Questions UX' }])
+  })
+
+  it('returns an empty array when no ADR references the seed', () => {
+    const adrs = [{ number: 5, title: 'Unrelated Decision', content: 'Nothing about seeds here.' }]
+    expect(findReferencingAdrs(seedPath, adrs)).toEqual([])
+  })
+
+  it('detects multiple referencing ADRs, in index order', () => {
+    const adrs = [
+      { number: 10, title: 'Open Questions UX', content: 'seed-2026-03-07-bug-reports' },
+      { number: 11, title: 'Seeds as First-Class Artifacts', content: 'see seed-2026-03-07-bug-reports.md Problem 4' },
+    ]
+    expect(findReferencingAdrs(seedPath, adrs)).toHaveLength(2)
+  })
+
+  it('does not false-positive on a coincidental date-only match (requires the full stem)', () => {
+    // Only the bare date, not the full seed filename stem — should not match
+    const adrs = [{ number: 12, title: 'Some Decision', content: 'Discussed on 2026-03-07 during standup.' }]
+    expect(findReferencingAdrs(seedPath, adrs)).toEqual([])
   })
 })
 

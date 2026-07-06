@@ -98,7 +98,7 @@ export function parseSeed(content: string, filePath: string): SeedFile {
 
   // --- Derived Into ---
   const derivedSection = sections.find(s => s.heading.toLowerCase().includes('derived into'))
-  const { derivedAdrs, isProcessed } = parseDerivedInto(derivedSection?.content ?? '')
+  const { derivedAdrs, isProcessed, hasPlaceholder } = parseDerivedInto(derivedSection?.content ?? '')
 
   return {
     path: filePath,
@@ -110,6 +110,7 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     threadEntries,
     derivedAdrs,
     isProcessed,
+    derivedIntoHasPlaceholder: hasPlaceholder,
     checksum,
     parsedAt,
   }
@@ -241,7 +242,7 @@ function parseThreadEntries(content: string, sectionLineStart: number): SeedThre
 // Derived Into parsing
 // ---------------------------------------------------------------------------
 
-function parseDerivedInto(content: string): { derivedAdrs: DerivedAdr[]; isProcessed: boolean } {
+function parseDerivedInto(content: string): { derivedAdrs: DerivedAdr[]; isProcessed: boolean; hasPlaceholder: boolean } {
   const lines = content.split('\n')
   const derivedAdrs: DerivedAdr[] = []
   let hasPlaceholder = false
@@ -266,5 +267,5 @@ function parseDerivedInto(content: string): { derivedAdrs: DerivedAdr[]; isProce
   }
 
   const isProcessed = derivedAdrs.length > 0 && !hasPlaceholder
-  return { derivedAdrs, isProcessed }
+  return { derivedAdrs, isProcessed, hasPlaceholder }
 }

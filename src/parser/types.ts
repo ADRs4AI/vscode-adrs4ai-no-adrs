@@ -283,6 +283,12 @@ export interface SeedFile {
    * False if it still shows the default "(This seed has not yet been chunked into ADRs)" placeholder.
    */
   isProcessed: boolean;
+  /**
+   * True if the Derived Into section still contains the placeholder text,
+   * regardless of whether any real ADR references are also present.
+   * ADR-0016: precondition for the SEED_INCOMPLETE diagnostic.
+   */
+  derivedIntoHasPlaceholder: boolean;
   /** sha1 hex of raw file content */
   checksum: string;
   parsedAt: number;
