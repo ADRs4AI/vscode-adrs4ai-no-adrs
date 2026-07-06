@@ -211,7 +211,8 @@ export type ParseWarningCode =
   | 'ANSWER_WITHOUT_QST'       // **ANS:** found but no preceding QST block
   | 'NONSTANDARD_NUMBERING'    // ADR filename uses non-4-digit prefix (e.g., 001-foo.md)
   | 'DUPLICATE_NUMBER'         // two ADRs resolve to the same zero-padded number
-  | 'NONSTANDARD_QST_FORMAT';  // QST blocks use a non-standard format (### QST-N: or **Preference?**)
+  | 'NONSTANDARD_QST_FORMAT'   // QST blocks use a non-standard format (### QST-N: or **Preference?**)
+  | 'NONCANONICAL_NAV_CODE_HEADING'; // nav code heading recognized only case-insensitively or with a glued colon
 
 export interface ParseWarning {
   code: ParseWarningCode;

@@ -1680,4 +1680,83 @@ describe('Regression tests', () => {
     // Should not strip titles that don't start with an ADR prefix
     expect('Tech Stack'.replace(STRIP_RE, '').trim()).toBe('Tech Stack')
   })
+
+  // ADR-0024: `### qst:` (wrong case) and `### QST:Question` (glued colon) both
+  // failed NAV_CODE_HEADING_RE's exact-match, case-sensitive test. navCode came
+  // back undefined, collectQuestions() never built a Question, and the block
+  // vanished from the Open Questions panel with zero diagnostic trail — a
+  // worse failure mode than a wrong-but-loud parse warning. Fixed by accepting
+  // a case-insensitive, glued-colon-tolerant form (Postel's law) while always
+  // emitting NONCANONICAL_NAV_CODE_HEADING so the deviation is never silent.
+  it('should recognize a lowercase nav code heading ("### qst:") and still flag it', () => {
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## Questions
+
+### qst: Which database?
+
+- Status: unanswered
+- Why asking: Affects deployment complexity.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].text).toBe('Which database?')
+    const warning = adr.parseWarnings.find(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')
+    expect(warning).toBeDefined()
+    expect(warning?.message).toContain('QST: Which database?')
+  })
+
+  it('should recognize a glued-colon nav code heading ("### QST:Question") and still flag it', () => {
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## Questions
+
+### QST:Which database?
+
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].text).toBe('Which database?')
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(true)
+  })
+
+  it('should slug a glued-colon nav code heading canonically, not merge the code into the first word', () => {
+    // Without the tolerant fallback in sectionSlug(), slugify() on the raw
+    // heading text turns "QST:Which database?" into "qstwhich-database" —
+    // the nav code and first word fuse because the colon (the only separator)
+    // gets stripped before the space-collapse step ever sees it.
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## Questions
+
+### QST:Which database?
+
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    const qstSection = adr.sections.flatMap(s => [s, ...s.children]).find(s => s.navCode === 'QST')
+    expect(qstSection?.slug).toBe('qst-which-database')
+  })
+
+  it('should NOT flag a canonical "### QST: text" heading with NONCANONICAL_NAV_CODE_HEADING', () => {
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## Questions
+
+### QST: Which database?
+
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(false)
+  })
 })

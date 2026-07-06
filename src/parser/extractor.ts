@@ -54,6 +54,17 @@ const MADR_STANDARD_SIGNALS = [
 /** Regex for nav code headings (### QST: ..., ### NOT: ..., etc.) */
 const NAV_CODE_HEADING_RE = /^(QST|ANS|COD|API|FIL|DOC|NOT):\s+(.*)$/;
 
+// ADR-0024: the strict form above is exact-match, case-sensitive, and requires
+// whitespace after the colon. A heading that only deviates in case (### qst:)
+// or has a glued colon (### QST:Question) matched neither NAV_CODE_HEADING_RE
+// nor NONSTANDARD_QST_HEADING_RE (below, which only catches "### QST-N:"), so
+// navCode came back undefined and the question silently vanished from the
+// Open Questions panel — no ParseWarning, no diagnostic, nothing (Postel's
+// law violation: the parser should accept liberally and flag, not drop).
+// This tolerant form recovers the question; NONCANONICAL_NAV_CODE_HEADING
+// (below) keeps the deviation from disappearing silently.
+const NAV_CODE_HEADING_TOLERANT_RE = /^(QST|ANS|COD|API|FIL|DOC|NOT):\s*(.*)$/i;
+
 export function detectFormat(tokens: ReturnType<typeof tokenize>): FormatDetectionResult {
   const headings = tokens
     .filter((t): t is ReturnType<typeof tokenize>[number] & { kind: 'heading' } => t.kind === 'heading')
@@ -241,7 +252,11 @@ export function slugify(text: string): string {
 
 function sectionSlug(heading: string): string {
   // Nav code headings: "QST: What is the scope?" → "qst-what-is-the-scope"
-  const navMatch = heading.match(NAV_CODE_HEADING_RE);
+  // Falls back to the tolerant match so a glued colon ("QST:What is it") still
+  // slugs as "qst-what-is-it" instead of merging into "qstwhat-is-it" — the
+  // slug must stay canonical regardless of which form the heading used
+  // (deep-link stability, ADR-0002), independent of the ParseWarning below.
+  const navMatch = heading.match(NAV_CODE_HEADING_RE) ?? heading.match(NAV_CODE_HEADING_TOLERANT_RE);
   if (navMatch) {
     return slugify(`${navMatch[1].toLowerCase()}-${navMatch[2]}`);
   }
@@ -279,7 +294,22 @@ const ANCHOR_COMMENT_RE = /^@adr-anchor:\s+(.+)$/;
 
 function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWarning[]): AdrSection {
   const heading = raw.heading.text;
-  const navMatch = heading.match(NAV_CODE_HEADING_RE);
+  let navMatch = heading.match(NAV_CODE_HEADING_RE);
+
+  // Tolerant fallback (ADR-0024): recover navCode for headings that only
+  // deviate in case or colon spacing, so the question doesn't just disappear.
+  // The deviation itself is still surfaced — accept liberally, warn always.
+  if (!navMatch) {
+    const tolerant = heading.match(NAV_CODE_HEADING_TOLERANT_RE);
+    if (tolerant) {
+      navMatch = tolerant;
+      warnings.push({
+        code: 'NONCANONICAL_NAV_CODE_HEADING',
+        message: `Heading "${heading}" was recognized as ${tolerant[1].toUpperCase()} but doesn't match the canonical "${tolerant[1].toUpperCase()}: text" form (case or colon spacing differs). Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "${tolerant[1].toUpperCase()}: ${tolerant[2].trim()}"`,
+        line: raw.heading.line,
+      });
+    }
+  }
 
   let slug = sectionSlug(heading);
   let anchorOverride: string | undefined;
@@ -320,7 +350,7 @@ function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWar
   return {
     level: raw.heading.level,
     heading,
-    navCode: navMatch ? navMatch[1] as NavCode : undefined,
+    navCode: navMatch ? navMatch[1].toUpperCase() as NavCode : undefined,
     navCodeText: navMatch ? navMatch[2].trim() : undefined,
     body,
     lineStart: raw.heading.line,
