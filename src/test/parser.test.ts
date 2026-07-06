@@ -14,7 +14,7 @@ import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
-import { findReferencingAdrs } from '../index/seedIndex'
+import { findReferencingAdrs, looksLikeSeedByContent } from '../index/seedIndex'
 
 // ---------------------------------------------------------------------------
 // Real-file fixtures — ground-truth benchmarks (user-reported failures)
@@ -1275,6 +1275,40 @@ describe('findReferencingAdrs (seedIndex.ts)', () => {
     // Only the bare date, not the full seed filename stem — should not match
     const adrs = [{ number: 12, title: 'Some Decision', content: 'Discussed on 2026-03-07 during standup.' }]
     expect(findReferencingAdrs(seedPath, adrs)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// looksLikeSeedByContent (seedIndex.ts) — ADR-0016 Iteration 2 precondition
+// (Fable 5, 2026-05-24): seeds with drifted filenames (not "seed-*.md") are
+// invisible to a filename-only scan, so SEED_INCOMPLETE can never fire for
+// them. This is the content-based fallback half of that precondition.
+// ---------------------------------------------------------------------------
+
+describe('looksLikeSeedByContent (seedIndex.ts)', () => {
+  it('detects a "# SEED:" title regardless of filename', () => {
+    const content = '# SEED: Async question queue and temporal provenance\n\n- **Date**: 2026-07-05\n'
+    expect(looksLikeSeedByContent(content)).toBe(true)
+  })
+
+  it('is case-insensitive on the SEED: prefix', () => {
+    expect(looksLikeSeedByContent('# seed: lowercase title\n')).toBe(true)
+  })
+
+  it('tolerates a leading blank line (same tolerance as parseSeed)', () => {
+    expect(looksLikeSeedByContent('\n# SEED: Leading blank line\n')).toBe(true)
+  })
+
+  it('does NOT flag an ADR title as a seed', () => {
+    expect(looksLikeSeedByContent('# ADR-0001: Storage Backend\n')).toBe(false)
+  })
+
+  it('does NOT flag a DEBRIEF title as a seed', () => {
+    expect(looksLikeSeedByContent('# DEBRIEF-001: In-progress panel answers destroyed\n')).toBe(false)
+  })
+
+  it('does NOT flag content with no heading in the first 5 lines', () => {
+    expect(looksLikeSeedByContent('Just some text.\n\nNo heading here at all within the scan window.\n')).toBe(false)
   })
 })
 

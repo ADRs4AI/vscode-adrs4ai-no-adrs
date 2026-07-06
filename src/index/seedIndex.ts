@@ -44,6 +44,31 @@ export function findReferencingAdrs(seedPath: string, adrs: AdrRefEntry[]): Dete
     .map(a => ({ number: a.number, title: a.title }))
 }
 
+/** ADR filename convention: digits followed by "-" or "_" (matches AdrIndex's own filter). */
+const ADR_FILENAME_RE = /^\d+[-_]/
+
+/**
+ * ADR-0016 Iteration 2 precondition (Fable 5, 2026-05-24): seeds with
+ * non-standard filenames (not "seed-YYYY-MM-DD-*.md") are invisible to a
+ * filename-only scan, so SEED_INCOMPLETE can never fire for exactly the
+ * seeds most likely to have a stale "Derived Into" section. Jérémie's ANS
+ * agreed both directions of the seed<->ADR reference need to be parseable.
+ * This is the "detect seedness from content as well as filename" half of
+ * that precondition (the alternative to full D15.1 filename tolerance +
+ * rename Quick Fix, which is a separate, larger normalizer feature).
+ *
+ * Pure/testable: takes content, not a path, so no fs dependency here.
+ */
+export function looksLikeSeedByContent(content: string): boolean {
+  const lines = content.split('\n')
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    if (lines[i].startsWith('# ')) {
+      return /^SEED:/i.test(lines[i].slice(2).trim())
+    }
+  }
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // SeedIndex class
 // ---------------------------------------------------------------------------
@@ -78,8 +103,24 @@ export class SeedIndex {
     if (!fs.existsSync(adrDir)) return []
 
     const entries = fs.readdirSync(adrDir)
-    const seedFiles = entries
-      .filter(name => name.endsWith('.md') && name.startsWith('seed-'))
+
+    const byFilename = entries.filter(name => name.endsWith('.md') && name.startsWith('seed-'))
+
+    // Content-based fallback (ADR-0016 Iteration 2 precondition): a .md file
+    // that isn't ADR-numbered and isn't already matched by filename might
+    // still be a seed with a drifted filename — check its title.
+    const candidates = entries.filter(name =>
+      name.endsWith('.md') && !name.startsWith('seed-') && !ADR_FILENAME_RE.test(name),
+    )
+    const byContent = candidates.filter(name => {
+      try {
+        return looksLikeSeedByContent(fs.readFileSync(path.join(adrDir, name), 'utf-8'))
+      } catch {
+        return false
+      }
+    })
+
+    const seedFiles = [...byFilename, ...byContent]
       .map(name => path.join(adrDir, name))
       .sort()
 
