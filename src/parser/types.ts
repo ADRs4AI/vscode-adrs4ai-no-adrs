@@ -124,6 +124,25 @@ export interface InlineNavCode {
 }
 
 // ---------------------------------------------------------------------------
+// Recommendations (ADR-0019: Multi-Recommendation Data Model — ORJ as Structure)
+// ---------------------------------------------------------------------------
+
+export interface Recommendation {
+  /** Model slug ("Fable 5", "Sonnet 4.6") or human name */
+  author?: string;
+  /** True when author was inferred from the ADR's Deciders line (legacy `**My recommendation**:` form) */
+  authorInferred?: boolean;
+  /** ISO date when present in the attribution parens (protocol form only) */
+  date?: string;
+  /** Body, including justification. For protocol form, excludes the attribution-only first line. */
+  text: string;
+  /** Bold first sentence — the skimmable lean — when present at the start of `text` */
+  pick?: string;
+  /** Line number of the block's marker (**Recommendation**:/**My recommendation**:) */
+  line: number;
+}
+
+// ---------------------------------------------------------------------------
 // Questions (QST blocks)
 // ---------------------------------------------------------------------------
 
@@ -142,13 +161,12 @@ export interface Question {
   need?: string;
   recommendation?: string;
   /**
-   * ADR-0019 bridge: recommendation blocks split by source order (one entry
-   * per **Recommendation**:/**My recommendation**: marker), for stacked
-   * per-block rendering. `recommendation` above stays the flat concatenation
-   * for backward compatibility. Full author/date attribution is a separate,
-   * not-yet-implemented ADR-0019 deliverable — this is display-mode only.
+   * ADR-0019: recommendation blocks split by source order (one entry per
+   * **Recommendation**:/**My recommendation**: marker), each attributed.
+   * `recommendation` above stays the flat concatenation for backward
+   * compatibility with older consumers.
    */
-  recommendations?: string[];
+  recommendations?: Recommendation[];
   /** Pre-recommendation body: proposed grammars, option lists, analysis —
    *  unrecognized content that appears before **My recommendation**. */
   rawBody?: string;

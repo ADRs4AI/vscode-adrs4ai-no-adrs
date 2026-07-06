@@ -81,6 +81,17 @@ describe('Webview script block syntax', () => {
     expect(script).toContain('earlier recommendation')
     expect(script).toContain('recommendationCollapseThreshold')
   })
+
+  it('ADR-0019: renders an attribution chip per recommendation, distinguishing inferred authors', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('function authorColor(author)')
+    expect(script).toContain('rec-chip')
+    expect(script).toContain('rec-chip-inferred')
+    expect(script).toContain('rec.authorInferred')
+    expect(PANEL_SRC).toContain('.rec-chip{')
+    expect(PANEL_SRC).toContain('.recommendation.rec-recent{')
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@
 import * as vscode from 'vscode'
 import { execSync } from 'child_process'
 import type { AdrIndex } from '../index/adrIndex'
+import type { Recommendation } from '../parser/types'
 import { bodyMaxWidthCss } from './panelSettings'
 
 // ---------------------------------------------------------------------------
@@ -27,8 +28,8 @@ interface WebviewQuestion {
   whyAsking?: string
   need?: string
   recommendation?: string
-  /** ADR-0019 display bridge: recommendation split into per-block text, source order. */
-  recommendations?: string[]
+  /** ADR-0019: recommendation blocks, source order, each attributed. */
+  recommendations?: Recommendation[]
   body?: string
   bodyPost?: string
   /** ADR-0010: Markdown content of sections before ## Questions (Human Context + AI Interpretation) */
@@ -469,6 +470,24 @@ body{
   margin-bottom:20px;
   line-height:1.5;
 }
+/* ADR-0019: most-recent recommendation in a stack is visually emphasized */
+.recommendation.rec-recent{
+  border-left-width:4px;
+}
+/* ADR-0019: attribution chip — color deterministic from author slug */
+.rec-chip{
+  display:inline-block;
+  font-size:10px;font-weight:700;
+  letter-spacing:.03em;
+  padding:2px 8px;
+  border-radius:10px;
+  margin-bottom:6px;
+  color:#fff;
+  background:var(--chip-color, var(--vscode-badge-background));
+}
+.rec-chip-inferred{
+  border-bottom:1px dotted rgba(255,255,255,.7);
+}
 /* Markdown HTML rendering inside why/recommendation/body containers */
 .why code,.recommendation code,.qst-body code{
   font-family:var(--vscode-editor-font-family,monospace);
@@ -820,28 +839,58 @@ function renderMarkdown(md) {
 }
 
 // ---------------------------------------------------------------------------
-// Stacked recommendation rendering (ADR-0010 ANS + ADR-0019 display bridge)
+// Stacked recommendation rendering (ADR-0010 ANS + ADR-0019 attribution model)
 // Default: every recommendation stays expanded ("thinking traces" — Jérémie).
 // When adrManager.panel.recommendationCollapseThreshold (N) > 0 and there
 // are more than N blocks, older-than-N collapse behind a disclosure; the
-// most recent N always stay expanded.
+// most recent N always stay expanded. Each block carries an attribution
+// chip; chip color is deterministic from the author slug; authorInferred
+// (legacy **My recommendation**: blocks) gets a dotted-underline affordance.
 // ---------------------------------------------------------------------------
+function escText(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function authorColor(author) {
+  if (!author) return 'var(--vscode-descriptionForeground)';
+  let hash = 0;
+  for (let i = 0; i < author.length; i++) hash = (hash * 31 + author.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return 'hsl(' + hue + ', 55%, 40%)';
+}
+
+function renderRecommendationBlock(rec, isMostRecent) {
+  const author = rec.author || 'Recommendation';
+  const color = authorColor(rec.author);
+  const dateStr = rec.date ? ' · ' + escText(rec.date) : '';
+  const inferredClass = rec.authorInferred ? ' rec-chip-inferred' : '';
+  const inferredTitle = rec.authorInferred ? ' title="Author inferred from the ADR Deciders field"' : '';
+  const emphClass = isMostRecent ? ' rec-recent' : '';
+  return '<div class="recommendation' + emphClass + '">' +
+    '<span class="rec-chip' + inferredClass + '" style="--chip-color:' + color + '"' + inferredTitle + '>' +
+    escText(author) + dateStr + '</span>' +
+    renderMarkdown(rec.text) +
+    '</div>';
+}
+
 function renderRecommendations(list) {
   const wrap = $id('rec-wrap');
   if (!list || list.length === 0) { wrap.innerHTML = ''; return; }
 
   const threshold = recCollapseThreshold > 0 ? recCollapseThreshold : list.length;
-  const older = list.slice(0, Math.max(0, list.length - threshold));
-  const recent = list.slice(Math.max(0, list.length - threshold));
+  const splitAt = Math.max(0, list.length - threshold);
+  const older = list.slice(0, splitAt);
+  const recent = list.slice(splitAt);
+  const lastIdx = list.length - 1;
 
   let html = '';
   if (older.length > 0) {
     const label = older.length + ' earlier recommendation' + (older.length > 1 ? 's' : '');
     html += '<details class="ctx-details rec-older"><summary>' + label + '</summary><div class="ctx-body">' +
-      older.map(r => '<div class="recommendation">' + renderMarkdown(r) + '</div>').join('') +
+      older.map((r, i) => renderRecommendationBlock(r, i === lastIdx)).join('') +
       '</div></details>';
   }
-  html += recent.map(r => '<div class="recommendation">' + renderMarkdown(r) + '</div>').join('');
+  html += recent.map((r, i) => renderRecommendationBlock(r, (splitAt + i) === lastIdx)).join('');
   wrap.innerHTML = html;
 }
 
@@ -959,7 +1008,7 @@ function render() {
   if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
   else { $id('body').style.display = 'none'; }
 
-  renderRecommendations(q.recommendations && q.recommendations.length ? q.recommendations : (q.recommendation ? [q.recommendation] : []));
+  renderRecommendations(q.recommendations && q.recommendations.length ? q.recommendations : (q.recommendation ? [{ text: q.recommendation }] : []));
 
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
   else { $id('body-post').style.display = 'none'; }

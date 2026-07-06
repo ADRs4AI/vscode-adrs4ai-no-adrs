@@ -332,6 +332,36 @@ describe('Real-file cross-check: ADR-0003 and ADR-0008 parse correctly from disk
     expect(q?.recommendation).toContain('(by Fable 5, 2026-05-24)')
   })
 
+  it('ADR-0019: ADR-0003 deep-link QST splits into attributed Recommendation objects from disk', () => {
+    const content = readAdr('0003-mcp-server-design.md')
+    const adr = parseAdr(content, resolve(ADR_ROOT, '0003-mcp-server-design.md'))
+    const q = adr.questions.find(q => q.text.includes('deep link'))
+    const recs = q?.recommendations
+    expect(recs && recs.length).toBeGreaterThanOrEqual(2)
+    const sonnet = recs!.find(r => r.author === 'Sonnet 4.6')
+    const fable = recs!.find(r => r.author === 'Fable 5')
+    expect(sonnet?.date).toBe('2026-03-05')
+    expect(sonnet?.text).toContain('Speccing local + global now costs little')
+    expect(fable?.date).toBe('2026-05-24')
+  })
+
+  it('ADR-0019: ADR-0016 QST with @adr-anchor comment still parses stacked recommendations correctly', () => {
+    // Acceptance criterion from Facet's dispatch: <!-- @adr-anchor: ... --> on a
+    // QST/recommendation block must continue to work identically to today.
+    const content = readAdr('0016-seed-incomplete-diagnostic.md')
+    const adr = parseAdr(content, resolve(ADR_ROOT, '0016-seed-incomplete-diagnostic.md'))
+    const q = adr.questions.find(q => q.text.includes('SEED_INCOMPLETE fire'))
+    expect(q?.slug).toBe('seed-incomplete-trigger') // anchor override still resolves
+    const recs = q?.recommendations
+    expect(recs && recs.length).toBeGreaterThanOrEqual(2)
+    const sonnet = recs!.find(r => r.author === 'Sonnet 4.6')
+    const fable = recs!.find(r => r.author === 'Fable 5')
+    expect(sonnet?.date).toBe('2026-04-17')
+    expect(fable?.date).toBe('2026-05-24')
+    // Fable's recommendation opens with a bold lean — the "pick"
+    expect(fable?.pick).toBeTruthy()
+  })
+
   it('ADR-0008: local reference QST has grammar in rawBody from disk', () => {
     const content = readAdr('0008-deep-link-protocol.md')
     const adr = parseAdr(content, resolve(ADR_ROOT, '0008-deep-link-protocol.md'))
@@ -837,10 +867,10 @@ Overtaken by events — recommend closing.
     expect(rec).toContain('Overtaken by events')
   })
 
-  it('should split stacked protocol-form recommendations into recommendations[] (ADR-0019 display bridge)', () => {
-    // Same fixture as the accumulation test above, but asserting the new
-    // per-block array used for stacked panel rendering (item 7 of the
-    // diagnostics+UI batch) — distinct blocks, not one flat string.
+  it('ADR-0019: splits stacked protocol-form recommendations into attributed Recommendation objects', () => {
+    // Same fixture as the accumulation test above, but asserting the
+    // per-block, per-author array used for stacked panel rendering with
+    // attribution chips (ADR-0019) — distinct blocks, not one flat string.
     const content = `# ADR-0002: Parser
 
 - **Status**: Draft
@@ -864,14 +894,64 @@ Overtaken by events — recommend closing.
     const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
     const recs = adr.questions[0].recommendations
     expect(recs).toHaveLength(2)
-    expect(recs![0]).toContain('(by Sonnet 4.6, 2026-03-05)')
-    expect(recs![0]).toContain('Original proposal text.')
-    expect(recs![0]).not.toContain('Fable 5')
-    expect(recs![1]).toContain('(by Fable 5, 2026-05-24)')
-    expect(recs![1]).toContain('Overtaken by events')
+    expect(recs![0]).toMatchObject({ author: 'Sonnet 4.6', date: '2026-03-05', authorInferred: undefined })
+    expect(recs![0].text).toBe('Original proposal text.')
+    expect(recs![1]).toMatchObject({ author: 'Fable 5', date: '2026-05-24' })
+    expect(recs![1].text).toContain('Overtaken by events')
   })
 
-  it('recommendations[] has a single entry for a single (non-stacked) recommendation', () => {
+  it('ADR-0019: "(by Author)" protocol form with no date leaves date undefined', () => {
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**Recommendation**: (by Sonnet 4.6)
+
+Confirm as-is.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    const recs = adr.questions[0].recommendations
+    expect(recs).toHaveLength(1)
+    expect(recs![0].author).toBe('Sonnet 4.6')
+    expect(recs![0].date).toBeUndefined()
+    expect(recs![0].authorInferred).toBeUndefined()
+  })
+
+  it('ADR-0019 QST-1: legacy "**My recommendation**:" infers author from Deciders, marked authorInferred', () => {
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+- **Deciders**: Jérémie Lumbroso, Sonnet 4.6 (1M)
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**My recommendation**: Option A with HTML comment override as opt-in.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    const recs = adr.questions[0].recommendations
+    expect(recs).toHaveLength(1)
+    expect(recs![0]).toMatchObject({
+      author: 'Sonnet 4.6', // "Sonnet 4.6 (1M)" → stripped parenthetical
+      authorInferred: true,
+      text: 'Option A with HTML comment override as opt-in.',
+    })
+  })
+
+  it('ADR-0019: legacy recommendation with no AI decider leaves author/authorInferred undefined', () => {
     const content = `# ADR-0002: Parser
 
 - **Status**: Draft
@@ -887,7 +967,34 @@ Overtaken by events — recommend closing.
 [Fill this in]
 `
     const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
-    expect(adr.questions[0].recommendations).toEqual(['Option A with HTML comment override as opt-in.'])
+    const recs = adr.questions[0].recommendations
+    expect(recs).toHaveLength(1)
+    expect(recs![0].author).toBeUndefined()
+    expect(recs![0].authorInferred).toBeUndefined()
+    expect(recs![0].text).toBe('Option A with HTML comment override as opt-in.')
+  })
+
+  it('ADR-0019: extracts the bold-first-sentence "pick" when present', () => {
+    const content = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**Recommendation**: (by Fable 5, 2026-06-10)
+
+**B — infer from Deciders, marked as inferred; explicitly not C.** The inference is almost always correct.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-parser.md')
+    const recs = adr.questions[0].recommendations
+    expect(recs![0].pick).toBe('B — infer from Deciders, marked as inferred; explicitly not C.')
+    expect(recs![0].text).toContain('The inference is almost always correct.')
   })
 
   it('recommendations[] is undefined when there is no recommendation block', () => {

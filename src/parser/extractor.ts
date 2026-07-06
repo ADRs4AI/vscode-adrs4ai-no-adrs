@@ -26,6 +26,7 @@ import type {
   ParseWarningCode,
   Question,
   QuestionAnswer,
+  Recommendation,
 } from './types'
 import { KNOWN_STATUSES } from './types'
 
@@ -403,9 +404,26 @@ const NEED_RE = /^-\s+Need:\s+(.+)$/;
 // Matches the legacy form (**My recommendation**: text, ADR-0002 Iteration 3)
 // and the protocol form (**Recommendation**: (by Author, date), ADR-0019).
 const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*:\s*(.*)/;
-// Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)".
-// Their body spans blank lines (paragraphs), unlike legacy single-paragraph prose.
-const REC_ATTRIBUTION_ONLY_RE = /^\((?:by|from)[^)]*\)\s*$/;
+// Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)"
+// or "(from Sonnet 4.6)". Captures author + optional date. Their body spans
+// blank lines (paragraphs), unlike legacy single-paragraph prose.
+const REC_ATTRIBUTION_RE = /^\((?:by|from)\s+([^,)]+?)(?:,\s*(.+))?\)\s*$/i;
+// ADR-0019 QST-1: legacy `**My recommendation**:` blocks infer attribution
+// from the ADR's Deciders line (single-AI ADRs dominate the legacy corpus).
+const AI_AUTHOR_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral|fable/i;
+
+function inferAuthorFromDeciders(deciders: string[]): string | undefined {
+  const aiName = deciders.find(d => AI_AUTHOR_RE.test(d));
+  if (!aiName) return undefined;
+  // "Sonnet 4.6 (1M)" → "Sonnet 4.6" — strip a trailing parenthetical annotation.
+  return aiName.replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
+/** Bold first sentence at the start of a recommendation's text — the skimmable "lean". */
+function extractPick(text: string): string | undefined {
+  const m = text.match(/^\*\*([^*]+)\*\*/);
+  return m ? m[1].trim() : undefined;
+}
 
 // ADR-0012: Detect non-standard QST formats like "### QST-1:" or "**Your preference?**"
 const NONSTANDARD_QST_HEADING_RE = /^QST-\d+:/i;
@@ -424,7 +442,7 @@ function detectNonstandardQstFormat(tokens: ReturnType<typeof tokenize>): boolea
   return false;
 }
 
-function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string): Question {
+function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string, deciders: string[]): Question {
   const lines = section.body.split('\n');
   let statusText = 'unanswered';
   let whyAsking: string | undefined;
@@ -448,10 +466,13 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
   let inNeed = false;
   const answerLines: string[] = [];
   const recommendationLines: string[] = [];
-  // ADR-0019 display bridge: index into recommendationLines where each new
+  // ADR-0019: index into recommendationLines where each new
   // **Recommendation**:/**My recommendation**: block starts, so the flat
-  // array can be re-split into per-block text for stacked rendering.
+  // array can be re-split into per-block Recommendation objects.
   const recommendationBlockStarts: number[] = [];
+  // Parallel to recommendationBlockStarts: whether that block used the
+  // protocol form (attribution-only first line) and the marker's source line.
+  const recommendationBlockMeta: { protocolForm: boolean; line: number }[] = [];
   const rawBodyLinesPre: string[] = [];
   const rawBodyLinesPost: string[] = [];
   let answerAuthor: string | undefined;
@@ -500,7 +521,8 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
       inRecommendation = true;
       recommendationBlockStarts.push(recommendationLines.length);
       const firstLine = recMatch[1].trim();
-      recProtocolForm = REC_ATTRIBUTION_ONLY_RE.test(firstLine);
+      recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
+      recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine });
       if (firstLine) recommendationLines.push(firstLine);
       continue;
     }
@@ -579,13 +601,42 @@ function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string
     recommendation = recommendationLines.join('\n').trim() || undefined;
   }
 
-  let recommendations: string[] | undefined;
+  let recommendations: Recommendation[] | undefined;
   if (recommendationBlockStarts.length > 0) {
     const bounds = [...recommendationBlockStarts, recommendationLines.length];
-    const blocks: string[] = [];
+    const blocks: Recommendation[] = [];
     for (let i = 0; i < recommendationBlockStarts.length; i++) {
-      const text = recommendationLines.slice(bounds[i], bounds[i + 1]).join('\n').trim();
-      if (text) blocks.push(text);
+      const meta = recommendationBlockMeta[i];
+      const rawLines = recommendationLines.slice(bounds[i], bounds[i + 1]);
+
+      let author: string | undefined;
+      let authorInferred: boolean | undefined;
+      let date: string | undefined;
+      let bodyLines = rawLines;
+
+      if (meta.protocolForm) {
+        const attrMatch = (rawLines[0] ?? '').match(REC_ATTRIBUTION_RE);
+        if (attrMatch) {
+          author = attrMatch[1].trim();
+          date = attrMatch[2]?.trim();
+        }
+        bodyLines = rawLines.slice(1);
+      } else {
+        author = inferAuthorFromDeciders(deciders);
+        if (author !== undefined) authorInferred = true;
+      }
+
+      const text = bodyLines.join('\n').trim();
+      if (!text) continue;
+
+      blocks.push({
+        author,
+        authorInferred,
+        date,
+        text,
+        pick: extractPick(text),
+        line: meta.line,
+      });
     }
     if (blocks.length > 0) recommendations = blocks;
   }
@@ -785,7 +836,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   function collectQuestions(sectionList: AdrSection[]): void {
     for (const s of sectionList) {
       if (s.navCode === 'QST') {
-        questions.push(extractQuestion(s, adrNumber, filePath));
+        questions.push(extractQuestion(s, adrNumber, filePath, metadata.deciders));
       }
       collectQuestions(s.children);
     }
