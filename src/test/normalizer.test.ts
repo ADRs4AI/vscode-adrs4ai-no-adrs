@@ -18,6 +18,7 @@ import { D6NonStandardPreambleFieldHandler } from '../normalizer/handlers/d6-non
 import { D62StatusWithAnnotationHandler } from '../normalizer/handlers/d6-2-status-with-annotation'
 import { D65MissingBoldPreambleFieldHandler } from '../normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { D96NoncanonicalNavCodeHeadingHandler } from '../normalizer/handlers/d9-6-noncanonical-nav-code-heading'
+import { D95MissingRecommendationHandler } from '../normalizer/handlers/d9-5-missing-recommendation'
 import { parseAdr } from '../parser/extractor'
 
 // ---------------------------------------------------------------------------
@@ -773,5 +774,114 @@ describe('D96NoncanonicalNavCodeHeadingHandler', () => {
     const adr = parseAdr(normalized, '/fake/zoo/0013-storage.md')
     expect(adr.questions).toHaveLength(1)
     expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D9.5: MissingRecommendationHandler (ADR-0019 QST-2, answered)
+// ---------------------------------------------------------------------------
+
+const ZOO_0095_NO_RECOMMENDATION = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+- Why asking: Affects stability of cross-file references.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+
+const ZOO_0095_ANSWERED_NO_RECOMMENDATION = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: answered
+
+**ANS:** (by Jérémie)
+Went with option A.
+`
+
+const ZOO_0095_HAS_RECOMMENDATION = `# ADR-0002: Parser
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which deep-link approach?
+- Status: unanswered
+
+**Recommendation**: (by Sonnet 4.6)
+
+Use option A.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+
+describe('D95MissingRecommendationHandler', () => {
+  const handler = new D95MissingRecommendationHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('fires on an open QST with no Recommendation block', () => {
+    const adr = parseAdr(ZOO_0095_NO_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_NO_RECOMMENDATION, adr)
+    expect(records).toHaveLength(1)
+    expect(records[0].handlerId).toBe('d9-5-missing-recommendation')
+  })
+
+  it('does NOT fire on an answered QST with no Recommendation block (QST-2: open-only)', () => {
+    const adr = parseAdr(ZOO_0095_ANSWERED_NO_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_ANSWERED_NO_RECOMMENDATION, adr)
+    expect(records).toHaveLength(0)
+  })
+
+  it('does NOT fire on an open QST that already has a Recommendation block', () => {
+    const adr = parseAdr(ZOO_0095_HAS_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_HAS_RECOMMENDATION, adr)
+    expect(records).toHaveLength(0)
+  })
+
+  it('message is verbatim per ADR-0019 (Socratic, not paraphrased)', () => {
+    const adr = parseAdr(ZOO_0095_NO_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_NO_RECOMMENDATION, adr)
+    expect(records[0].description).toContain('MISSING_RECOMMENDATION: this open QST has no Recommendation block.')
+    expect(records[0].description).toContain('asking without a position shifts the entire cognitive load to the human.')
+    expect(records[0].description).toContain('**Recommendation**: (by [your model name])')
+    expect(records[0].description).toContain('ORJ: never divorce')
+  })
+
+  it('test discipline (ADR-0014): message contains the deviation-type slug', () => {
+    const adr = parseAdr(ZOO_0095_NO_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_NO_RECOMMENDATION, adr)
+    expect(records[0].description).toContain('MISSING_RECOMMENDATION')
+  })
+
+  it('fix() inserts the SUGGESTED scaffold immediately before **ANS:**', () => {
+    const adr = parseAdr(ZOO_0095_NO_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_NO_RECOMMENDATION, adr)
+    const patch = handler.fix(ZOO_0095_NO_RECOMMENDATION, records[0])
+    expect(patch.replacement).toContain('**Recommendation**: (by [your model name])')
+    expect(patch.replacement.endsWith('**ANS:** (by Jérémie)')).toBe(true)
+  })
+
+  it('applying process() makes the QST have a parseable recommendation', () => {
+    const adr = parseAdr(ZOO_0095_NO_RECOMMENDATION, '/fake/0002.md')
+    const patches = handler.process(ZOO_0095_NO_RECOMMENDATION, adr)
+    const normalized = applyPatches(ZOO_0095_NO_RECOMMENDATION, patches)
+    const reparsed = parseAdr(normalized, '/fake/0002.md')
+    expect(reparsed.questions[0].recommendations?.length).toBeGreaterThan(0)
+  })
+
+  it('is self-quieting: does not fire once the coordinator-applied fix scaffold is filled and QST answered', () => {
+    const adr = parseAdr(ZOO_0095_ANSWERED_NO_RECOMMENDATION, '/fake/0002.md')
+    const records = handler.detect(ZOO_0095_ANSWERED_NO_RECOMMENDATION, adr)
+    expect(records).toHaveLength(0)
   })
 })

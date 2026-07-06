@@ -24,6 +24,7 @@ import { D6NonStandardPreambleFieldHandler } from './normalizer/handlers/d6-non-
 import { D62StatusWithAnnotationHandler } from './normalizer/handlers/d6-2-status-with-annotation'
 import { D65MissingBoldPreambleFieldHandler } from './normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { D96NoncanonicalNavCodeHeadingHandler } from './normalizer/handlers/d9-6-noncanonical-nav-code-heading'
+import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-missing-recommendation'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -37,6 +38,7 @@ const normalizerCoordinator = new Coordinator([
   new D62StatusWithAnnotationHandler(),
   new D65MissingBoldPreambleFieldHandler(),
   new D96NoncanonicalNavCodeHeadingHandler(),
+  new D95MissingRecommendationHandler(),
 ])
 
 // ---------------------------------------------------------------------------
