@@ -25,7 +25,7 @@ const COLLAPSED_ANS_RE = /^\*\*ANS:\*\*\s*\(\s*fill\s*(this\s*)?in\s*\)\s*$/i
 
 export class D4CollapsedAnsBlockHandler implements ViolationHandler {
   readonly id = 'd4-collapsed-ans-block'
-  readonly description = '**ANS:** (fill in) collapsed onto one line — causes question to be treated as answered'
+  readonly description = '**ANS:** (fill in) collapsed onto one line — causes question to be treated as answered\n\nSEE: docs/adr/0013-normalizer-format-conformance.md'
 
   detect(content: string, _parseResult: AdrFile): ViolationRecord[] {
     const lines = content.split('\n')

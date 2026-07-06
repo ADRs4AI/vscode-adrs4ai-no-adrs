@@ -211,6 +211,10 @@ describe('D4CollapsedAnsBlockHandler', () => {
     const openQuestions = adr.questions.filter(q => !q.isAnswered)
     expect(openQuestions.length).toBeGreaterThan(0)
   })
+
+  it('ADR-0015 interim: description includes a SEE reference to the governing ADR', () => {
+    expect(handler.description).toContain('SEE: docs/adr/0013-normalizer-format-conformance.md')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -264,6 +268,10 @@ describe('D2BoldStatusFieldHandler', () => {
     // ADR header bold status is PRESERVED (correct format)
     expect(normalized).toContain('- **Status**: Draft')
   })
+
+  it('ADR-0015 interim: description includes a SEE reference to the governing ADR', () => {
+    expect(handler.description).toContain('SEE: docs/adr/0013-normalizer-format-conformance.md')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -312,6 +320,10 @@ describe('D1OpenQuestionsSectionHandler', () => {
     // After D1 fix, the section exists with the correct name
     expect(adr.sections.find(s => s.heading === 'Questions')).toBeDefined()
     expect(adr.sections.find(s => s.heading === 'Open Questions')).toBeUndefined()
+  })
+
+  it('ADR-0015 interim: description includes a SEE reference to the governing ADR', () => {
+    expect(handler.description).toContain('SEE: docs/adr/0013-normalizer-format-conformance.md')
   })
 })
 
@@ -490,6 +502,10 @@ describe('D6NonStandardPreambleFieldHandler', () => {
 `
     const records = handler.detect(content, parseResult)
     expect(records).toHaveLength(0)
+  })
+
+  it('ADR-0015 interim: description includes a SEE reference to the governing ADR', () => {
+    expect(handler.description).toContain('SEE: docs/adr/0013-normalizer-format-conformance.md')
   })
 })
 

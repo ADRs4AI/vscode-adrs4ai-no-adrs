@@ -29,7 +29,7 @@ const OPEN_QUESTIONS_RE = /^(#{1,3})\s+Open\s+Questions\s*$/i
 export class D1OpenQuestionsSectionHandler implements ViolationHandler {
   readonly id = 'd1-open-questions-section'
   readonly dependsOn = undefined
-  readonly description = '"## Open Questions" section name prevents ADR context boundary detection'
+  readonly description = '"## Open Questions" section name prevents ADR context boundary detection\n\nSEE: docs/adr/0013-normalizer-format-conformance.md'
 
   detect(content: string, _parseResult: AdrFile): ViolationRecord[] {
     const lines = content.split('\n')

@@ -47,7 +47,7 @@ export class D6NonStandardPreambleFieldHandler implements ViolationHandler {
   readonly id = 'd6-non-standard-preamble-field'
   readonly dependsOn = undefined
   readonly description =
-    'Preamble field missing "- " prefix or uses "**Key:**" (colon inside bold) — extractMetadata() cannot parse it'
+    'Preamble field missing "- " prefix or uses "**Key:**" (colon inside bold) — extractMetadata() cannot parse it\n\nSEE: docs/adr/0013-normalizer-format-conformance.md'
 
   detect(content: string, _parseResult: AdrFile): ViolationRecord[] {
     const lines = content.split('\n')

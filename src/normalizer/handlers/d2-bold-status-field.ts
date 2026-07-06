@@ -34,7 +34,7 @@ const BOLD_STATUS_RE = /^(\s*)-\s+\*\*Status\*\*:\s+(unanswered|answered)\b(.*)?
 export class D2BoldStatusFieldHandler implements ViolationHandler {
   readonly id = 'd2-bold-status-field'
   readonly dependsOn: readonly string[] | undefined = undefined
-  readonly description = '- **Status**: ... uses bold field name; writeAnswer() cannot update it'
+  readonly description = '- **Status**: ... uses bold field name; writeAnswer() cannot update it\n\nSEE: docs/adr/0013-normalizer-format-conformance.md'
 
   detect(content: string, _parseResult: AdrFile): ViolationRecord[] {
     const lines = content.split('\n')
