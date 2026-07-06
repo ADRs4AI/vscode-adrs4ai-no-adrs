@@ -6,7 +6,7 @@ import argparse
 import os
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -26,6 +26,23 @@ class Preview:
 class TransformResult:
     transformed: str
     changed: bool
+    blocks_changed: int
+    lines_removed: int
+    previews: list[Preview]
+
+
+@dataclass
+class UnwrapResult:
+    output: list[str]
+    blocks_changed: int
+    lines_removed: int
+    previews: list[Preview]
+
+
+@dataclass
+class BlockquoteResult:
+    output: list[str]
+    consumed: int
     blocks_changed: int
     lines_removed: int
     previews: list[Preview]
@@ -303,13 +320,62 @@ def try_unwrap_list_item(lines: list[str], start_index: int, file_path: str) -> 
     return after, len(block), preview
 
 
-def transform_markdown(text: str, file_path: str) -> TransformResult:
-    eol = "\r\n" if "\r\n" in text else "\n"
-    has_trailing_newline = text.endswith("\n")
-    lines = re.split(r"\r?\n", text)
-    if has_trailing_newline:
-        lines.pop()
+BLOCKQUOTE_LINE_RE = re.compile(r"^( {0,3})>( ?)(.*)$")
 
+
+def is_blockquote_line(line: str) -> bool:
+    return bool(BLOCKQUOTE_LINE_RE.match(line))
+
+
+def try_unwrap_blockquote_region(
+    lines: list[str], start_index: int, file_path: str, line_number_base: int
+) -> BlockquoteResult | None:
+    """Unwrap hard-wrapped prose *inside* a blockquote (Jérémie, ADR-0012:
+    "unwrap-adrs.mjs should unwrap blockquotes too. Currently I am doing that
+    by hand."). Strips the leading "> " marker from a maximal contiguous run
+    of blockquote lines, recursively unwraps the dequoted content with the
+    same rules (so nested lists/fences inside the quote are still respected),
+    then re-quotes the result. Returns None if the line at start_index isn't
+    a blockquote line."""
+    if not is_blockquote_line(lines[start_index]):
+        return None
+
+    end = start_index
+    while end < len(lines) and is_blockquote_line(lines[end]):
+        end += 1
+    region = lines[start_index:end]
+
+    # Preserve the region's leading indent (e.g. a blockquote nested inside a
+    # list item) — taken from the first line; blockquote regions are assumed
+    # consistently indented, the common case.
+    indent = BLOCKQUOTE_LINE_RE.match(region[0]).group(1)
+    inner = [BLOCKQUOTE_LINE_RE.match(line).group(3) for line in region]
+    result = unwrap_lines(inner, file_path, line_number_base + start_index)
+
+    # Nothing to unwrap inside this region — return the ORIGINAL lines
+    # byte-exact rather than reconstructing them (reconstruction would drop
+    # incidental detail like trailing whitespace on a blank "> " separator
+    # line). Still consume the whole region in one shot: falling back to
+    # one-line-at-a-time re-entry would re-run detection on a truncated
+    # remainder and lose cross-line state (e.g. a fenced code block's opening
+    # marker), corrupting fence detection for the rest of the region.
+    if result.blocks_changed == 0:
+        return BlockquoteResult(output=region, consumed=len(region), blocks_changed=0, lines_removed=0, previews=[])
+
+    after = [f"{indent}> {line}" if line != "" else f"{indent}>" for line in result.output]
+
+    return BlockquoteResult(
+        output=after,
+        consumed=len(region),
+        blocks_changed=result.blocks_changed,
+        lines_removed=result.lines_removed,
+        previews=result.previews,
+    )
+
+
+def unwrap_lines(lines: list[str], file_path: str, line_number_base: int = 0) -> UnwrapResult:
+    """Core unwrap pass over a line array. Extracted from transform_markdown
+    so blockquote regions can recurse into it on their dequoted content."""
     protected = mark_protected_lines(lines)
     output: list[str] = []
     previews: list[Preview] = []
@@ -324,11 +390,19 @@ def transform_markdown(text: str, file_path: str) -> TransformResult:
             output.append(after)
             blocks_changed += 1
             lines_removed += consumed - 1
-            previews.append(preview)
+            previews.append(replace(preview, line_number=preview.line_number + line_number_base))
             index += consumed
             continue
 
         if protected[index]:
+            bq = try_unwrap_blockquote_region(lines, index, file_path, line_number_base)
+            if bq:
+                output.extend(bq.output)
+                blocks_changed += bq.blocks_changed
+                lines_removed += bq.lines_removed
+                previews.extend(bq.previews)
+                index += bq.consumed
+                continue
             output.append(lines[index])
             index += 1
             continue
@@ -348,15 +422,27 @@ def transform_markdown(text: str, file_path: str) -> TransformResult:
         output.append(after)
         blocks_changed += 1
         lines_removed += len(block) - 1
-        previews.append(Preview(file_path=file_path, line_number=start + 1, before=block, after=after))
+        previews.append(Preview(file_path=file_path, line_number=start + 1 + line_number_base, before=block, after=after))
 
-    transformed = eol.join(output) + (eol if has_trailing_newline else "")
+    return UnwrapResult(output=output, blocks_changed=blocks_changed, lines_removed=lines_removed, previews=previews)
+
+
+def transform_markdown(text: str, file_path: str) -> TransformResult:
+    eol = "\r\n" if "\r\n" in text else "\n"
+    has_trailing_newline = text.endswith("\n")
+    lines = re.split(r"\r?\n", text)
+    if has_trailing_newline:
+        lines.pop()
+
+    result = unwrap_lines(lines, file_path)
+
+    transformed = eol.join(result.output) + (eol if has_trailing_newline else "")
     return TransformResult(
         transformed=transformed,
         changed=transformed != text,
-        blocks_changed=blocks_changed,
-        lines_removed=lines_removed,
-        previews=previews,
+        blocks_changed=result.blocks_changed,
+        lines_removed=result.lines_removed,
+        previews=result.previews,
     )
 
 
@@ -410,9 +496,38 @@ def run_self_tests() -> None:
             "expected": "1. Parent item:\n   - Nested child\n   - Second child\n",
         },
         {
-            "name": "blockquote stays wrapped",
-            "input": "> quoted text\n> stays quoted\n",
-            "expected": "> quoted text\n> stays quoted\n",
+            "name": "blockquote unwraps soft-wrapped prose",
+            "input": "> quoted text\n> wraps across lines.\n",
+            "expected": "> quoted text wraps across lines.\n",
+        },
+        {
+            "name": "blockquote preserves paragraph breaks (bare \">\" separator)",
+            "input": "> First paragraph\n> wraps here.\n>\n> Second paragraph.\n",
+            "expected": "> First paragraph wraps here.\n>\n> Second paragraph.\n",
+        },
+        {
+            "name": "blockquote preserves a nested list",
+            "input": "> - First item\n>   wraps here.\n> - Second item\n",
+            "expected": "> - First item wraps here.\n> - Second item\n",
+        },
+        {
+            "name": "quoted fenced code stays wrapped",
+            "input": "> ```txt\n> line one\n> line two\n> ```\n",
+            "expected": "> ```txt\n> line one\n> line two\n> ```\n",
+        },
+        {
+            "name": "nested blockquote indented under a list item preserves its indent",
+            "input": "   > > A nested quote that\n   > > wraps across lines.\n",
+            "expected": "   > > A nested quote that wraps across lines.\n",
+        },
+        {
+            # Regression (found while dry-running against docs/adr/0003): a blank
+            # "> " blockquote separator with a trailing space was being silently
+            # reconstructed as a bare ">" even when nothing else in the quote
+            # needed unwrapping — a phantom byte change with 0 reported blocks.
+            "name": "blockquote with no unwrap work stays byte-exact (trailing space preserved)",
+            "input": "   > Already one line.\n   > \n   > Also one line.\n",
+            "expected": "   > Already one line.\n   > \n   > Also one line.\n",
         },
         {
             "name": "fenced code stays wrapped",

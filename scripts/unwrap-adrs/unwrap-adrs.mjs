@@ -311,14 +311,63 @@ function unwrapBlock(block) {
   return joinSoftWrappedLines(block);
 }
 
-function transformMarkdown(text, filePath) {
-  const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const hasTrailingNewline = text.endsWith('\n');
-  const lines = text.split(/\r?\n/);
-  if (hasTrailingNewline) {
-    lines.pop();
+/** Matches a blockquote line, capturing leading indent, the marker's optional single space, and the inner content. */
+const BLOCKQUOTE_LINE_RE = /^( {0,3})>( ?)(.*)$/;
+
+function isBlockquoteLine(line) {
+  return BLOCKQUOTE_LINE_RE.test(line);
+}
+
+/**
+ * Unwraps hard-wrapped prose *inside* a blockquote (Jérémie, ADR-0012:
+ * "unwrap-adrs.mjs should unwrap blockquotes too. Currently I am doing that
+ * by hand."). Strips the leading "> " marker from a maximal contiguous run
+ * of blockquote lines, recursively unwraps the dequoted content with the
+ * same rules (so nested lists/fences inside the quote are still respected),
+ * then re-quotes the result. Returns null if the line at startIndex isn't a
+ * blockquote line.
+ */
+function tryUnwrapBlockquoteRegion(lines, startIndex, filePath, lineNumberBase) {
+  if (!isBlockquoteLine(lines[startIndex])) return null;
+
+  let end = startIndex;
+  while (end < lines.length && isBlockquoteLine(lines[end])) end += 1;
+  const region = lines.slice(startIndex, end);
+
+  // Preserve the region's leading indent (e.g. a blockquote nested inside a
+  // list item) — taken from the first line; blockquote regions are assumed
+  // consistently indented, the common case.
+  const indent = region[0].match(BLOCKQUOTE_LINE_RE)[1];
+  const inner = region.map((line) => line.match(BLOCKQUOTE_LINE_RE)[3]);
+  const result = unwrapLines(inner, filePath, lineNumberBase + startIndex);
+
+  // Nothing to unwrap inside this region — return the ORIGINAL lines
+  // byte-exact rather than reconstructing them (reconstruction would drop
+  // incidental detail like trailing whitespace on a blank "> " separator
+  // line). Still consume the whole region in one shot: falling back to
+  // one-line-at-a-time re-entry would re-run detection on a truncated
+  // remainder and lose cross-line state (e.g. a fenced code block's opening
+  // marker), corrupting fence detection for the rest of the region.
+  if (result.blocksChanged === 0) {
+    return { after: region, blocksChanged: 0, consumed: region.length, linesRemoved: 0, previews: [] };
   }
 
+  const after = result.output.map((line) => (line === '' ? `${indent}>` : `${indent}> ${line}`));
+
+  return {
+    after,
+    blocksChanged: result.blocksChanged,
+    consumed: region.length,
+    linesRemoved: result.linesRemoved,
+    previews: result.previews,
+  };
+}
+
+/**
+ * Core unwrap pass over a line array. Extracted from transformMarkdown so
+ * blockquote regions can recurse into it on their dequoted content.
+ */
+function unwrapLines(lines, filePath, lineNumberBase = 0) {
   const protectedLines = markProtectedLines(lines);
   const output = [];
   const previews = [];
@@ -331,12 +380,21 @@ function transformMarkdown(text, filePath) {
       output.push(listResult.after);
       blocksChanged += 1;
       linesRemoved += listResult.consumed - 1;
-      previews.push(listResult.preview);
+      previews.push({ ...listResult.preview, lineNumber: listResult.preview.lineNumber + lineNumberBase });
       i += listResult.consumed;
       continue;
     }
 
     if (protectedLines[i]) {
+      const bq = tryUnwrapBlockquoteRegion(lines, i, filePath, lineNumberBase);
+      if (bq) {
+        output.push(...bq.after);
+        blocksChanged += bq.blocksChanged;
+        linesRemoved += bq.linesRemoved;
+        previews.push(...bq.previews);
+        i += bq.consumed;
+        continue;
+      }
       output.push(lines[i]);
       i += 1;
       continue;
@@ -363,9 +421,22 @@ function transformMarkdown(text, filePath) {
       after,
       before: block,
       filePath,
-      lineNumber: start + 1,
+      lineNumber: start + 1 + lineNumberBase,
     });
   }
+
+  return { blocksChanged, linesRemoved, output, previews };
+}
+
+function transformMarkdown(text, filePath) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const hasTrailingNewline = text.endsWith('\n');
+  const lines = text.split(/\r?\n/);
+  if (hasTrailingNewline) {
+    lines.pop();
+  }
+
+  const { blocksChanged, linesRemoved, output, previews } = unwrapLines(lines, filePath);
 
   const transformed = output.join(eol) + (hasTrailingNewline ? eol : '');
   return {
@@ -430,9 +501,38 @@ function runSelfTests() {
       expected: '1. Parent item:\n   - Nested child\n   - Second child\n',
     },
     {
-      name: 'blockquote stays wrapped',
-      input: '> quoted text\n> stays quoted\n',
-      expected: '> quoted text\n> stays quoted\n',
+      name: 'blockquote unwraps soft-wrapped prose',
+      input: '> quoted text\n> wraps across lines.\n',
+      expected: '> quoted text wraps across lines.\n',
+    },
+    {
+      name: 'blockquote preserves paragraph breaks (bare ">" separator)',
+      input: '> First paragraph\n> wraps here.\n>\n> Second paragraph.\n',
+      expected: '> First paragraph wraps here.\n>\n> Second paragraph.\n',
+    },
+    {
+      name: 'blockquote preserves a nested list',
+      input: '> - First item\n>   wraps here.\n> - Second item\n',
+      expected: '> - First item wraps here.\n> - Second item\n',
+    },
+    {
+      name: 'quoted fenced code stays wrapped',
+      input: '> ```txt\n> line one\n> line two\n> ```\n',
+      expected: '> ```txt\n> line one\n> line two\n> ```\n',
+    },
+    {
+      name: 'nested blockquote indented under a list item preserves its indent',
+      input: '   > > A nested quote that\n   > > wraps across lines.\n',
+      expected: '   > > A nested quote that wraps across lines.\n',
+    },
+    {
+      // Regression (found while dry-running against docs/adr/0003): a blank
+      // "> " blockquote separator with a trailing space was being silently
+      // reconstructed as a bare ">" even when nothing else in the quote
+      // needed unwrapping — a phantom byte change with 0 reported blocks.
+      name: 'blockquote with no unwrap work stays byte-exact (trailing space preserved)',
+      input: '   > Already one line.\n   > \n   > Also one line.\n',
+      expected: '   > Already one line.\n   > \n   > Also one line.\n',
     },
     {
       name: 'fenced code stays wrapped',
