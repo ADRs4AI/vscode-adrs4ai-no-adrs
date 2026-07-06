@@ -92,6 +92,38 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('.rec-chip{')
     expect(PANEL_SRC).toContain('.recommendation.rec-recent{')
   })
+
+  it('ADR-0023: auto-saves a draft (debounced) on textarea input', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain("addEventListener('input'")
+    expect(script).toContain("type: 'draft'")
+    expect(script).toContain('setTimeout')
+  })
+
+  it('ADR-0023: restores a draft on render with a "draft restored" indicator', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('q.draftText')
+    expect(script).toContain('Draft restored')
+    expect(PANEL_SRC).toMatch(/id="draft-restored"/)
+  })
+
+  it('ADR-0023: submit() includes draftKey + fileChecksum for the drift fence', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('draftKey: q.draftKey')
+    expect(script).toContain('fileChecksum: q.fileChecksum')
+  })
+
+  it('ADR-0023: drift-detected shows a three-choice consent bar, not a blind write', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain("msg.type === 'driftDetected'")
+    for (const id of ['btn-drift-refresh', 'btn-drift-write', 'btn-drift-hold', 'drift-bar']) {
+      expect(PANEL_SRC, `must reference #${id}`).toMatch(new RegExp(`(id="${id}"|'${id}')`))
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

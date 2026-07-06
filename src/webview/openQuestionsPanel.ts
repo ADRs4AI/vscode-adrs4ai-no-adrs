@@ -14,9 +14,14 @@
 
 import * as vscode from 'vscode'
 import { execSync } from 'child_process'
+import * as crypto from 'crypto'
+import * as path from 'path'
+import * as os from 'os'
 import type { AdrIndex } from '../index/adrIndex'
 import type { Recommendation } from '../parser/types'
 import { bodyMaxWidthCss } from './panelSettings'
+import { DraftStore } from '../drafts/draftStore'
+import { computeDraftKey, computeOccurrenceOrdinals } from '../drafts/draftKey'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -38,6 +43,14 @@ interface WebviewQuestion {
   adrTitle: string
   adrPath: string
   lineStart: number  // 1-indexed line of the ### QST: heading
+  /** ADR-0023: adrNumber+textHash+ordinal — stable across line shifts. */
+  draftKey: string
+  /** ADR-0023 drift fence: the ADR file's content checksum at render time. */
+  fileChecksum: string
+  /** ADR-0023: restored draft text, if a draft exists for this question's key. */
+  draftText?: string
+  /** ADR-0023: ISO timestamp the draft was last saved, for the "draft restored" indicator. */
+  draftSavedAt?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -45,9 +58,22 @@ interface WebviewQuestion {
 // ---------------------------------------------------------------------------
 
 type WebviewMessage =
-  | { type: 'answer'; questionId: string; adrPath: string; lineStart: number; answerText: string; authorName: string }
+  | {
+      type: 'answer'
+      questionId: string
+      adrPath: string
+      lineStart: number
+      answerText: string
+      authorName: string
+      draftKey: string
+      fileChecksum: string
+      /** ADR-0023 drift fence: "Write anyway" — skip the checksum re-check. */
+      force?: boolean
+    }
   | { type: 'skip' }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
+  | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string }
+  | { type: 'refreshRequest' }
   | { type: 'ready' }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +85,7 @@ export class OpenQuestionsPanel {
 
   private readonly panel: vscode.WebviewPanel
   private readonly disposables: vscode.Disposable[] = []
+  private readonly draftStore: DraftStore
 
   // ---------------------------------------------------------------------------
 
@@ -80,6 +107,17 @@ export class OpenQuestionsPanel {
 
   private constructor(private readonly index: AdrIndex) {
     OpenQuestionsPanel.instance = this
+
+    // ADR-0023: docs/adr/.working/ — committed substrate, not a gitignored
+    // sidecar (Jérémie's completist reversal). Owned by the ADR directory,
+    // not the workspace root.
+    const cfg = vscode.workspace.getConfiguration('adrManager')
+    const adrDirRel = cfg.get<string>('adrDirectory', 'docs/adr')
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    const workingDir = workspaceRoot
+      ? path.join(workspaceRoot, adrDirRel, '.working')
+      : path.join(os.tmpdir(), 'adr-drafts-no-workspace')
+    this.draftStore = new DraftStore(workingDir)
 
     this.panel = vscode.window.createWebviewPanel(
       'adrOpenQuestions',
@@ -120,23 +158,37 @@ export class OpenQuestionsPanel {
         ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
         : undefined
 
+      // ADR-0023: occurrence ordinals computed over ALL questions in the file
+      // (not just unanswered ones) — the key must be stable regardless of
+      // which questions have already been answered and filtered out below.
+      const ordinals = computeOccurrenceOrdinals(adr.questions.map(q => q.text))
+
       return adr.questions
-        .filter(q => !q.isAnswered)
-        .map(q => ({
-          id: q.id,
-          text: q.text,
-          whyAsking: q.whyAsking,
-          need: q.need,
-          recommendation: q.recommendation,
-          recommendations: q.recommendations,
-          body: q.rawBody,
-          bodyPost: q.rawBodyPost,
-          adrContext,
-          adrNumber: adr.number,
-          adrTitle: cleanTitle,
-          adrPath: adr.path,
-          lineStart: q.lineStart,
-        }))
+        .map((q, idx) => ({ q, ordinal: ordinals[idx] }))
+        .filter(({ q }) => !q.isAnswered)
+        .map(({ q, ordinal }) => {
+          const draftKey = computeDraftKey(adr.number, q.text, ordinal)
+          const draft = this.draftStore.get(draftKey)
+          return {
+            id: q.id,
+            text: q.text,
+            whyAsking: q.whyAsking,
+            need: q.need,
+            recommendation: q.recommendation,
+            recommendations: q.recommendations,
+            body: q.rawBody,
+            bodyPost: q.rawBodyPost,
+            adrContext,
+            adrNumber: adr.number,
+            adrTitle: cleanTitle,
+            adrPath: adr.path,
+            lineStart: q.lineStart,
+            draftKey,
+            fileChecksum: adr.checksum,
+            draftText: draft?.draftText,
+            draftSavedAt: draft?.updatedAt,
+          }
+        })
     })
 
     const cfg = vscode.workspace.getConfiguration('adrManager')
@@ -155,6 +207,15 @@ export class OpenQuestionsPanel {
       case 'answer': await this.writeAnswer(msg); break
       case 'skip': this.panel.webview.postMessage({ type: 'skip_ack' }); break
       case 'jumpTo': await this.openAtLine(msg.adrPath, msg.lineNumber); break
+      case 'draft':
+        // ADR-0023: debounced (~500ms) auto-save from the webview's textarea input.
+        this.draftStore.save(msg.draftKey, msg.adrPath, msg.adrNumber, msg.questionText, msg.draftText, new Date().toISOString())
+        break
+      case 'refreshRequest':
+        // ADR-0023 drift fence, "Refresh" choice: force a re-parse so the
+        // panel's next 'questions' push reflects the file as it is now.
+        this.sendQuestions()
+        break
     }
   }
 
@@ -168,11 +229,27 @@ export class OpenQuestionsPanel {
     lineStart: number
     answerText: string
     authorName: string
+    draftKey: string
+    fileChecksum: string
+    force?: boolean
   }): Promise<void> {
     try {
       const uri = vscode.Uri.file(msg.adrPath)
       const doc = await vscode.workspace.openTextDocument(uri)
-      const lines = doc.getText().split('\n')
+      const currentContent = doc.getText()
+
+      // ADR-0023 drift fence: never write blind. If the file changed under
+      // this in-flight answer, stop and let the human choose — the draft
+      // (already auto-saved) is safe in all three consent paths.
+      if (!msg.force) {
+        const currentChecksum = crypto.createHash('sha1').update(currentContent).digest('hex')
+        if (currentChecksum !== msg.fileChecksum) {
+          this.panel.webview.postMessage({ type: 'driftDetected', questionId: msg.questionId })
+          return
+        }
+      }
+
+      const lines = currentContent.split('\n')
       const edit = new vscode.WorkspaceEdit()
 
       // Search window: from QST heading line (1-indexed → 0-indexed) forward
@@ -223,6 +300,10 @@ export class OpenQuestionsPanel {
 
       await vscode.workspace.applyEdit(edit)
       await vscode.workspace.save(uri)
+
+      // ADR-0023: answer submitted is one atomic event — the draft is
+      // promoted (archived, never deleted), not left dangling in the active set.
+      this.draftStore.promote(msg.draftKey, new Date().toISOString())
 
       this.panel.webview.postMessage({ type: 'answered', questionId: msg.questionId })
     } catch (err) {
@@ -538,6 +619,27 @@ textarea{
   line-height:1.6;resize:vertical;outline:none;
 }
 textarea:focus{border-color:var(--vscode-focusBorder)}
+/* ADR-0023: draft restored indicator — grey, never red (penn-cv 039 It.5) */
+.draft-restored{
+  font-size:11px;
+  color:var(--vscode-descriptionForeground);
+  margin-top:5px;
+}
+.draft-flash{
+  display:none;align-items:center;gap:6px;
+  color:var(--vscode-descriptionForeground);
+  font-size:12px;
+  opacity:.85;
+}
+/* ADR-0023 drift fence: three-choice consent bar */
+.drift-bar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-top:12px;padding:10px 14px;
+  background:var(--vscode-inputValidation-warningBackground,rgba(220,180,50,.12));
+  border:1px solid var(--vscode-inputValidation-warningBorder,#a9822c);
+  border-radius:4px;
+  font-size:12px;
+}
 .hint{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -700,6 +802,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   </div>
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
+  <div class="draft-restored" id="draft-restored" style="display:none"></div>
   <div class="hint">Cmd+Enter to submit · Skip to come back later</div>
 
   <div class="row">
@@ -707,8 +810,17 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
     <button class="btn-back" id="btn-back">← Back</button>
     <button class="btn-skip" id="btn-skip">Skip</button>
     <span class="flash" id="flash">✓ Answered</span>
+    <span class="draft-flash" id="draft-flash">✓ draft saved</span>
   </div>
   <div class="error-msg" id="err"></div>
+
+  <!-- ADR-0023 drift fence: three-choice consent, never write blind -->
+  <div class="drift-bar" id="drift-bar" style="display:none">
+    <span>This file changed while you were answering.</span>
+    <button class="btn-skip" id="btn-drift-refresh">Refresh</button>
+    <button class="btn-skip" id="btn-drift-write">Write anyway</button>
+    <button class="btn-skip" id="btn-drift-hold">Hold draft</button>
+  </div>
 </div>
 
 <div id="q-overlay">
@@ -966,15 +1078,53 @@ $id('adr-link').addEventListener('click', () => {
   vscode.postMessage({ type: 'jumpTo', adrPath: questions[idx].adrPath, lineNumber: questions[idx].lineStart });
 });
 
-function submit() {
+function submit(force) {
   const text = $id('ans').value.trim();
   const author = $id('author').value.trim() || 'Human';
   if (!text || !questions[idx]) return;
   $id('btn-ans').disabled = true;
   $id('err').style.display = 'none';
+  $id('drift-bar').style.display = 'none';
   const q = questions[idx];
-  vscode.postMessage({ type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart, answerText: text, authorName: author });
+  vscode.postMessage({
+    type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart,
+    answerText: text, authorName: author, draftKey: q.draftKey, fileChecksum: q.fileChecksum,
+    force: !!force,
+  });
 }
+
+// ---------------------------------------------------------------------------
+// ADR-0023: draft auto-save — debounced ~500ms per keystroke
+// ---------------------------------------------------------------------------
+let draftSaveTimer = null;
+$id('ans').addEventListener('input', () => {
+  if (!questions[idx]) return;
+  const q = questions[idx];
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    vscode.postMessage({
+      type: 'draft', draftKey: q.draftKey, adrPath: q.adrPath, adrNumber: q.adrNumber,
+      questionText: q.text, draftText: $id('ans').value,
+    });
+    $id('draft-flash').style.display = 'inline-flex';
+    setTimeout(() => { $id('draft-flash').style.display = 'none'; }, 900);
+  }, 500);
+});
+
+$id('btn-drift-refresh').addEventListener('click', () => {
+  $id('drift-bar').style.display = 'none';
+  $id('btn-ans').disabled = false;
+  vscode.postMessage({ type: 'refreshRequest' });
+});
+$id('btn-drift-write').addEventListener('click', () => {
+  $id('drift-bar').style.display = 'none';
+  submit(true);
+});
+$id('btn-drift-hold').addEventListener('click', () => {
+  // Draft is already auto-saved — nothing further to do. Just dismiss.
+  $id('drift-bar').style.display = 'none';
+  $id('btn-ans').disabled = false;
+});
 
 function render() {
   if (questions.length === 0) {
@@ -1013,8 +1163,18 @@ function render() {
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
   else { $id('body-post').style.display = 'none'; }
 
-  $id('ans').value = '';
+  // ADR-0023: restore an in-progress draft, if one exists for this question's key.
+  if (q.draftText) {
+    $id('ans').value = q.draftText;
+    const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
+    $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
+    $id('draft-restored').style.display = 'block';
+  } else {
+    $id('ans').value = '';
+    $id('draft-restored').style.display = 'none';
+  }
   $id('flash').style.display = 'none';
+  $id('drift-bar').style.display = 'none';
   $id('btn-ans').disabled = false;
   $id('btn-back').disabled = idx === 0;
   $id('err').style.display = 'none';
@@ -1061,6 +1221,13 @@ window.addEventListener('message', e => {
     $id('btn-ans').disabled = false;
     $id('err').style.display = 'block';
     $id('err').textContent = msg.message;
+  }
+  if (msg.type === 'driftDetected') {
+    // ADR-0023 drift fence: the file changed under this in-flight answer.
+    // Never write blind — the draft is already auto-saved, so all three
+    // choices here are safe.
+    $id('btn-ans').disabled = false;
+    $id('drift-bar').style.display = 'flex';
   }
 });
 </script>
