@@ -52,6 +52,50 @@ describe('AdrIndex.indexDirectory: docs/adr/.working/ exclusion (ADR-0023)', () 
   })
 })
 
+describe('AdrIndex.indexFile: synchronous reindex on a write we just made (bug fix)', () => {
+  // Regression: seed-2026-07-06-panel-submit-no-refresh-bug.md — the panel
+  // wrote an answer, then relied entirely on the async FileSystemWatcher
+  // round-trip to notice its own change. When that watcher was slow or
+  // missed, the panel stayed stuck on the already-answered question until
+  // an unrelated manual editor save nudged it. The fix (writeAnswer() and
+  // changeAdrStatus() in extension.ts) calls index.indexFile() directly
+  // after a self-made write, rather than waiting on the watcher. This test
+  // verifies the mechanism the fix depends on: indexFile() re-parses and
+  // fires onChange synchronously, with no dependency on watcher timing.
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-reindex-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('re-parsing a file after an external content change fires onChange synchronously, same tick', () => {
+    const filePath = path.join(dir, '0001-storage-backend.md')
+    fs.writeFileSync(filePath, '# ADR-0001: Storage Backend\n\n- **Status**: Draft\n')
+
+    const index = new AdrIndex()
+    index.indexFile(filePath)
+
+    let fired = false
+    let statusSeen: string | undefined
+    index.onChange(event => {
+      fired = true
+      if (event.type === 'updated') statusSeen = event.adr.status
+    })
+
+    // Simulate what writeAnswer()/changeAdrStatus() do: the extension itself
+    // just wrote new content to disk (via applyEdit + save).
+    fs.writeFileSync(filePath, '# ADR-0001: Storage Backend\n\n- **Status**: Accepted\n')
+    index.indexFile(filePath) // the fix: reindex directly, don't wait for the watcher
+
+    expect(fired).toBe(true)
+    expect(statusSeen).toBe('Accepted')
+  })
+})
+
 describe('SeedIndex.indexDirectory: docs/adr/.working/ exclusion (ADR-0023)', () => {
   let dir: string
 

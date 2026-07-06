@@ -675,6 +675,13 @@ async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeIt
   }
   await vscode.workspace.applyEdit(edit);
   await vscode.workspace.save(uri);
+  // Don't rely solely on the FileSystemWatcher round-trip for a write we
+  // just made ourselves — reindex synchronously so the tree view updates
+  // immediately regardless of watcher latency (seed-2026-07-06-panel-submit-
+  // no-refresh-bug.md: the same applyEdit+save-then-wait-for-watcher pattern
+  // in the panel's writeAnswer() left the UI stuck until an unrelated manual
+  // save nudged the watcher).
+  index?.indexFile(item.adr.path);
 }
 
 function updateDiagnostics(

@@ -301,6 +301,17 @@ export class OpenQuestionsPanel {
       await vscode.workspace.applyEdit(edit)
       await vscode.workspace.save(uri)
 
+      // Bug fix (seed-2026-07-06-panel-submit-no-refresh-bug.md): don't rely
+      // solely on the FileSystemWatcher round-trip for a write we just made
+      // ourselves. The panel previously depended entirely on the async
+      // watcher → indexFile → onChange → sendQuestions chain to notice its
+      // own write; when that round-trip was slow or missed, the question
+      // stayed visible ("brief blink then nothing") until an unrelated
+      // manual editor save nudged the watcher. Reindexing synchronously here
+      // makes the refresh immediate and deterministic; the watcher remains a
+      // (now redundant, harmless) backup path for externally-made changes.
+      this.index.indexFile(msg.adrPath)
+
       // ADR-0023: answer submitted is one atomic event — the draft is
       // promoted (archived, never deleted), not left dangling in the active set.
       this.draftStore.promote(msg.draftKey, new Date().toISOString())
