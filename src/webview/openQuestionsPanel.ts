@@ -15,6 +15,7 @@
 import * as vscode from 'vscode'
 import { execSync } from 'child_process'
 import type { AdrIndex } from '../index/adrIndex'
+import { bodyMaxWidthCss } from './panelSettings'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -84,7 +85,7 @@ export class OpenQuestionsPanel {
       { enableScripts: true, retainContextWhenHidden: true },
     )
 
-    this.panel.webview.html = getHtml()
+    this.panel.webview.html = getHtml(computeBodyMaxWidth())
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables)
 
     this.panel.webview.onDidReceiveMessage(
@@ -241,6 +242,15 @@ export class OpenQuestionsPanel {
 }
 
 // ---------------------------------------------------------------------------
+// Panel body width (ADR-0010 answered QST)
+// ---------------------------------------------------------------------------
+
+function computeBodyMaxWidth(): string {
+  const cfg = vscode.workspace.getConfiguration('adrManager')
+  return bodyMaxWidthCss(cfg.get<string>('panel.bodyMaxWidth', '1100'))
+}
+
+// ---------------------------------------------------------------------------
 // Author name helpers
 // ---------------------------------------------------------------------------
 
@@ -300,7 +310,7 @@ function lineRange(doc: vscode.TextDocument, lineIdx: number): vscode.Range {
 // HTML / CSS / JS for the webview
 // ---------------------------------------------------------------------------
 
-function getHtml(): string {
+function getHtml(bodyMaxWidth: string): string {
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -327,7 +337,7 @@ body{
   gap:12px;
 }
 #empty .icon{font-size:48px}
-#card{max-width:680px;margin:0 auto}
+#card{max-width:${bodyMaxWidth};margin:0 auto}
 .counter{
   font-size:11px;
   color:var(--vscode-descriptionForeground);

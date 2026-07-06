@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import vm from 'node:vm'
 import { describe, it, expect } from 'vitest'
+import { bodyMaxWidthCss } from '../webview/panelSettings'
 
 const PANEL_SRC = readFileSync(
   resolve(__dirname, '../webview/openQuestionsPanel.ts'),
@@ -61,5 +62,34 @@ describe('Webview script block syntax', () => {
         `HTML must contain element with id="${id}"`,
       ).toMatch(new RegExp(`id="${id}"`))
     }
+  })
+
+  it('getHtml() interpolates the computed body max-width into #card', () => {
+    expect(PANEL_SRC).toContain('#card{max-width:${bodyMaxWidth}')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// bodyMaxWidthCss (ADR-0010 answered QST — panel body width setting)
+// ---------------------------------------------------------------------------
+
+describe('bodyMaxWidthCss', () => {
+  it('defaults to min(94%, 1100px) for the shipped default setting value', () => {
+    expect(bodyMaxWidthCss('1100')).toBe('min(94%, 1100px)')
+  })
+
+  it('"full" removes the cap entirely', () => {
+    expect(bodyMaxWidthCss('full')).toBe('none')
+    expect(bodyMaxWidthCss('Full')).toBe('none') // case-insensitive
+  })
+
+  it('a custom pixel value keeps the 94% viewport safety net', () => {
+    expect(bodyMaxWidthCss('1400')).toBe('min(94%, 1400px)')
+  })
+
+  it('falls back to the default for garbage input', () => {
+    expect(bodyMaxWidthCss('not-a-number')).toBe('min(94%, 1100px)')
+    expect(bodyMaxWidthCss('')).toBe('min(94%, 1100px)')
+    expect(bodyMaxWidthCss('-50')).toBe('min(94%, 1100px)')
   })
 })

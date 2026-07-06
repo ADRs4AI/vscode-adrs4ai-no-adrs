@@ -202,6 +202,11 @@
           ],
           "default": "workspaceEdit",
           "description": "How MCP write operations modify ADR files. 'workspaceEdit' uses VS Code's undo-safe edit API; 'direct' writes directly to disk."
+        },
+        "adrManager.panel.bodyMaxWidth": {
+          "type": "string",
+          "default": "1100",
+          "description": "Max width of the Open Questions panel body. A pixel value (e.g. '1100') is combined with a 94% viewport cap so it never overflows a narrow window; 'full' removes the cap entirely (fit the whole question in your window)."
         }
       }
     }
