@@ -55,7 +55,13 @@ export class AdrTreeItem extends vscode.TreeItem {
   constructor(opts: {
     kind: 'question';
     question: Question;
-    adr: AdrFile;
+    /**
+     * ADR-0018 Step 3 (tree-view parity): optional so seed-embedded
+     * questions — which have no AdrFile — can use this same tree-item kind.
+     * Navigation uses question.adrPath (correct for both container kinds),
+     * not this field; it's kept for ADR-sourced callers that still pass it.
+     */
+    adr?: AdrFile;
   });
   constructor(opts: {
     kind: 'open-questions-header';
@@ -72,6 +78,7 @@ export class AdrTreeItem extends vscode.TreeItem {
   constructor(opts: {
     kind: 'seed';
     seed: SeedFile;
+    collapsibleState?: vscode.TreeItemCollapsibleState;
   });
   constructor(opts: {
     kind: AdrTreeItemKind;
@@ -108,7 +115,9 @@ export class AdrTreeItem extends vscode.TreeItem {
       this.command = {
         command: 'adrManager.openAdr',
         title: 'Jump to Question',
-        arguments: [opts.adr!.path, opts.question.lineStart],
+        // question.adrPath is correct for both container kinds (an ADR's
+        // path, or a seed's) — no need for the adr object here.
+        arguments: [opts.question.adrPath, opts.question.lineStart],
       }
     }
 
@@ -186,7 +195,10 @@ export class AdrTreeItem extends vscode.TreeItem {
       return `${statusPart}${questionPart}`
     }
     if (opts.kind === 'seed' && opts.seed) {
-      return opts.seed.isProcessed ? '[processed]' : ''
+      const openCount = opts.seed.questions.filter(q => !q.isAnswered).length
+      const statusPart = opts.seed.isProcessed ? '[processed]' : ''
+      const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
+      return `${statusPart}${questionPart}`
     }
     return ''
   }
@@ -302,6 +314,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     if (element.kind === 'adr-group') return this.getAdrGroupChildren()
     if (element.kind === 'seed-group') return this.getSeedGroupChildren()
     if (element.kind === 'adr' && element.adr) return this.getAdrChildren(element.adr)
+    if (element.kind === 'seed' && element.seed) return this.getSeedChildren(element.seed)
     return []
   }
 
@@ -327,7 +340,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   private getAdrGroupChildren(): AdrTreeItem[] {
     const adrs = this.index.allAdrs().filter(a => !a.isSeed)
     return adrs.map(adr => {
-      const visibleQuestions = this.visibleQuestions(adr)
+      const visibleQuestions = this.filterQuestions(adr.questions)
       return new AdrTreeItem({
         kind: 'adr',
         adr,
@@ -339,16 +352,29 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   }
 
   private getSeedGroupChildren(): AdrTreeItem[] {
-    return this.seedIndex.allSeeds().map(seed => new AdrTreeItem({ kind: 'seed', seed }))
+    return this.seedIndex.allSeeds().map(seed => {
+      const visible = this.filterQuestions(seed.questions)
+      return new AdrTreeItem({
+        kind: 'seed',
+        seed,
+        collapsibleState: visible.length > 0
+          ? vscode.TreeItemCollapsibleState.Collapsed
+          : vscode.TreeItemCollapsibleState.None,
+      })
+    })
   }
 
   private getAdrChildren(adr: AdrFile): AdrTreeItem[] {
-    return this.visibleQuestions(adr).map(q => new AdrTreeItem({ kind: 'question', question: q, adr }))
+    return this.filterQuestions(adr.questions).map(q => new AdrTreeItem({ kind: 'question', question: q, adr }))
   }
 
-  private visibleQuestions(adr: AdrFile) {
-    if (this.filterMode === 'all') return adr.questions
-    if (this.filterMode === 'answered') return adr.questions.filter(q => q.isAnswered)
-    return adr.questions.filter(q => !q.isAnswered) // 'open' (default)
+  private getSeedChildren(seed: SeedFile): AdrTreeItem[] {
+    return this.filterQuestions(seed.questions).map(q => new AdrTreeItem({ kind: 'question', question: q }))
+  }
+
+  private filterQuestions(questions: Question[]): Question[] {
+    if (this.filterMode === 'all') return questions
+    if (this.filterMode === 'answered') return questions.filter(q => q.isAnswered)
+    return questions.filter(q => !q.isAnswered) // 'open' (default)
   }
 }
