@@ -9,6 +9,7 @@
  * format validation are the next steps on this track.
  */
 
+import { createHash } from 'crypto'
 import type { RepositoryContext } from './repositoryContext'
 import type { AdrFile, AdrSection, Question, SeedFile } from '../parser/types'
 import {
@@ -21,6 +22,8 @@ import {
   resolveAdrByRef,
   type RefError,
 } from './reference'
+import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution } from './writeOps'
+import { getCached, recordSuccess } from './dedupe'
 
 function bracket(ref: string): string {
   return `[${ref}]`
@@ -285,4 +288,163 @@ export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuest
     )
   }
   return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// Write tier
+// ---------------------------------------------------------------------------
+
+/**
+ * Write-conflict contract (ADR-0021 conventions): `base_checksum` is
+ * optional — anchored writes (id-addressed, never offset-addressed) are safe
+ * without it. When provided and stale, returns a structured conflict instead
+ * of overwriting.
+ */
+function checkConflict(currentContent: string, baseChecksum: string | undefined): string | undefined {
+  if (!baseChecksum) return undefined
+  const currentChecksum = createHash('sha1').update(currentContent).digest('hex')
+  if (currentChecksum === baseChecksum) return undefined
+  return [
+    'status: conflict',
+    `current_checksum: ${currentChecksum}`,
+    'hint: file changed since base_checksum was read',
+    'options: refresh | branch-anyway | cancel',
+  ].join('\n')
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+export interface AnswerQuestionOptions {
+  author?: string
+  baseChecksum?: string
+  clientMsgId?: string
+  attempt?: number
+}
+
+/** answer_question — replace semantics; anchored write, safe with no prior read. */
+export async function answerQuestion(
+  ctx: RepositoryContext,
+  adrRef: string,
+  questionId: string,
+  answerText: string,
+  options: AnswerQuestionOptions = {},
+): Promise<string> {
+  const cached = getCached('answer_question', options.clientMsgId)
+  if (cached !== undefined) return cached
+
+  if (!options.author?.trim()) {
+    return 'error: missing_author\nmessage: answer_question requires an explicit author (a specific model slug, never "AI") — no default is configured.'
+  }
+
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  const currentContent = await ctx.readFile(resolved.adr.path)
+  const conflict = checkConflict(currentContent, options.baseChecksum)
+  if (conflict) return conflict
+
+  const result = applyAnswerQuestion(currentContent, resolved.adr.path, questionId, answerText, options.author.trim())
+  if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+  await ctx.writeFile(resolved.adr.path, result.newContent)
+  const confirmation = `Answered ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
+  recordSuccess('answer_question', options.clientMsgId, confirmation)
+  return confirmation
+}
+
+export interface AddRecommendationOptions {
+  clientMsgId?: string
+  attempt?: number
+}
+
+/** add_recommendation — append semantics; recommendations stack, ANS stays singular. */
+export async function addRecommendation(
+  ctx: RepositoryContext,
+  adrRef: string,
+  questionId: string,
+  author: string,
+  text: string,
+  options: AddRecommendationOptions = {},
+): Promise<string> {
+  const cached = getCached('add_recommendation', options.clientMsgId)
+  if (cached !== undefined) return cached
+
+  if (!author?.trim()) {
+    return 'error: missing_author\nmessage: add_recommendation requires an explicit author (a specific model slug, never "AI").'
+  }
+
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  const currentContent = await ctx.readFile(resolved.adr.path)
+  const result = applyAddRecommendation(currentContent, resolved.adr.path, questionId, author.trim(), text, todayIsoDate())
+  if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+  await ctx.writeFile(resolved.adr.path, result.newContent)
+  const confirmation = `Added recommendation (by ${author.trim()}) to ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
+  recordSuccess('add_recommendation', options.clientMsgId, confirmation)
+  return confirmation
+}
+
+export interface AppendIterationEntry {
+  human?: string
+  ai?: string
+  outcome?: string
+  date?: string
+  clientMsgId?: string
+  attempt?: number
+}
+
+/** append_iteration — computes the next number server-side (MAX+1 over the actual log, not the header field). */
+export async function appendIteration(ctx: RepositoryContext, adrRef: string, entry: AppendIterationEntry = {}): Promise<string> {
+  const cached = getCached('append_iteration', entry.clientMsgId)
+  if (cached !== undefined) return cached
+
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  const currentContent = await ctx.readFile(resolved.adr.path)
+  const result = applyAppendIteration(currentContent, resolved.adr.path, {
+    human: entry.human,
+    ai: entry.ai,
+    outcome: entry.outcome,
+    date: entry.date ?? todayIsoDate(),
+  })
+  if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+  await ctx.writeFile(resolved.adr.path, result.newContent)
+  const confirmation = `Appended Iteration ${result.iterationNumber} to ${adrRefString(resolved.adr)}\n${result.diff}`
+  recordSuccess('append_iteration', entry.clientMsgId, confirmation)
+  return confirmation
+}
+
+export interface UpdateResolutionOptions {
+  clientMsgId?: string
+  attempt?: number
+}
+
+/** update_resolution — per ADR-0009; note is required (and server-validated) for fiat/contested. */
+export async function updateResolution(
+  ctx: RepositoryContext,
+  adrRef: string,
+  resolution: string,
+  note?: string,
+  options: UpdateResolutionOptions = {},
+): Promise<string> {
+  const cached = getCached('update_resolution', options.clientMsgId)
+  if (cached !== undefined) return cached
+
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  const currentContent = await ctx.readFile(resolved.adr.path)
+  const result = applyUpdateResolution(currentContent, resolution, note)
+  if (!result.ok) return result.error
+
+  await ctx.writeFile(resolved.adr.path, result.newContent)
+  const confirmation = `Updated resolution for ${adrRefString(resolved.adr)} to '${resolution}'\n${result.diff}`
+  recordSuccess('update_resolution', options.clientMsgId, confirmation)
+  return confirmation
 }
