@@ -2106,17 +2106,21 @@ describe('Write-adversary finding: question re-resolution by id survives a line 
     expect(after.questions.find(q => q.id === question.id)).toBeUndefined()
   })
 
-  it('CATCH 6 — a duplicate-heading-text question\'s id is NOT stable across a line shift: the DUPLICATE_SLUG disambiguator embeds the raw line number', () => {
-    // extractor.ts:328-336 (buildSection): the first section/question to
-    // reach a given slug keeps it clean; every later one with the SAME
-    // heading text gets `${slug}-${raw.heading.line}` — the disambiguator IS
-    // the line number. Duplicated boilerplate QST wording (a repeated
-    // closing question across sections) is ordinary authoring, not exotic —
-    // the same premise CATCH 3 already established for draftKey.ts's
-    // occurrence-ordinal scheme. This is the same fragility one layer up, in
-    // Question.id itself, which the brand-new writeAnswer fix (and ADR-0021's
-    // "question_id... stable, from Question.id... safe with no prior read"
-    // MCP write-tool claim) both now depend on.
+  it('CATCH 6 (fixed at the source) — a duplicate-heading-text question\'s id now survives a line shift: DUPLICATE_SLUG disambiguates by occurrence ordinal, not the raw line number', () => {
+    // Quarry 5 (write-adversary) caught this: extractor.ts's buildSection
+    // used to disambiguate a duplicate slug with `${slug}-${raw.heading.line}`
+    // — the raw line number — so any edit ABOVE a duplicate-heading-text
+    // question changed its id even though the question itself never changed.
+    // Duplicated boilerplate QST wording (a repeated closing question across
+    // sections) is ordinary authoring, not exotic — the same premise CATCH 3
+    // already established for draftKey.ts's occurrence-ordinal scheme. This
+    // was the same fragility one layer up, in Question.id itself, which
+    // writeAnswer's re-resolution fix (and ADR-0021's "question_id...
+    // stable, from Question.id... safe with no prior read" MCP write-tool
+    // claim) both depend on. Fixed by disambiguating with an occurrence
+    // ordinal (1st duplicate, 2nd duplicate, ...) instead of the line number
+    // — stable unless a NEW duplicate is inserted before this one, the same
+    // narrower threat model already accepted elsewhere in this codebase.
     const original = `# ADR-0099: Duplicate Closing Question
 
 - **Status**: Draft
@@ -2136,7 +2140,7 @@ describe('Write-adversary finding: question re-resolution by id survives a line 
 [Fill this in]
 `
     const before = parseAdr(original, '/fake/0099-duplicate.md')
-    const secondOccurrenceIdBefore = before.questions[1].id // e.g. "...-13"
+    const secondOccurrenceIdBefore = before.questions[1].id // e.g. "...-1" (1st duplicate)
 
     // An ordinary edit completely unrelated to either duplicate question:
     // someone stacks a recommendation under the FIRST occurrence, growing
@@ -2147,18 +2151,12 @@ describe('Write-adversary finding: question re-resolution by id survives a line 
     )
     const after = parseAdr(shifted, '/fake/0099-duplicate.md')
 
-    // The id CHANGES (it's suffixed with the new line number) even though
-    // the question's own text never changed at all. Today's writeAnswer fix
-    // fails SAFE here (find-by-id returns no match → visible refusal, not
-    // silent misattachment) — but that means every edit anywhere above a
-    // duplicate-text question makes its in-flight "Write anyway" submission
-    // refuse with "Please answer this one manually," even though nothing
-    // about the question itself changed. Worse for the not-yet-built MCP
-    // tier: ADR-0021 states question_id is "stable... safe with no prior
-    // read" — this shows that promise doesn't hold whenever heading text is
-    // duplicated, which the ADR's anchor-resolution note doesn't cover (it
-    // only names *heading reword* as a slug-instability risk, not
-    // *duplicate-slug-by-line-number* as a second, independent one).
+    // The id now stays IDENTICAL despite the line shift: writeAnswer's
+    // re-resolution by id (with draftKey as a redundant secondary check)
+    // no longer refuses a legitimate "Write anyway" submission just because
+    // something unrelated changed above a duplicate-text question, and
+    // ADR-0021's "question_id is stable" MCP write-tool claim now actually
+    // holds for this case too.
     expect(after.questions[1].id).toBe(secondOccurrenceIdBefore)
   })
 })

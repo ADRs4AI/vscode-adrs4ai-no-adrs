@@ -89,6 +89,20 @@ export class OpenQuestionsPanel {
   private readonly panel: vscode.WebviewPanel
   private readonly disposables: vscode.Disposable[] = []
   private readonly draftStore: DraftStore
+  /**
+   * Monotonic counter, incremented on every sendQuestions() push (seed-2026-
+   * 07-06-panel-submit-no-refresh-bug.md, "Problem 2" — panel-advance bug
+   * recurring even after b9a04e5's synchronous-reindex fix). This repo has
+   * multiple concurrent sessions writing docs/adr/*.md at once; the real
+   * FileSystemWatcher can fire an UNRELATED reindex (triggered by another
+   * session's write elsewhere) that races with this panel's own post-write
+   * reindex. Both eventually push correct 'questions' data, but if the
+   * unrelated one is *in flight* when this panel's own write completes, it
+   * can be delivered to the webview out of order relative to the correct
+   * push — stale data overwriting fresh data. The webview discards any
+   * 'questions' message whose generation is behind what it already applied.
+   */
+  private questionsGeneration = 0
 
   // ---------------------------------------------------------------------------
 
@@ -211,12 +225,14 @@ export class OpenQuestionsPanel {
 
     const cfg = vscode.workspace.getConfiguration('adrManager')
     const settingsName = cfg.get<string>('humanName', '')
+    this.questionsGeneration += 1
     this.panel.webview.postMessage({
       type: 'questions',
       questions,
       // Priority: settings > git config > top name from ADR index
       gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.index)[0],
       recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
+      generation: this.questionsGeneration,
     })
   }
 
@@ -270,16 +286,29 @@ export class OpenQuestionsPanel {
         }
       }
 
-      // Re-resolve the question's CURRENT position by id rather than
-      // trusting msg.lineStart, which was captured at render time and can be
-      // stale — critical under `force` (the drift fence's checksum check is
-      // skipped there entirely). Write-adversary finding (Quarry 5): a stale
-      // line offset against shifted content can land the search window in a
+      // Re-resolve the question's CURRENT position rather than trusting
+      // msg.lineStart, which was captured at render time and can be stale —
+      // critical under `force` (the drift fence's checksum check is skipped
+      // there entirely). Write-adversary finding (Quarry 5): a stale line
+      // offset against shifted content can land the search window in a
       // DIFFERENT question's block, silently overwriting it — misattribution,
       // not just loss. Refuse (visible error) rather than guess when the
       // question can't be relocated, e.g. its heading text itself changed.
+      //
+      // CATCH 6 (Quarry 5, follow-on): Question.id is NOT reliably stable
+      // across a line shift for duplicate-heading-text questions — its
+      // duplicate-slug disambiguator embeds the raw heading line number
+      // (extractor.ts buildSection), so an edit anywhere ABOVE a duplicate-
+      // text question changes its id even though the question itself never
+      // changed. draftKey (adrNumber + normalized-text hash + occurrence
+      // ordinal — computeDraftKey/draftKey.ts) carries no line number at
+      // all, so it survives exactly the shift id can't; try it first, with
+      // id as a secondary confirmation for the common (non-duplicate) case.
       const freshAdr = parseAdr(currentContent, msg.adrPath)
-      const currentQuestion = freshAdr.questions.find(q => q.id === msg.questionId)
+      const freshOrdinals = computeOccurrenceOrdinals(freshAdr.questions.map(q => q.text))
+      const currentQuestion = freshAdr.questions.find((q, i) =>
+        computeDraftKey(String(freshAdr.number), q.text, freshOrdinals[i]) === msg.draftKey || q.id === msg.questionId,
+      )
       if (!currentQuestion) {
         this.panel.webview.postMessage({
           type: 'error',
@@ -887,6 +916,12 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 const vscode = acquireVsCodeApi();
 let questions = [], idx = 0;
 let recCollapseThreshold = 0;
+// Discards stale/out-of-order 'questions' pushes (Problem 2, panel-submit-
+// no-refresh-bug seed): with multiple sessions writing docs/adr/*.md
+// concurrently, an unrelated reindex triggered elsewhere can race with this
+// panel's own post-write reindex and arrive later despite being computed
+// earlier. Never let older data overwrite newer data.
+let lastQuestionsGeneration = -1;
 const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
@@ -1234,6 +1269,10 @@ function render() {
 window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.type === 'questions') {
+    if (typeof msg.generation === 'number' && msg.generation < lastQuestionsGeneration) {
+      return; // stale push, superseded by data we already applied — ignore it
+    }
+    if (typeof msg.generation === 'number') lastQuestionsGeneration = msg.generation;
     questions = msg.questions;
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
     // Clamp idx: if the list shrank (answered question removed), idx may now

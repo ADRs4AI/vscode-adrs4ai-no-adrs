@@ -124,6 +124,15 @@ describe('Webview script block syntax', () => {
       expect(PANEL_SRC, `must reference #${id}`).toMatch(new RegExp(`(id="${id}"|'${id}')`))
     }
   })
+
+  it('Problem 2 fix (panel-submit-no-refresh-bug seed): discards stale/out-of-order "questions" pushes by generation', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('lastQuestionsGeneration')
+    expect(script).toContain('msg.generation < lastQuestionsGeneration')
+    expect(PANEL_SRC).toContain('this.questionsGeneration')
+    expect(PANEL_SRC).toContain('generation: this.questionsGeneration')
+  })
 })
 
 // ---------------------------------------------------------------------------

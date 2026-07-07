@@ -293,7 +293,12 @@ export function hasNonstandardNumbering(filePath: string): boolean {
 /** Look for <!-- @adr-anchor: slug --> on the line immediately after a heading */
 const ANCHOR_COMMENT_RE = /^@adr-anchor:\s+(.+)$/;
 
-function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWarning[]): AdrSection {
+function buildSection(
+  raw: RawSection,
+  allSlugs: Set<string>,
+  warnings: ParseWarning[],
+  slugOccurrences: Map<string, number>,
+): AdrSection {
   const heading = raw.heading.text;
   let navMatch = heading.match(NAV_CODE_HEADING_RE);
 
@@ -325,12 +330,23 @@ function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWar
     }
   }
 
-  // Check for duplicate slugs
+  // Check for duplicate slugs. Disambiguate with an occurrence ORDINAL, not
+  // the raw heading line number (write-adversary CATCH 6, Quarry 5): a line
+  // number shifts on any edit above this section — including edits that
+  // have nothing to do with either duplicate — so it made Question.id
+  // unstable across ordinary edits for duplicate-heading-text questions,
+  // undermining anything that resolves a question by id later (writeAnswer's
+  // re-resolution fix, and ADR-0021's MCP write tools' "id is stable" claim).
+  // An ordinal only changes if a NEW duplicate is inserted before this one —
+  // the same, narrower threat model draftKey.ts's occurrenceOrdinal already
+  // accepts.
   if (allSlugs.has(slug)) {
-    const unique = `${slug}-${raw.heading.line}`;
+    const ordinal = (slugOccurrences.get(slug) ?? 0) + 1;
+    slugOccurrences.set(slug, ordinal);
+    const unique = `${slug}-${ordinal}`;
     warnings.push({
       code: 'DUPLICATE_SLUG',
-      message: `Two sections resolve to the same slug "${slug}". Using "${unique}" for line ${raw.heading.line}.`,
+      message: `Two sections resolve to the same slug "${slug}". Using "${unique}" (duplicate occurrence ${ordinal}, line ${raw.heading.line}).`,
       line: raw.heading.line,
     });
     slug = unique;
@@ -346,7 +362,7 @@ function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWar
     : raw.heading.line;
 
   // Find nested subsections within the body (### and #### headings)
-  const children = buildSubsections(raw.body, allSlugs, warnings);
+  const children = buildSubsections(raw.body, allSlugs, warnings, slugOccurrences);
 
   return {
     level: raw.heading.level,
@@ -368,7 +384,12 @@ function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWar
  * a seed's Brain Dump / Thread body tokens — container-agnostic reuse
  * rather than a parallel reimplementation.
  */
-export function buildSubsections(bodyTokens: Token[], allSlugs: Set<string>, warnings: ParseWarning[]): AdrSection[] {
+export function buildSubsections(
+  bodyTokens: Token[],
+  allSlugs: Set<string>,
+  warnings: ParseWarning[],
+  slugOccurrences: Map<string, number> = new Map(),
+): AdrSection[] {
   const subsections: AdrSection[] = [];
   let current: { heading: ReturnType<typeof tokenize>[number] & { kind: 'heading' }; body: Token[] } | null = null;
 
@@ -379,6 +400,7 @@ export function buildSubsections(bodyTokens: Token[], allSlugs: Set<string>, war
           { heading: current.heading, body: current.body },
           allSlugs,
           warnings,
+          slugOccurrences,
         ));
       }
       current = { heading: token, body: [] };
@@ -389,7 +411,7 @@ export function buildSubsections(bodyTokens: Token[], allSlugs: Set<string>, war
     }
   }
   if (current) {
-    subsections.push(buildSection({ heading: current.heading, body: current.body }, allSlugs, warnings));
+    subsections.push(buildSection({ heading: current.heading, body: current.body }, allSlugs, warnings, slugOccurrences));
   }
 
   return subsections;
@@ -838,8 +860,9 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   warnings.push(...metadata.warnings);
 
   // Build typed sections
+  const slugOccurrences = new Map<string, number>();
   const sections: AdrSection[] = rawSections.map(raw =>
-    buildSection(raw, allSlugs, warnings)
+    buildSection(raw, allSlugs, warnings, slugOccurrences)
   );
 
   // Extract questions (QST sections + their children)
