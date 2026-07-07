@@ -2,7 +2,7 @@
   "name": "adrs-for-ai",
   "displayName": "ADRs for AI",
   "description": "Navigate and manage Architectural Decision Records for human-AI collaboration (collab-adr-lean format)",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "jlumbroso",
   "license": "MIT",
   "engines": {
@@ -62,6 +62,11 @@
         "title": "Refresh",
         "category": "ADR Manager",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "adrManager.showVersion",
+        "title": "Show Version",
+        "category": "ADR Manager"
       },
       {
         "command": "adrManager.openAdr",

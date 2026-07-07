@@ -61,6 +61,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const config = vscode.workspace.getConfiguration('adrManager');
   const adrDir = config.get<string>('adrDirectory', 'docs/adr');
 
+  // Version check (2026-07-06): the installed extension had gone stale
+  // relative to source for months with no way to notice short of reading
+  // dist/'s file mtime. `context.extension.packageJSON.version` reads the
+  // version from the *installed* manifest, not a hardcoded string, so it's
+  // always the true running version, not what's merely in the repo.
+  const runningVersion: string = context.extension.packageJSON.version ?? 'unknown';
+  const outputChannel = vscode.window.createOutputChannel('ADR Manager');
+  context.subscriptions.push(outputChannel);
+  outputChannel.appendLine(`ADR Manager v${runningVersion} activated at ${new Date().toISOString()}`);
+
   // Create the indices (no files parsed yet — lazy init)
   index = new AdrIndex();
   seedIndex = new SeedIndex();
@@ -93,7 +103,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ── Status bar item ──────────────────────────────────────────────────────
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'adrManager.open';
-  statusBarItem.tooltip = 'Open ADR Explorer';
+  statusBarItem.tooltip = `Open ADR Explorer (ADR Manager v${runningVersion})`;
   statusBarItem.text = 'ADRs: …';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
@@ -120,6 +130,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.refresh', () => {
       reindexWorkspace(index!, seedIndex!, adrDir);
+    }),
+
+    vscode.commands.registerCommand('adrManager.showVersion', () => {
+      vscode.window.showInformationMessage(`ADR Manager v${runningVersion}`);
+      outputChannel.show();
     }),
 
     vscode.commands.registerCommand('adrManager.openAdr', (filePath: string, lineNumber?: number) => {
