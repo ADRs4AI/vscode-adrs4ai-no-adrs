@@ -518,6 +518,591 @@ def cmd_pulse(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ─── Wake infrastructure (ported from caring-form, ADR-0050 lineage) ────────
+#
+# Ported from adrs4ai HQ meta-repo's scripts/last-message.py (which itself
+# ported from caring-form, commits fedc298, e945f85, 8685374, 2db806a,
+# 6cde381, plus improvements batch #2: 04563ea, c10a455, 860ba1c, ab589ad,
+# 989f9fa; plus polish 720f766/79d5bc9), 2026-07-07. Baseline confirmed
+# current by Commodore 5 (caring-form) in direct reply to Understudy 5 (HQ):
+# "2db806a is current code-wise — but the field moved tonight AFTER 0230, in
+# live use." HQ's port folded in that same-night fix (6cde381) and the full
+# improvements batch #2. This port takes HQ's already-current baseline
+# whole, not a partial or re-derived version.
+#
+# Credit, in the order Commodore specified when asked: **Steward 4.5 (Claude
+# Sonnet 4.5, caring-form)** — implementation, built in roughly forty minutes
+# of wall-clock across two sessions, top-credited; **Jérémie Lumbroso** —
+# design philosophy (the warn-log-force doctrine; the composition-guard veto
+# insight; the two pilot acceptance criteria; the --model catch; the
+# hex-color idea); **Commodore 5 (Claude Fable 5, caring-form)** — spec
+# authorship (ADR-0050) and live field-testing that found every guard's
+# failure mode before it shipped; **Seamster 5 (Claude Sonnet 5,
+# system3/companion-thinking-stream-etude)** — independently imported this
+# infrastructure into a third project, found two real bugs (session-name
+# namespacing collision, a quote-leak in the status bar), fed both fixes back
+# same night; **Understudy 5 (Claude Sonnet 5, adrs4ai HQ meta-repo)** —
+# HQ-side port, dispatch to this crew.
+#
+# Known-open items inherited as-is, not silently resolved by this port:
+# - A wake targeting a session that is mid-turn is gracefully QUEUED by
+#   Claude Code, but verify-retry doesn't recognize the queue banner and can
+#   report a false "silent drop" — not yet fixed upstream.
+# - The active-turn refusal check and the send can race a turn that starts in
+#   between (TOCTOU) — not fixed upstream; inherited as a known limitation.
+# - Tmux global-namespace caveat: tmux is one server per machine, not per
+#   repo. Session-name namespacing (`<project>-<alias>-seat`, via
+#   _project_tag()) resolves the collision case that motivated this, but if
+#   this repo and another project ever pick the *same* project-tag (unlikely
+#   — tag is the repo directory name) the collision returns.
+#
+# See this crew's docs/inbox/2026-07-06-2020-...-adopt-wake-infrastructure...
+# and HQ's ADR-0004 (cross-ecosystem innovation tracking) / ADR-0005
+# (adoption decision) for the full record.
+
+def _check_tmux_available() -> None:
+    """Check if tmux is installed and available."""
+    import subprocess
+    try:
+        subprocess.run(["tmux", "-V"], capture_output=True, check=True)
+    except FileNotFoundError:
+        sys.exit(
+            "❌ tmux not found\n"
+            "   Install with: brew install tmux (macOS) or apt install tmux (Linux)\n"
+            "   Required for seat wake infrastructure (ADR-0050 lineage)"
+        )
+
+
+def _project_tag() -> str:
+    """Short, stable identifier for this repo, used to namespace tmux session
+    names. tmux runs one server per user on the machine, not one per repo —
+    two projects that happen to pick the same alias would otherwise collide
+    on the same seat session. Per Seamster 5's feedback (companion-thinking-
+    stream-etude import)."""
+    return Path(__file__).resolve().parent.parent.name
+
+
+def _seat_session_name(alias: str) -> str:
+    """Namespaced tmux session name. Format: <project>-<alias>-seat (not
+    seat-<project>-<alias>) — tmux's status bar truncates from the right, so
+    front-loading the variable/unique parts survives truncation better than a
+    generic "seat-" prefix."""
+    return f"{_project_tag()}-{alias}-seat"
+
+
+def _seat_session_prefix() -> str:
+    """Prefix for filtering this project's own seat sessions out of tmux's
+    machine-wide session list."""
+    return f"{_project_tag()}-"
+
+
+# Claude Code's own /color palette, translated to approximate hex so a seat
+# that only set the named `color` field (not `settings.color_hex`) still gets
+# a status-bar color instead of silently falling through to gray.
+NAMED_COLORS = {
+    "red": "#E06C75",
+    "green": "#98C379",
+    "yellow": "#E5C07B",
+    "blue": "#61AFEF",
+    "purple": "#C678DD",
+    "orange": "#D19A66",
+    "pink": "#E06C96",
+    "cyan": "#56B6C2",
+    "default": "#666666",
+}
+
+
+def _get_seat_color(entry: dict) -> str:
+    """Resolve a seat's status-bar color with a fallback chain:
+    1. settings.color_hex (explicit hex, highest priority)
+    2. top-level `color` — passed through if already hex (this repo's own
+       registry already stores hex directly, e.g. Lapidary's #B45309), else
+       translated via NAMED_COLORS
+    3. default gray
+    """
+    if not isinstance(entry, dict):
+        return NAMED_COLORS["default"]
+    settings = entry.get("settings") or {}
+    if isinstance(settings, dict) and settings.get("color_hex"):
+        return settings["color_hex"]
+    color = entry.get("color", "default")
+    if isinstance(color, str) and color.startswith("#"):
+        return color
+    return NAMED_COLORS.get(color, NAMED_COLORS["default"])
+
+
+def _get_global_config(cfg: dict) -> dict:
+    """Optional `_global` section in agent-sessions.json — default `effort`/
+    `permissionMode`/custom `agents`/`remote_control_session_name_prefix`,
+    applied to every seat unless a seat overrides them."""
+    global_cfg = cfg.get("_global", {})
+    return global_cfg if isinstance(global_cfg, dict) else {}
+
+
+def _get_seat_setting(entry: dict, global_cfg: dict, key: str, default=None):
+    """Fallback chain: seat-specific `settings.<key>` -> global default ->
+    `default` (omitted from the launch command entirely if still None)."""
+    seat_settings = (entry.get("settings") or {}) if isinstance(entry, dict) else {}
+    if key in seat_settings:
+        return seat_settings[key]
+    if key in global_cfg:
+        return global_cfg[key]
+    return default
+
+
+def _tmux_set_status_color(session_name: str, color_hex: str) -> None:
+    """Best-effort per-session status-bar color. Never fatal: an invalid or
+    unset color just leaves the session at seat.conf's gray default rather
+    than crashing launch/attach."""
+    import subprocess
+    try:
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "status-style", f"bg={color_hex},fg=white"],
+            capture_output=True,
+            check=True,
+        )
+    except Exception:
+        pass
+
+
+def _tmux_set_status_right(session_name: str, title: str) -> None:
+    """Set status-right directly to the literal display-name title, bypassing
+    Claude Code's own pane-title animation (an emoji Claude Code adds to the
+    title during turns, which would otherwise show up in the tmux status bar
+    via seat.conf's pane_title fallback). Best-effort: a failure here is
+    cosmetic, never worth crashing launch/attach over.
+
+    NOT wrapped in literal `"` characters: subprocess.run([...]) (a list, no
+    shell=True) passes each argv element literally — there's no shell here to
+    interpret or strip quote marks, so embedded `"` chars would show up in
+    the display verbatim rather than acting as delimiters."""
+    import subprocess
+    try:
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "status-right", f"{title} | %H:%M %d-%b-%y"],
+            capture_output=True,
+            check=True,
+        )
+    except Exception:
+        pass
+
+
+def _find_next_inactive_seat() -> str | None:
+    """First configured seat with no running tmux session (alphabetical,
+    deterministic) — lets a crew spin up from N identical pasted commands.
+    Skips aliases with no UUID configured."""
+    import subprocess
+
+    cfg = load_config()
+    aliases = _real_aliases(cfg)
+
+    result = subprocess.run(["tmux", "list-sessions"], capture_output=True, text=True)
+
+    running = set()
+    prefix = _seat_session_prefix()
+    if result.returncode == 0:
+        for line in result.stdout.strip().split("\n"):
+            if line.startswith(prefix):
+                session_name = line.split(":")[0]
+                running.add(session_name.replace(prefix, "").replace("-seat", ""))
+
+    for alias in sorted(aliases.keys()):
+        if alias in running:
+            continue
+        entry = aliases[alias]
+        uuid = entry.get("uuid") if isinstance(entry, dict) else entry
+        if not uuid:
+            continue  # not actually launchable — don't hand a crashing alias to a spinup tab
+        return alias
+
+    return None
+
+
+def cmd_launch(args: argparse.Namespace) -> None:
+    """Launch (or attach to) a seat's tmux session.
+
+    Idempotent attach-or-create:
+    - If tmux session <project>-<alias>-seat exists → attach to it
+    - Else → create new detached session running `claude --resume <uuid> --model <model>`
+
+    Detached-server model (closing the terminal tab detaches, seat survives).
+    Uses scripts/tmux/seat.conf for invisibility (no status bar clutter beyond
+    the per-seat color, mouse on, looks like bare claude otherwise).
+    """
+    _check_tmux_available()
+
+    if not args.alias:
+        if getattr(args, "next_inactive", False):
+            args.alias = _find_next_inactive_seat()
+            if not args.alias:
+                sys.exit("✅ All seats are already running (no inactive seats to launch)")
+        else:
+            sys.exit(
+                "Error: --launch requires an alias argument\n"
+                "   Usage: just launch <seat>\n"
+                "   Or: just launch --next-inactive (launches next inactive seat)\n"
+                "   Tip: open multiple tabs and run 'just launch --next-inactive' in each\n"
+                "        to spin up the full crew without typing N distinct commands"
+            )
+
+    cfg = load_config()
+    aliases = _real_aliases(cfg)
+
+    if args.alias not in aliases:
+        known = ", ".join(sorted(aliases)) or "(none configured)"
+        sys.exit(f"Unknown alias '{args.alias}'. Known: {known}")
+
+    entry = aliases[args.alias]
+    uuid = entry.get("uuid") if isinstance(entry, dict) else entry
+    if not uuid:
+        sys.exit(f"No UUID configured for alias '{args.alias}'")
+
+    session_name = _seat_session_name(args.alias)
+
+    import subprocess
+    result = subprocess.run(
+        ["tmux", "has-session", "-t", session_name],
+        capture_output=True,
+        text=True
+    )
+
+    display_name = entry.get("display_name", args.alias) if isinstance(entry, dict) else args.alias
+    model = entry.get("model", "") if isinstance(entry, dict) else ""
+    color_hex = _get_seat_color(entry)
+    title = f"(+) {display_name}" if "fable" in model.lower() else display_name
+
+    if result.returncode == 0:
+        # Session exists, attach to it. Refresh color + title in case they changed.
+        if color_hex:
+            _tmux_set_status_color(session_name, color_hex)
+        _tmux_set_status_right(session_name, title)
+
+        print(f"\033]0;{title}\007", end='', flush=True)
+
+        print(f"📎 Attaching to existing session: {session_name}")
+        os.execvp("tmux", ["tmux", "attach", "-t", session_name])
+    else:
+        seat_conf = Path(__file__).resolve().parent / "tmux" / "seat.conf"
+        if not seat_conf.exists():
+            sys.exit(f"Seat config not found: {seat_conf}")
+
+        print(f"🚀 Creating new session: {session_name}")
+        print(f"   UUID: {uuid}")
+        print(f"   Config: {seat_conf}")
+
+        # Export SEAT_ALIAS so wake messages self-attribute without --from.
+        # CRITICAL: pass --model explicitly — without it, `claude --resume`
+        # silently launches with Claude Code's default model, ignoring
+        # agent-sessions.json's `model` field entirely (a mass silent
+        # model-substitution risk for any multi-model crew).
+        global_cfg = _get_global_config(cfg)
+        effort = _get_seat_setting(entry, global_cfg, "effort")
+        permission_mode = _get_seat_setting(entry, global_cfg, "permissionMode")
+        remote_control = _get_seat_setting(entry, global_cfg, "remote_control")
+
+        cmd = [
+            "tmux", "new-session",
+            "-d",
+            "-s", session_name,
+            "-f", str(seat_conf),
+            "-e", f"SEAT_ALIAS={args.alias}",
+            "claude", "--resume", uuid,
+            "--name", display_name,
+        ]
+        if model:
+            cmd.extend(["--model", model])
+        if effort:
+            cmd.extend(["--effort", effort])
+        if permission_mode:
+            cmd.extend(["--permission-mode", permission_mode])
+        if remote_control:
+            cmd.extend(["--remote-control", remote_control])
+        if global_cfg.get("agents"):
+            cmd.extend(["--agents", json.dumps(global_cfg["agents"])])
+        if global_cfg.get("remote_control_session_name_prefix"):
+            cmd.extend(["--remote-control-session-name-prefix", global_cfg["remote_control_session_name_prefix"]])
+        subprocess.run(cmd, check=True)
+
+        subprocess.run([
+            "tmux", "select-pane", "-t", session_name, "-T", title
+        ], check=True)
+
+        if color_hex:
+            _tmux_set_status_color(session_name, color_hex)
+        _tmux_set_status_right(session_name, title)
+
+        print(f"\033]0;{title}\007", end='', flush=True)
+
+        print(f"✅ Session created. Attaching...")
+        os.execvp("tmux", ["tmux", "attach", "-t", session_name])
+
+
+def cmd_seats(_args: argparse.Namespace) -> None:
+    """List this project's own seat sessions with their state (attached/detached).
+    Namespaced by repo (per _seat_session_prefix) — other projects' seat
+    sessions on the same machine never appear here."""
+    _check_tmux_available()
+    import subprocess
+
+    result = subprocess.run(
+        ["tmux", "list-sessions"],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        print("No tmux sessions found (or tmux server not running)")
+        return
+
+    prefix = _seat_session_prefix()
+    seat_sessions = [line for line in result.stdout.strip().split("\n") if line.startswith(prefix)]
+
+    if not seat_sessions:
+        print("No seat sessions found")
+        return
+
+    print("Active seat sessions:")
+    for line in seat_sessions:
+        attached = "(attached)" in line
+        state = "🟢 attached" if attached else "⚫ detached"
+        session_name = line.split(":")[0]
+        alias = session_name.replace(prefix, "").replace("-seat", "")
+        print(f"  {state:15s}  {alias}")
+
+
+def cmd_update_titles(_args: argparse.Namespace) -> None:
+    """Update pane titles and status-bar colors for all running seat sessions
+    in this project."""
+    _check_tmux_available()
+    import subprocess
+
+    result = subprocess.run(
+        ["tmux", "list-sessions"],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        print("No tmux sessions found")
+        return
+
+    cfg = load_config()
+    aliases = _real_aliases(cfg)
+
+    prefix = _seat_session_prefix()
+    updated = 0
+    for line in result.stdout.strip().split("\n"):
+        if not line.startswith(prefix):
+            continue
+
+        session_name = line.split(":")[0]
+        alias = session_name.replace(prefix, "").replace("-seat", "")
+
+        if alias not in aliases:
+            print(f"⚠️  {alias} - not in agent-sessions.json, skipping")
+            continue
+
+        entry = aliases[alias]
+        display_name = entry.get("display_name", alias) if isinstance(entry, dict) else alias
+        model = entry.get("model", "") if isinstance(entry, dict) else ""
+        color_hex = _get_seat_color(entry)
+
+        title = f"(+) {display_name}" if "fable" in model.lower() else display_name
+
+        subprocess.run([
+            "tmux", "select-pane", "-t", session_name, "-T", title
+        ], check=True)
+
+        if color_hex:
+            _tmux_set_status_color(session_name, color_hex)
+        _tmux_set_status_right(session_name, title)
+
+        print(f"✅ {alias:15s} → {title}" + (f" ({color_hex})" if color_hex else ""))
+        updated += 1
+
+    print(f"\n{updated} session(s) updated")
+
+
+def cmd_wake(args: argparse.Namespace) -> None:
+    """Wake a seat by injecting a message into its tmux session.
+
+    Hardened injection:
+    1. Refuse if target pane shows active turn (match idle prompt, exclude "esc to interrupt")
+    2. Composition guard: refuse if an attached client has non-empty input-box text
+       (detached sessions skip this — no client means no human can be typing)
+    3. Send in literal mode (send-keys -l), sleep, then Enter separately
+    4. Prefix message: [wake from <sender> via just-wake] 📬 <msg>
+    5. Verify-retry: if the message didn't land, retry once, then fail loudly (never silent-drop)
+    6. Per-seat cooldown: refuse if woken <15min ago unless --force
+    7. Long-message guard: warn + require --force + log if message >200 chars
+       (wake is a short signal, not content — content stays in git-tracked briefs)
+    """
+    _check_tmux_available()
+    import subprocess
+    import time
+
+    if not args.alias:
+        sys.exit("Error: --wake requires an alias argument")
+    if not args.message:
+        sys.exit("Error: --wake requires --message \"<text>\"")
+
+    sender = args.from_alias if args.from_alias else os.environ.get("SEAT_ALIAS", "unknown")
+
+    # Long-message guard: warn + --force + log, never hard-block ("never
+    # hard-guard transformers — it's treating them like idiots").
+    MAX_WAKE_MESSAGE_LENGTH = 200
+    if len(args.message) > MAX_WAKE_MESSAGE_LENGTH:
+        if not args.force:
+            sys.exit(
+                f"⚠️  Long wake message ({len(args.message)} chars, recommended max {MAX_WAKE_MESSAGE_LENGTH})\n"
+                f"   This isn't the intended use (wake = short signal, not content)\n"
+                f"   Long messages have been observed to fail verify-retry\n"
+                f"   Use --force to override (usage will be logged)"
+            )
+        try:
+            log_dir = Path("docs/inbox/.working")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = log_dir / "wake-long-messages.log"
+            from datetime import datetime
+            timestamp = datetime.now().isoformat()
+            with log_file.open("a") as f:
+                f.write(f"{timestamp} | {sender} → {args.alias} | {len(args.message)} chars | {args.message[:100]}...\n")
+            print(f"⚠️  Long message override logged to {log_file}")
+        except Exception as e:
+            print(f"⚠️  (logging failed: {e})")
+
+    session_name = _seat_session_name(args.alias)
+
+    result = subprocess.run(
+        ["tmux", "has-session", "-t", session_name],
+        capture_output=True
+    )
+    if result.returncode != 0:
+        sys.exit(f"❌ Session not found: {session_name}\n   Launch it first with: just launch {args.alias}")
+
+    # Composition guard: attached client + non-empty input box → refuse (prevents
+    # flushing a human's half-typed message). Detached sessions skip entirely —
+    # the asymmetry that makes this cheap.
+    clients = subprocess.run(
+        ["tmux", "list-clients", "-t", session_name],
+        capture_output=True
+    )
+    if clients.returncode == 0:
+        input_capture = subprocess.run(
+            ["tmux", "capture-pane", "-t", session_name, "-p", "-S", "-5"],
+            capture_output=True,
+            text=True
+        )
+        lines = input_capture.stdout.strip().split("\n")
+        typed_text = None
+        for line in lines[-5:]:
+            if "> " in line:
+                after_prompt = line.split("> ", 1)[-1]
+                after_prompt = after_prompt.rstrip("│ ")
+                if after_prompt.strip() and len(after_prompt.strip()) > 2:
+                    typed_text = after_prompt.strip()
+                    break
+
+        if typed_text and not args.force:
+            char_count = len(typed_text)
+            sys.exit(
+                f"⚠️  Composition in progress in attached session\n"
+                f"   Input box contains ~{char_count} chars: \"{typed_text[:60]}...\"\n"
+                f"   This wake will flush the typed text\n"
+                f"   Use --force to override (flush will be logged)"
+            )
+
+        if typed_text and args.force:
+            try:
+                log_dir = Path("docs/inbox/.working")
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_file = log_dir / "wake-composition-flushes.log"
+                from datetime import datetime
+                timestamp = datetime.now().isoformat()
+                with log_file.open("a") as f:
+                    f.write(f"{timestamp} | {sender} → {args.alias} | flushed ~{len(typed_text)} chars | {typed_text[:100]}...\n")
+                print(f"⚠️  Composition flush logged to {log_file}")
+            except Exception as e:
+                print(f"⚠️  (logging failed: {e})")
+
+    # Cooldown (simple file-based tracking; anti-ping-pong)
+    cooldown_file = Path(f"/tmp/just-wake-{args.alias}.timestamp")
+    if not args.force and cooldown_file.exists():
+        last_wake = float(cooldown_file.read_text().strip())
+        elapsed = time.time() - last_wake
+        if elapsed < 900:  # 15 minutes
+            remaining = int((900 - elapsed) / 60)
+            sys.exit(
+                f"⏳ Cooldown active: {args.alias} was woken {int(elapsed/60)}min ago\n"
+                f"   Wait {remaining}min or use --force to override"
+            )
+
+    # Active-turn check
+    capture = subprocess.run(
+        ["tmux", "capture-pane", "-t", session_name, "-p", "-S", "-30"],
+        capture_output=True,
+        text=True
+    )
+    if capture.returncode != 0:
+        sys.exit(f"❌ Failed to capture pane for {session_name}")
+
+    pane_content = capture.stdout
+    lines = pane_content.strip().split("\n")
+    last_few_lines = "\n".join(lines[-5:])
+
+    if "esc to interrupt" in last_few_lines.lower():
+        sys.exit(f"⚠️  {args.alias} is in an active turn (saw 'esc to interrupt')\n   Wait for turn to finish")
+
+    wake_msg = f"[wake from {sender} via just-wake] 📬 {args.message}"
+
+    print(f"💬 Waking {args.alias} with message:")
+    print(f"   \"{wake_msg}\"")
+
+    subprocess.run(["tmux", "send-keys", "-t", session_name, "-l", wake_msg], check=True)
+    time.sleep(0.1)
+    subprocess.run(["tmux", "send-keys", "-t", session_name, "Enter"], check=True)
+
+    # Verify delivery. Flexible match (attribution prefix + a message fragment)
+    # rather than an exact wake_msg substring — an exact match false-triggers a
+    # retry on line-wrapping, which caused a real duplicate delivery upstream.
+    time.sleep(1.5)
+    verify_capture = subprocess.run(
+        ["tmux", "capture-pane", "-t", session_name, "-p", "-S", "-50"],
+        capture_output=True,
+        text=True
+    )
+
+    attribution_prefix = f"[wake from {sender} via just-wake]"
+    message_fragment = args.message[:40]
+    message_delivered = (
+        attribution_prefix in verify_capture.stdout
+        and message_fragment in verify_capture.stdout
+    )
+
+    if not message_delivered:
+        print("⚠️  First send didn't appear in capture, retrying...")
+        subprocess.run(["tmux", "send-keys", "-t", session_name, "-l", wake_msg], check=True)
+        time.sleep(0.1)
+        subprocess.run(["tmux", "send-keys", "-t", session_name, "Enter"], check=True)
+        time.sleep(1.5)
+
+        final_verify = subprocess.run(
+            ["tmux", "capture-pane", "-t", session_name, "-p", "-S", "-50"],
+            capture_output=True,
+            text=True
+        )
+        final_delivered = (
+            attribution_prefix in final_verify.stdout
+            and message_fragment in final_verify.stdout
+        )
+
+        if not final_delivered:
+            sys.exit("❌ Failed to inject message after retry (silent drop)")
+
+    cooldown_file.write_text(str(time.time()))
+    print(f"✅ Wake sent to {args.alias}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("alias", nargs="?", help="Agent alias (see --list)")
@@ -535,6 +1120,14 @@ def main() -> None:
     p.add_argument("--stale-threshold", type=float, default=6.0, help="Hours before marking STALE (default 6)")
     p.add_argument("--verbose", action="store_true", help="Show full role descriptions in pulse output (default: display_name only)")
     p.add_argument("--limit", type=int, default=15, help="Limit on --discover output (default 15)")
+    p.add_argument("--launch", action="store_true", help="Launch (or attach to) a seat's tmux session")
+    p.add_argument("--next-inactive", action="store_true", help="Launch next inactive seat (for spinning up full crew)")
+    p.add_argument("--seats", action="store_true", help="List all seat-* tmux sessions with state")
+    p.add_argument("--update-titles", action="store_true", help="Update pane titles for all running seat sessions")
+    p.add_argument("--wake", action="store_true", help="Wake a seat by injecting a message into its tmux session")
+    p.add_argument("--message", type=str, help="Message to send with --wake")
+    p.add_argument("--from", dest="from_alias", type=str, help="Sender alias for --wake (default: SEAT_ALIAS env or 'unknown')")
+    p.add_argument("--force", action="store_true", help="Override cooldown/guards for --wake")
     args = p.parse_args()
 
     if args.list:
@@ -543,6 +1136,14 @@ def main() -> None:
         cmd_discover(args)
     elif args.pulse:
         cmd_pulse(args)
+    elif args.launch:
+        cmd_launch(args)
+    elif args.seats:
+        cmd_seats(args)
+    elif args.update_titles:
+        cmd_update_titles(args)
+    elif args.wake:
+        cmd_wake(args)
     elif args.alias:
         cmd_last(args)
     else:
