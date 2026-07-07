@@ -25,6 +25,7 @@ import { D62StatusWithAnnotationHandler } from './normalizer/handlers/d6-2-statu
 import { D65MissingBoldPreambleFieldHandler } from './normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { D96NoncanonicalNavCodeHeadingHandler } from './normalizer/handlers/d9-6-noncanonical-nav-code-heading'
 import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-missing-recommendation'
+import { buildAdrCommitMessage } from './commit/commitMessage'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -579,25 +580,25 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
     return;
   }
 
+  // Stage only files in the ADR directory
+  const changes = [
+    ...repo.state.workingTreeChanges,
+    ...repo.state.indexChanges,
+  ].filter(c => c.uri.fsPath.startsWith(adrDir));
+
+  if (changes.length === 0) {
+    vscode.window.showInformationMessage('ADR Manager: No ADR changes to commit.');
+    return;
+  }
+
   const message = await vscode.window.showInputBox({
     prompt: 'Commit message for ADR changes',
-    value: `docs: update ADRs`,
+    value: buildAdrCommitMessage(changes.map(c => c.uri.fsPath)),
     placeHolder: 'docs: commit message',
   });
   if (!message) return;
 
   try {
-    // Stage only files in the ADR directory
-    const changes = [
-      ...repo.state.workingTreeChanges,
-      ...repo.state.indexChanges,
-    ].filter(c => c.uri.fsPath.startsWith(adrDir));
-
-    if (changes.length === 0) {
-      vscode.window.showInformationMessage('ADR Manager: No ADR changes to commit.');
-      return;
-    }
-
     // Stage the ADR files
     await repo.add(changes.map(c => c.uri.fsPath));
     // Commit

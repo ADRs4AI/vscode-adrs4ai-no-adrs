@@ -2,7 +2,7 @@
   "name": "adrs-for-ai",
   "displayName": "ADRs for AI",
   "description": "Navigate and manage Architectural Decision Records for human-AI collaboration (collab-adr-lean format)",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "jlumbroso",
   "license": "MIT",
   "engines": {
@@ -152,6 +152,11 @@
           "group": "1_actions@2"
         },
         {
+          "command": "adrManager.commitAdrs",
+          "when": "view == adrExplorer && viewItem == adr",
+          "group": "1_actions@3"
+        },
+        {
           "command": "adrManager.goToQuestionInPanel",
           "when": "view == adrExplorer && viewItem == question",
           "group": "2_navigate@1"
@@ -163,6 +168,13 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "adrManager.commitAdrs",
+        "key": "ctrl+alt+shift+a",
+        "mac": "cmd+alt+shift+a"
+      }
+    ],
     "configuration": {
       "title": "ADR Manager",
       "properties": {
