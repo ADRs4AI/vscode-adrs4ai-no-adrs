@@ -23,7 +23,9 @@
 
 import * as crypto from 'crypto'
 import * as path from 'path'
-import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr } from './types'
+import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr, Question, AdrSection } from './types'
+import { tokenize, extractRawSections } from './tokenizer'
+import { buildSubsections, extractQuestion } from './extractor'
 
 // ---------------------------------------------------------------------------
 // Regex patterns
@@ -100,6 +102,9 @@ export function parseSeed(content: string, filePath: string): SeedFile {
   const derivedSection = sections.find(s => s.heading.toLowerCase().includes('derived into'))
   const { derivedAdrs, isProcessed, hasPlaceholder } = parseDerivedInto(derivedSection?.content ?? '')
 
+  // --- Questions (ADR-0018 Step 2) ---
+  const questions = extractSeedQuestions(content, filePath)
+
   return {
     path: filePath,
     title,
@@ -113,6 +118,60 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     derivedIntoHasPlaceholder: hasPlaceholder,
     checksum,
     parsedAt,
+    questions,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Questions (ADR-0018 Step 2 — the QST/ANS substrate applied to seeds)
+// ---------------------------------------------------------------------------
+
+/**
+ * `### QST:` blocks inside a seed's Brain Dump / Thread sections were
+ * previously invisible to the Open Questions panel — not a bug, a
+ * categorical exclusion (ADR-0018's "Human Context": Jérémie hand-editing
+ * markdown because the panel couldn't surface a seed's own questions).
+ *
+ * Reuses the exact same section-tree builder and field parser the ADR
+ * parser uses (`buildSubsections`/`extractQuestion`, both exported from
+ * `extractor.ts` for this purpose) rather than reimplementing QST detection
+ * — one substrate, two container kinds, per ADR-0018's decomposition.
+ */
+function extractSeedQuestions(content: string, filePath: string): Question[] {
+  const tokens = tokenize(content)
+  const { sections: rawSections } = extractRawSections(tokens)
+
+  const questions: Question[] = []
+  const allSlugs = new Set<string>()
+  const seedSlug = path.basename(filePath, '.md')
+
+  for (const raw of rawSections) {
+    const headingLower = raw.heading.text.toLowerCase()
+    if (headingLower !== 'thread' && !headingLower.includes('brain dump')) continue
+
+    const children = buildSubsections(raw.body, allSlugs, [])
+    collectQstSections(children, filePath, seedSlug, questions)
+  }
+
+  return questions
+}
+
+function collectQstSections(
+  sections: AdrSection[],
+  filePath: string,
+  seedSlug: string,
+  out: Question[],
+): void {
+  for (const s of sections) {
+    if (s.navCode === 'QST') {
+      const base = extractQuestion(s, 0, filePath, [])
+      out.push({
+        ...base,
+        id: `${seedSlug}-${s.slug}`,
+        sourceKind: 'seed',
+      })
+    }
+    collectQstSections(s.children, filePath, seedSlug, out)
   }
 }
 

@@ -104,6 +104,7 @@ function makeSeed(overrides: Partial<SeedFile> = {}): SeedFile {
     derivedIntoHasPlaceholder: true,
     checksum: 'cafef00d',
     parsedAt: 1751500000000,
+    questions: [],
     ...overrides,
   }
 }

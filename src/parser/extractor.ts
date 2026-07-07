@@ -362,7 +362,13 @@ function buildSection(raw: RawSection, allSlugs: Set<string>, warnings: ParseWar
   };
 }
 
-function buildSubsections(bodyTokens: Token[], allSlugs: Set<string>, warnings: ParseWarning[]): AdrSection[] {
+/**
+ * ADR-0018 (QST/ANS Substrate): exported so seedExtractor.ts can build the
+ * same nav-code-aware section tree (with ADR-0024's heading tolerance) over
+ * a seed's Brain Dump / Thread body tokens — container-agnostic reuse
+ * rather than a parallel reimplementation.
+ */
+export function buildSubsections(bodyTokens: Token[], allSlugs: Set<string>, warnings: ParseWarning[]): AdrSection[] {
   const subsections: AdrSection[] = [];
   let current: { heading: ReturnType<typeof tokenize>[number] & { kind: 'heading' }; body: Token[] } | null = null;
 
@@ -442,7 +448,14 @@ function detectNonstandardQstFormat(tokens: ReturnType<typeof tokenize>): boolea
   return false;
 }
 
-function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string, deciders: string[]): Question {
+/**
+ * ADR-0018 (QST/ANS Substrate): exported so seedExtractor.ts can extract
+ * QST/ANS fields from a seed-embedded question the same way an ADR's
+ * question is parsed — one field parser, two container kinds. `adrNumber`/
+ * `adrPath` are seed-parlance-agnostic in practice (a source number and a
+ * source path); seeds pass 0 and their own file path.
+ */
+export function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string, deciders: string[]): Question {
   const lines = section.body.split('\n');
   let statusText = 'unanswered';
   let whyAsking: string | undefined;
@@ -836,7 +849,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   function collectQuestions(sectionList: AdrSection[]): void {
     for (const s of sectionList) {
       if (s.navCode === 'QST') {
-        questions.push(extractQuestion(s, adrNumber, filePath, metadata.deciders));
+        questions.push({ ...extractQuestion(s, adrNumber, filePath, metadata.deciders), sourceKind: 'adr' });
       }
       collectQuestions(s.children);
     }

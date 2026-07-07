@@ -180,6 +180,12 @@ export interface Question {
   lineStart: number;
   /** AI-inferred priority (1 = highest). Null until Haiku inference runs. */
   priority?: 1 | 2 | 3 | 4;
+  /**
+   * ADR-0018 (QST/ANS Substrate, Step 3): which container kind this question
+   * came from — 'adr' (default, omitted for pre-existing callers) or 'seed'.
+   * Drives the merged Open Questions panel's icon/grouping per container.
+   */
+  sourceKind?: 'adr' | 'seed';
 }
 
 export interface QuestionAnswer {
@@ -319,4 +325,10 @@ export interface SeedFile {
   /** sha1 hex of raw file content */
   checksum: string;
   parsedAt: number;
+  /**
+   * ADR-0018 (QST/ANS Substrate, Step 2): `### QST:` blocks found inside
+   * this seed's Brain Dump / Thread sections. Empty when the seed has none —
+   * previously these were invisible to the Open Questions panel entirely.
+   */
+  questions: Question[];
 }

@@ -1243,6 +1243,135 @@ The open questions panel shows raw markdown.
 })
 
 // ---------------------------------------------------------------------------
+// ADR-0018 Step 2: QST/ANS substrate applied to seeds — questions embedded
+// in a seed's Brain Dump / Thread were previously invisible to the panel
+// categorically, not by bug (three layers excluded seed files by design).
+// ---------------------------------------------------------------------------
+
+describe('Seed parser — QST extraction (ADR-0018 Step 2)', () => {
+  it('extracts a QST block from the Brain Dump section', () => {
+    const seed = `# SEED: Storage Thoughts
+
+- **Date**: 2026-07-07
+
+---
+
+## Brain Dump
+
+Some prose here.
+
+### QST: Which database engine?
+
+- Status: unanswered
+- Why asking: Affects deployment complexity.
+
+**ANS:** (fill in)
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Which database engine?')
+    expect(parsed.questions[0].sourceKind).toBe('seed')
+  })
+
+  it('extracts a QST block from the Thread section', () => {
+    const seed = `# SEED: Storage Thoughts
+
+- **Date**: 2026-07-07
+
+---
+
+## Thread
+
+### Sonnet 5 - 2026-07-07
+
+### QST: Should we cache reads?
+
+- Status: unanswered
+
+**ANS:** (fill in)
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Should we cache reads?')
+  })
+
+  it('gives seed questions a source-scoped id, not "adr-0000-..."', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## Brain Dump
+
+### QST: Which database engine?
+
+- Status: unanswered
+
+**ANS:** (fill in)
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage-thoughts.md')
+    expect(parsed.questions[0].id).toBe('seed-2026-07-07-storage-thoughts-qst-which-database-engine')
+    expect(parsed.questions[0].id).not.toContain('adr-0000')
+  })
+
+  it('parses status/why-asking/answer fields identically to ADR QSTs (shared field parser)', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## Brain Dump
+
+### QST: Which database engine?
+
+- Status: answered
+- Why asking: Affects deployment complexity.
+
+**ANS:** (by Jérémie)
+Postgres, we already run it elsewhere.
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    const q = parsed.questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.whyAsking).toBe('Affects deployment complexity.')
+    expect(q.answer?.text).toBe('Postgres, we already run it elsewhere.')
+    expect(q.answer?.author).toBe('Jérémie')
+  })
+
+  it('recognizes a noncanonical QST heading the same way ADRs do (ADR-0024 reuse)', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## Brain Dump
+
+### qst: Which database engine?
+
+- Status: unanswered
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Which database engine?')
+  })
+
+  it('returns an empty questions array for a seed with no QST blocks', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## Brain Dump
+
+Just prose, no structured questions.
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toEqual([])
+  })
+
+  it('does NOT extract QST blocks from sections other than Brain Dump / Thread', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## Derived Into
+
+### QST: This should not be extracted
+
+- Status: unanswered
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // SEED_INCOMPLETE cross-reference detection (ADR-0016 Decision 1, condition b)
 // ---------------------------------------------------------------------------
 
