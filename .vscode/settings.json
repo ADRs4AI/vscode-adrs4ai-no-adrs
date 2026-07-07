@@ -67,6 +67,8 @@
     // Tabs and UI
     "terminal.integrated.tabs.enabled": true,
     "terminal.integrated.tabs.hideCondition": "never",
+    "terminal.integrated.tabs.showActions": "never",
+    "terminal.integrated.tabs.enableAnimation": false,
     "terminal.integrated.tabs.title": "${sequence}", // tmux/OSC-0 title sequences drive the tab label (session-continuity: just launch/wake)
     // Persistence
     "terminal.integrated.enablePersistentSessions": false,
