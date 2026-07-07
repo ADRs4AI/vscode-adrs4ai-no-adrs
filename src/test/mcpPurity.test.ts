@@ -26,7 +26,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import type { RepositoryContext } from '../mcp/repositoryContext'
-import { projectOverview, lookup, getOutline, getSections, listOpenQuestions } from '../mcp/handlers'
+import { projectOverview } from '../mcp/handlers'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
 
 describe('MCP handler purity (ADR-0003 portability requirement 1)', () => {
@@ -175,16 +175,7 @@ describe('projectOverview (Tier 0)', () => {
   })
 })
 
-describe('Tier 1 read stubs (ADR-0021 sequencing step 3 — not implemented yet)', () => {
-  it('lookup names its own sequencing step rather than failing silently', () => {
-    const ctx = makeMockContext([])
-    expect(() => lookup(ctx, 'adr:0001')).toThrow(/sequencing step 3/)
-  })
-
-  it('getOutline, getSections, and listOpenQuestions all name the same deferral', () => {
-    const ctx = makeMockContext([])
-    expect(() => getOutline(ctx, 'adr:0001')).toThrow(/sequencing step 3/)
-    expect(() => getSections(ctx, ['adr:0001#decision'])).toThrow(/sequencing step 3/)
-    expect(() => listOpenQuestions(ctx)).toThrow(/sequencing step 3/)
-  })
-})
+// Tier 1 (`lookup`, `get_outline`, `get_sections`, `list_open_questions`) is
+// now implemented — see src/test/mcpTier1Reads.test.ts for full behavioral
+// coverage. Kept `lookup`/`getOutline`/`getSections`/`listOpenQuestions`
+// imported above so the purity test above still exercises the real module.

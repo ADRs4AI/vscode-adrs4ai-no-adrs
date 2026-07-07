@@ -3,32 +3,32 @@
  * RepositoryContext only. Zero `vscode` imports (ADR-0003 Decision, "handler
  * purity" requirement) — mechanically enforced by src/test/mcpPurity.test.ts.
  *
- * This file is a skeleton (ADR-0021 sequencing step 2): only `project_overview`
- * (Tier 0) is fully implemented, to give the purity test real behavior to
- * exercise. Tier-1 reads (`lookup`, `get_outline`, `get_sections`,
- * `list_open_questions`) land in step 3 against the stdio transport.
+ * Tier 0 (`project_overview`) and Tier 1 reads (`lookup`, `get_outline`,
+ * `get_sections`, `list_open_questions`) are implemented here (ADR-0021
+ * sequencing step 3, the launch sprint's Track 1). The write tier and 3XR
+ * format validation are the next steps on this track.
  */
 
 import type { RepositoryContext } from './repositoryContext'
-import type { AdrFile } from '../parser/types'
-
-export interface ProjectOverviewOptions {
-  includeSeeds?: boolean
-  tokenBudget?: number
-}
+import type { AdrFile, AdrSection, Question, SeedFile } from '../parser/types'
+import {
+  adrRefString,
+  seedRefString,
+  sectionAnchor,
+  documentOrderedSections,
+  findSectionForQuestion,
+  resolveReference,
+  resolveAdrByRef,
+  type RefError,
+} from './reference'
 
 function bracket(ref: string): string {
   return `[${ref}]`
 }
 
-function adrRef(adr: AdrFile): string {
-  return `adr:${String(adr.number).padStart(4, '0')}`
-}
-
-function seedRef(seed: { path: string; title: string }): string {
-  const filename = seed.path.split('/').pop() ?? seed.title
-  const slug = filename.replace(/\.md$/, '')
-  return `seed:${slug}`
+export interface ProjectOverviewOptions {
+  includeSeeds?: boolean
+  tokenBudget?: number
 }
 
 /**
@@ -61,7 +61,7 @@ export function projectOverview(ctx: RepositoryContext, options: ProjectOverview
     // Item (owner: Hearth 4.6) adds it. Explicit-over-absent in the
     // meantime: always emit `[unset]`, never omit the field.
     lines.push(
-      `${bracket(adrRef(adr))} ${adr.title} | ${adr.status} | resolution: [unset] | open: ${openCount} | iter: ${adr.iteration}`,
+      `${bracket(adrRefString(adr))} ${adr.title} | ${adr.status} | resolution: [unset] | open: ${openCount} | iter: ${adr.iteration}`,
     )
   }
 
@@ -69,7 +69,7 @@ export function projectOverview(ctx: RepositoryContext, options: ProjectOverview
     lines.push('--- seeds ---')
     for (const seed of seeds) {
       lines.push(
-        `${bracket(seedRef(seed))} ${seed.date ?? '[unknown date]'} | ${seed.isProcessed ? 'processed' : 'unprocessed'}`,
+        `${bracket(seedRefString(seed))} ${seed.date ?? '[unknown date]'} | ${seed.isProcessed ? 'processed' : 'unprocessed'}`,
       )
     }
   }
@@ -78,20 +78,211 @@ export function projectOverview(ctx: RepositoryContext, options: ProjectOverview
   return lines.join('\n')
 }
 
-// --- Tier 1 reads: signatures reserved, implementation lands in ADR-0021 sequencing step 3 ---
+// ---------------------------------------------------------------------------
+// Tier 1 reads
+// ---------------------------------------------------------------------------
 
-export function lookup(_ctx: RepositoryContext, _ref: string, _contextLines?: number): string {
-  throw new Error('lookup: not implemented yet — ADR-0021 Tier 1, sequencing step 3')
+function formatRefError(err: RefError): string {
+  const lines = [`error: ${err.error}`, `message: ${err.message}`]
+  if (err.candidates?.length) lines.push(`candidates: [${err.candidates.join(', ')}]`)
+  if (err.hint) lines.push(`hint: ${err.hint}`)
+  return lines.join('\n')
 }
 
-export function getOutline(_ctx: RepositoryContext, _adrRef: string): string {
-  throw new Error('getOutline: not implemented yet — ADR-0021 Tier 1, sequencing step 3')
+function formatQuestion(adr: AdrFile, question: Question): string {
+  const lines: string[] = []
+  lines.push(`${bracket(`${adrRefString(adr)}#${question.slug}`)} ${adr.title}`)
+  lines.push(`text: ${question.text}`)
+  lines.push(`status: ${question.isAnswered ? 'answered' : question.statusText}`)
+  lines.push(`recommendation: ${question.recommendation ?? '[none]'}`)
+  if (question.answer) {
+    lines.push(`answer: ${question.answer.text.replace(/\n/g, '\\n')}`)
+    lines.push(`answered_by: ${question.answer.author ?? '[unknown]'}`)
+  } else {
+    lines.push('answer: [none]')
+  }
+  return lines.join('\n')
 }
 
-export function getSections(_ctx: RepositoryContext, _refs: string[]): string {
-  throw new Error('getSections: not implemented yet — ADR-0021 Tier 1, sequencing step 3')
+function formatSection(adr: AdrFile, section: AdrSection): string {
+  const lines: string[] = []
+  lines.push(`${bracket(`${adrRefString(adr)}#${sectionAnchor(section)}`)} ${adr.title} — ${section.heading}`)
+  lines.push(section.body.trim())
+  return lines.join('\n')
 }
 
-export function listOpenQuestions(_ctx: RepositoryContext, _options?: Record<string, unknown>): string {
-  throw new Error('listOpenQuestions: not implemented yet — ADR-0021 Tier 1, sequencing step 3')
+function formatAdrSummary(adr: AdrFile): string {
+  const openCount = adr.questions.filter((q) => !q.isAnswered).length
+  const ref = adrRefString(adr)
+  return [
+    `${bracket(ref)} ${adr.title} | ${adr.status} | open: ${openCount} | iter: ${adr.iteration}`,
+    `Usage: call get_outline("${ref}") for the section map, or lookup("${ref}#<slug>") for a specific part.`,
+  ].join('\n')
+}
+
+function formatSeed(seed: SeedFile): string {
+  const lines = [`${bracket(seedRefString(seed))} ${seed.title}`]
+  lines.push(`date: ${seed.date ?? '[unknown]'}`)
+  lines.push(`processed: ${seed.isProcessed ? 'yes' : 'no'}`)
+  lines.push(`brain_dump: ${seed.brainDump ? seed.brainDump.trim().replace(/\n/g, '\\n') : '[none]'}`)
+  return lines.join('\n')
+}
+
+/**
+ * `context_lines` simplification, named rather than hidden: true grep-style
+ * "N raw source lines before/after" needs file I/O (`ctx.readFile`), which
+ * would make every Tier-1 read async for one optional param. Until that's
+ * wired, context is approximated from already-parsed data: the tail of the
+ * previous section's body and the head of the next section's body, in
+ * document order. Good enough for "what's around this" today; a fuller
+ * raw-line version is future work, not a silent omission.
+ */
+function buildContextLines(adr: AdrFile, anchorSection: AdrSection | undefined, contextLines?: number): string[] {
+  if (!contextLines || !anchorSection) return []
+  const ordered = documentOrderedSections(adr)
+  const idx = ordered.indexOf(anchorSection)
+  if (idx === -1) return []
+  const out: string[] = []
+  if (idx > 0) {
+    const tail = ordered[idx - 1].body.split('\n').slice(-contextLines).join('\n').trim()
+    if (tail) out.push(`--- context before (${ordered[idx - 1].heading}) ---`, tail)
+  }
+  if (idx < ordered.length - 1) {
+    const head = ordered[idx + 1].body.split('\n').slice(0, contextLines).join('\n').trim()
+    if (head) out.push(`--- context after (${ordered[idx + 1].heading}) ---`, head)
+  }
+  return out
+}
+
+/** Tier 1 — lookup (ADR-0021). Resolves any ADR-0008 reference, plus two tool-local input tolerances. */
+export function lookup(ctx: RepositoryContext, ref: string, contextLines?: number): string {
+  const resolved = resolveReference(ctx, ref)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  switch (resolved.kind) {
+    case 'question': {
+      const section = findSectionForQuestion(resolved.adr, resolved.question)
+      const body = [formatQuestion(resolved.adr, resolved.question)]
+      body.push(...buildContextLines(resolved.adr, section, contextLines))
+      return body.join('\n')
+    }
+    case 'section': {
+      const body = [formatSection(resolved.adr, resolved.section)]
+      body.push(...buildContextLines(resolved.adr, resolved.section, contextLines))
+      return body.join('\n')
+    }
+    case 'adr':
+      return formatAdrSummary(resolved.adr)
+    case 'seed':
+      return formatSeed(resolved.seed)
+  }
+}
+
+/** Tier 1 — get_outline (ADR-0021). Flat section map with inline QST status. */
+export function getOutline(ctx: RepositoryContext, adrRef: string): string {
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  const adr = resolved.adr
+  const lines: string[] = [`${bracket(adrRefString(adr))} ${adr.title} — ${adr.sections.length} top-level sections`]
+  for (const section of documentOrderedSections(adr)) {
+    const anchor = sectionAnchor(section)
+    const words = section.body.trim() ? section.body.trim().split(/\s+/).length : 0
+    let row = `${'  '.repeat(section.level - 2)}${anchor} | ${section.heading} | level ${section.level} | lines ${section.lineStart}-${section.lineEnd} | words ${words}`
+    if (section.navCode === 'QST') {
+      const question = adr.questions.find((q) => q.slug === section.slug)
+      if (question) row += ` | status: ${question.isAnswered ? 'answered' : question.statusText}`
+    }
+    lines.push(row)
+  }
+  lines.push(`Usage: call get_sections(["${adrRefString(adr)}#<slug>", ...]) to fetch specific ids.`)
+  return lines.join('\n')
+}
+
+/** Tier 1 — get_sections (ADR-0021). Batch fetch; refs may span multiple ADRs/seeds. */
+export function getSections(ctx: RepositoryContext, refs: string[], tokenBudget?: number): string {
+  const blocks = refs.map((ref) => {
+    const resolved = resolveReference(ctx, ref)
+    if (resolved.kind === 'error') return { ref, text: formatRefError(resolved) }
+    switch (resolved.kind) {
+      case 'question':
+        return { ref, text: formatQuestion(resolved.adr, resolved.question) }
+      case 'section':
+        return { ref, text: formatSection(resolved.adr, resolved.section) }
+      case 'adr':
+        return { ref, text: formatAdrSummary(resolved.adr) }
+      case 'seed':
+        return { ref, text: formatSeed(resolved.seed) }
+    }
+  })
+
+  if (!tokenBudget) {
+    return blocks.map((b) => `--- ${b.ref} ---\n${b.text}`).join('\n')
+  }
+
+  // Never truncate mid-node: drop whole refs from the end until under budget.
+  // Token estimate is a character-count approximation (chars/4) — no
+  // tokenizer dependency added for this; documented, not silent.
+  const estimateTokens = (s: string) => Math.ceil(s.length / 4)
+  const kept: typeof blocks = []
+  const dropped: string[] = []
+  let used = 0
+  for (const block of blocks) {
+    const cost = estimateTokens(block.text) + 5
+    if (used + cost > tokenBudget) {
+      dropped.push(block.ref)
+      continue
+    }
+    kept.push(block)
+    used += cost
+  }
+
+  const lines = kept.map((b) => `--- ${b.ref} ---\n${b.text}`)
+  if (dropped.length > 0) {
+    lines.push(
+      `Usage: result truncated at token_budget=${tokenBudget}; dropped [${dropped.join(', ')}] — re-request at a larger budget or individually.`,
+    )
+  }
+  return lines.join('\n')
+}
+
+export interface ListOpenQuestionsOptions {
+  adrRef?: string
+  priority?: 1 | 2 | 3 | 4
+  status?: string
+  limit?: number
+  tokenBudget?: number
+}
+
+/** Tier 1 — list_open_questions (ADR-0021). Reads parsed Question.isAnswered/statusText, never regexes the raw file. */
+export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuestionsOptions = {}): string {
+  let adrs = [...ctx.listAdrs()].sort((a, b) => a.number - b.number)
+  if (options.adrRef) {
+    const resolved = resolveAdrByRef(ctx, options.adrRef)
+    if (resolved.kind === 'error') return formatRefError(resolved)
+    adrs = [resolved.adr]
+  }
+
+  type Row = { adr: AdrFile; question: Question }
+  let rows: Row[] = []
+  for (const adr of adrs) {
+    for (const question of adr.questions) {
+      if (question.isAnswered) continue
+      if (options.priority !== undefined && question.priority !== options.priority) continue
+      if (options.status !== undefined && question.statusText !== options.status) continue
+      rows.push({ adr, question })
+    }
+  }
+
+  const adrsWithOpen = new Set(rows.map((r) => r.adr.number)).size
+  const total = rows.length
+  if (options.limit !== undefined) rows = rows.slice(0, options.limit)
+
+  const lines = [`${total} open across ${adrsWithOpen} ADRs${options.limit !== undefined ? ` (limit: ${options.limit})` : ''}`]
+  for (const { adr, question } of rows) {
+    lines.push(
+      `${bracket(`${adrRefString(adr)}#${question.slug}`)} ${question.text} — status: ${question.statusText} | priority: ${question.priority ?? '[none]'}`,
+    )
+  }
+  return lines.join('\n')
 }
