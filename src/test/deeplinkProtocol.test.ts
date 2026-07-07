@@ -12,6 +12,9 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
+import { createHash } from 'crypto'
 import {
   parseDeepLinkRef,
   buildLocalAdrRef,
@@ -148,5 +151,59 @@ describe('small helpers', () => {
 
   it('seedSlugFromPath strips the seed- prefix and .md extension', () => {
     expect(seedSlugFromPath('/repo/docs/adr/seed-2026-07-05-async-question-queue.md')).toBe('2026-07-05-async-question-queue')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Grammar conformance — mechanical drift check against ADR-0008.
+//
+// Jérémie's question (2026-07-07, via Facet): is protocol.ts verified against
+// ADR-0008's *current* grammar, and is there a plan to keep it that way?
+// A comment convention isn't enough — ADR-0008's own header `Iteration` field
+// is already out of sync with its own Iterations log (checked directly:
+// header says 1, the log has an Iteration 2 entry), which is proof that
+// "someone remembers to update a marker" doesn't hold even in the ADR that
+// most needs it to. This hashes the grammar's actual defining text instead.
+// ---------------------------------------------------------------------------
+
+describe('Grammar conformance — mechanical drift check against ADR-0008', () => {
+  // On failure: re-read ADR-0008's "### COD: Reference grammar" block,
+  // verify protocol.ts still implements it correctly (update protocol.ts if
+  // the grammar changed), then replace this constant with the hash reported
+  // in the failure message.
+  const GRAMMAR_BLOCK_SHA1 = '4e59c9501f3b90f4a1380e2947d2ff1d95db6aab'
+
+  function extractGrammarBlock(): string {
+    const source = readFileSync(resolve(__dirname, '../../docs/adr/0008-deep-link-protocol.md'), 'utf-8')
+    const lines = source.split('\n')
+    const startIdx = lines.findIndex((l) => l.startsWith('### COD: Reference grammar'))
+    if (startIdx === -1) {
+      throw new Error(
+        'ADR-0008 no longer has a "### COD: Reference grammar" heading — protocol.ts conformance ' +
+        'can\'t be located automatically. Find where the grammar moved to and update this test.',
+      )
+    }
+    const rest = lines.slice(startIdx + 1)
+    const endOffset = rest.findIndex((l) => l.startsWith('### '))
+    const sectionLines = endOffset === -1 ? rest : rest.slice(0, endOffset)
+    const fenceStart = sectionLines.findIndex((l) => l.trim().startsWith('```'))
+    const fenceEnd = sectionLines.findIndex((l, i) => i > fenceStart && l.trim().startsWith('```'))
+    if (fenceStart === -1 || fenceEnd === -1) {
+      throw new Error('Could not find a fenced code block inside ADR-0008\'s grammar section.')
+    }
+    return sectionLines.slice(fenceStart + 1, fenceEnd).join('\n').trim()
+  }
+
+  it('the grammar block protocol.ts was verified against has not changed underneath it', () => {
+    const block = extractGrammarBlock()
+    const hash = createHash('sha1').update(block).digest('hex')
+    if (hash !== GRAMMAR_BLOCK_SHA1) {
+      throw new Error(
+        `ADR-0008's grammar block changed (new hash ${hash}, expected ${GRAMMAR_BLOCK_SHA1}).\n` +
+        'Re-verify src/deeplink/protocol.ts against the current text in docs/adr/0008-deep-link-protocol.md, ' +
+        `then update GRAMMAR_BLOCK_SHA1 in this test to ${hash}.`,
+      )
+    }
+    expect(hash).toBe(GRAMMAR_BLOCK_SHA1)
   })
 })

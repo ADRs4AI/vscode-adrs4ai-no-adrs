@@ -4,6 +4,12 @@
  * Implements ADR-0008's split between local human shorthands
  * (`adr:0008#decision`, `seed:2026-03-04-foo`) and canonical
  * machine references (`adr://v1/project/foo/adr/0008#decision`).
+ *
+ * Conformance to ADR-0008's grammar is checked mechanically, not by
+ * convention: src/test/deeplinkProtocol.test.ts hashes the exact grammar
+ * block from docs/adr/0008-deep-link-protocol.md and fails loudly if it
+ * changes underneath this file. If that test fails, the grammar moved —
+ * update this file, then update the stored hash.
  */
 
 import * as path from 'path'
