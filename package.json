@@ -1,22 +1,31 @@
 {
   "name": "adrs-for-ai",
   "displayName": "ADRs for AI",
-  "description": "Navigate and manage Architectural Decision Records for human-AI collaboration (collab-adr-lean format)",
+  "description": "Turn AI design conversations into durable, answerable decision records — open questions live in your sidebar, answers can't be lost.",
   "version": "0.5.2",
   "publisher": "jlumbroso",
   "license": "MIT",
+  "icon": "media/adr-icon-256.png",
+  "galleryBanner": {
+    "color": "#B45309",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Other",
-    "Notebooks"
+    "Visualization"
   ],
   "keywords": [
     "adr",
     "architectural decision records",
     "human-ai collaboration",
-    "documentation"
+    "documentation",
+    "claude",
+    "ai agents",
+    "decision records",
+    "markdown"
   ],
   "repository": {
     "type": "git",

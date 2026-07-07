@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Marketplace icon (fixed-color, PNG-rasterized) — companion to media/adr-icon.svg
+       (the currentColor ActivityBar glyph, which stays theme-aware and unchanged).
+       Color is amber-700 #B45309 per ADR-0006's own table: "icon strokes on light". -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="#FFFFFF"/>
+  <g transform="translate(16,16) scale(6)" fill="none" stroke="#B45309" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Document shape -->
+    <path d="M3 1h7l3 3v11H3V1z" stroke-width="1.2"/>
+    <!-- Folded corner -->
+    <path d="M10 1v3h3" stroke-width="1.2"/>
+    <!-- Text lines (representing ADR content) -->
+    <line x1="5" y1="6" x2="11" y2="6" stroke-width="1"/>
+    <line x1="5" y1="8" x2="11" y2="8" stroke-width="1"/>
+    <!-- Question mark dot (open question indicator) -->
+    <circle cx="5" cy="11" r="0.8" fill="#B45309" stroke="none"/>
+    <!-- Question mark arc -->
+    <path d="M5 10c0-1 1.5-1 1.5 0s-1.5 0.5-1.5 1.5" stroke-width="0.8"/>
+  </g>
+</svg>
