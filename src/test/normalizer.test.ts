@@ -182,7 +182,7 @@ describe('Adversarial findings: contentChecksum contract mismatch and applyPatch
     expect(contentChecksum('hello')).toHaveLength(40) // FAILS today: length is 8
   })
 
-  it('CATCH 5 — overlapping patches silently corrupt content instead of erroring: one patch\'s entire replacement vanishes AND an untouched line outside either patch\'s range gets deleted', () => {
+  it('CATCH 5 — overlapping patches now refuse to apply rather than silently corrupting content', () => {
     // Two ViolationRecords whose line ranges spatially overlap is not exotic:
     // nothing in Coordinator.processAll() or ViolationHandler.detect() checks
     // for overlap between different handlers' violations before computing
@@ -190,21 +190,39 @@ describe('Adversarial findings: contentChecksum contract mismatch and applyPatch
     // whether their target ranges collide. A heavily malformed real ADR
     // (exactly what the "800-file corpus audit" v1 scope item exists to
     // stress-test) can easily produce two adjacent-or-overlapping violations.
+    //
+    // Chosen fix (of the two Quarry offered, not prescribed): refuse rather
+    // than silently resolve. Before this fix, patches were applied in raw
+    // lineStart-descending order with no overlap check — patch 2 spliced
+    // first (removing L3-L5, inserting 'BBB'), shifting the array; patch 1's
+    // *fixed-width* splice (still computed against the ORIGINAL line
+    // numbers) then consumed 3 lines starting at its original offset —
+    // sweeping up 'BBB' (patch 2's entire replacement, gone) AND 'L6' (a
+    // line neither patch targeted, silently deleted), no error, no signal.
+    // "Never write blind" (ADR-0021/0023's write-tier posture) means
+    // refusing here, not guessing which patch should silently win.
     const content = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'].join('\n')
-    const result = applyPatches(content, [
+    expect(() => applyPatches(content, [
       { lineStart: 2, lineEnd: 4, replacement: 'AAA' },
       { lineStart: 3, lineEnd: 5, replacement: 'BBB' }, // overlaps patch 1 on lines 3-4
+    ])).toThrow(/overlapping patches/i)
+  })
+
+  it('CATCH 5b — a patch fully containing another also refuses (silent-but-benign is still silent)', () => {
+    const content = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'].join('\n')
+    expect(() => applyPatches(content, [
+      { lineStart: 2, lineEnd: 5, replacement: 'OUTER' },
+      { lineStart: 3, lineEnd: 4, replacement: 'INNER' }, // fully contained within the first
+    ])).toThrow(/overlapping patches/i)
+  })
+
+  it('non-overlapping (even adjacent) patches still apply cleanly', () => {
+    const content = ['L1', 'L2', 'L3', 'L4'].join('\n')
+    const result = applyPatches(content, [
+      { lineStart: 1, lineEnd: 2, replacement: 'AAA' },
+      { lineStart: 3, lineEnd: 4, replacement: 'BBB' },
     ])
-    // What actually happens: patches are applied in raw lineStart-descending
-    // order with no overlap check. Patch 2 splices first (removing L3-L5,
-    // inserting 'BBB'), which shifts the array; patch 1's *fixed-width*
-    // splice (still computed against the ORIGINAL line numbers) then
-    // consumes 3 lines starting at its original offset — which, after the
-    // shift, sweeps up 'BBB' (patch 2's entire replacement, gone) AND 'L6'
-    // (a line neither patch targeted, silently deleted). No error is
-    // thrown; nothing signals that two patches ever conflicted.
-    expect(result).toContain('BBB') // FAILS today — 'BBB' was silently consumed and dropped
-    expect(result).toContain('L6') // FAILS today — L6 was silently deleted despite being outside both patches' ranges
+    expect(result).toBe('AAA\nBBB')
   })
 })
 
