@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Node 20 is being retired as the GitHub Actions runtime; force JS-based
+# actions onto Node 24 explicitly rather than waiting on each action's
+# default (per epistemic-arc-mapping-skill's Node 24 migration, 2026-03).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Test & Type Check
@@ -13,12 +19,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
