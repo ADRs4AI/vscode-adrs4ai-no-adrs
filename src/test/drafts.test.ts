@@ -357,3 +357,108 @@ describe('DEBRIEF-001 acceptance fixture: rename + rewrite must not destroy an i
     expect(bestReattachCandidate(orphans[0], liveRefs)).toBe(liveRefs[0].key)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Adversarial findings (Quarry 5, write-adversary seat — ADR-0022's chartered
+// "make it misbehave" seat). ADR-0023 was built to make DEBRIEF-001's failure
+// class unreachable; these three tests are currently FAILING — each is a
+// distinct path back to that same failure class (silent loss or silent
+// misattachment of a human's in-progress answer) that the shipped
+// implementation does not close. Filed to Fitter 5 (implementer) per
+// docs/inbox/2026-07-07-2018-quarry-to-fitter-three-catches-in-the-shipped-draft-store.md
+// — routed as catches per CONVENTIONS §3, not fixed unilaterally here.
+// ---------------------------------------------------------------------------
+
+describe('Adversarial findings: DraftStore silent-loss and silent-misattachment paths', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-drafts-adversarial-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('CATCH 1 — a truncated drafts.json (process dies mid-write) silently discards every OTHER draft on the next autosave, with no error ever surfaced', () => {
+    // Not exotic: a VS Code crash, OS kill, or disk-full event mid-`fs.writeFileSync`
+    // is exactly what DEBRIEF-001's "partial-failure states" target names.
+    const store1 = new DraftStore(dir)
+    const keyA = computeDraftKey(3, 'Which database?', 0)
+    const keyB = computeDraftKey(4, 'Which cache?', 0)
+    store1.save(keyA, '/fake/0003.md', 3, 'Which database?', 'Answer A, in progress.', '2026-07-06T20:00:00Z')
+    store1.save(keyB, '/fake/0004.md', 4, 'Which cache?', 'Answer B, in progress.', '2026-07-06T20:01:00Z')
+
+    // Simulate the crash: the OS flushed only half the buffered write.
+    const draftsPath = path.join(dir, 'drafts.json')
+    const full = fs.readFileSync(draftsPath, 'utf8')
+    fs.writeFileSync(draftsPath, full.slice(0, Math.floor(full.length / 2)))
+
+    // VS Code reopens the window after the crash — a fresh DraftStore loads
+    // over the truncated file. load()'s catch block swallows the parse
+    // error and resets to an EMPTY in-memory map, with no warning to the
+    // human and no quarantine of the damaged file.
+    const store2 = new DraftStore(dir)
+
+    // The human, unaware anything happened, keeps typing — the very next
+    // debounced autosave for the question they're actively on (A) persists
+    // that empty-except-A map back to disk, permanently erasing B (which
+    // was never touched, never in conflict, and had nothing to do with A).
+    store2.save(keyA, '/fake/0003.md', 3, 'Which database?', 'Retyped answer A.', '2026-07-06T20:05:00Z')
+
+    const store3 = new DraftStore(dir)
+    expect(store3.get(keyB)?.draftText).toBe('Answer B, in progress.')
+  })
+
+  it('CATCH 2 — two concurrent DraftStore instances (two VS Code windows on one workspace) silently drop each other\'s saves; no lock, no merge, last full-file write wins', () => {
+    // Two windows on the same workspace answering different ADRs is ordinary
+    // multi-window usage, not a contrived scenario — the brief names this
+    // target explicitly ("concurrent writes to one QST from two sessions").
+    const keyA = computeDraftKey(3, 'Which database?', 0)
+    const keyB = computeDraftKey(4, 'Which cache?', 0)
+
+    const session1 = new DraftStore(dir)
+    session1.save(keyA, '/fake/0003.md', 3, 'Which database?', 'Session 1 answer.', '2026-07-06T20:00:00Z')
+
+    // Session 2 opens a moment later; DraftStore.load() only runs once, in
+    // the constructor — session2's in-memory map never learns about keyA,
+    // and vice versa going forward.
+    const session2 = new DraftStore(dir)
+    session2.save(keyB, '/fake/0004.md', 4, 'Which cache?', 'Session 2 answer.', '2026-07-06T20:01:00Z')
+
+    // Session 1's next keystroke autosave persists ITS in-memory map — which
+    // never contained keyB — clobbering the whole drafts.json file.
+    session1.save(keyA, '/fake/0003.md', 3, 'Which database?', 'Session 1 answer, continued.', '2026-07-06T20:02:00Z')
+
+    const onDisk = new DraftStore(dir)
+    expect(onDisk.get(keyB)?.draftText).toBe('Session 2 answer.')
+  })
+
+  it('CATCH 3 — inserting a new occurrence of duplicate question text silently reattaches an existing draft to the WRONG question (no orphan flag, no consent — worse than the "no silent auto-reattach" promise)', () => {
+    // Duplicated boilerplate QST wording across sections (e.g. a repeated
+    // closing question) is common, ordinary ADR authoring — not exotic.
+    const textsBefore = ['Which database?', 'Any other concerns?', 'Any other concerns?']
+    const ordinalsBefore = computeOccurrenceOrdinals(textsBefore)
+    const keyForDeploySectionClosingQ = computeDraftKey(3, 'Any other concerns?', ordinalsBefore[2]) // ordinal 1
+
+    const store = new DraftStore(dir)
+    store.save(
+      keyForDeploySectionClosingQ, '/fake/0003.md', 3, 'Any other concerns?',
+      'No, this covers it for the deploy section.', '2026-07-06T20:00:00Z',
+    )
+
+    // Human inserts a THIRD occurrence of the same duplicate text earlier in
+    // the document (a new section's closing question, placed before the
+    // deploy section) — an ordinary edit, not a rename, not a deletion.
+    // Document order among duplicates shifts: what was ordinal-1 (deploy
+    // section) is now ordinal-2; a DIFFERENT question now occupies ordinal-1.
+    const keyNowAtOrdinal1 = computeDraftKey(3, 'Any other concerns?', 1)
+
+    // BUG: this key is LIVE — a real (different) question occupies ordinal 1
+    // now — so orphans() will never flag it as needing reattach-confirmation.
+    // The panel will silently pre-fill the NEW question's answer box with
+    // the deploy section's old draft text, attributed to the wrong question,
+    // with no drift warning and no "reattach to..." consent prompt at all.
+    expect(store.get(keyNowAtOrdinal1)).toBeUndefined()
+  })
+})
