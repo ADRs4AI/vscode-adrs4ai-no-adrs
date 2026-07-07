@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { createHash } from 'crypto'
 import { applyPatches, contentChecksum } from '../normalizer/patch-applicator'
 import { Coordinator } from '../normalizer/coordinator'
 import { D1OpenQuestionsSectionHandler } from '../normalizer/handlers/d1-open-questions-section'
@@ -154,6 +155,56 @@ describe('contentChecksum', () => {
 
   it('returns same value for same content', () => {
     expect(contentChecksum('hello')).toBe(contentChecksum('hello'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Adversarial findings (Quarry 5, write-adversary seat). Both currently
+// FAILING — filed to Fitter per
+// docs/inbox/2026-07-07-2032-quarry-to-fitter-two-catches-in-the-patch-applicator.md
+// (routed per CONVENTIONS §3, not fixed unilaterally here).
+// ---------------------------------------------------------------------------
+
+describe('Adversarial findings: contentChecksum contract mismatch and applyPatches silent corruption', () => {
+  it('CATCH 4 — contentChecksum is documented as SHA1 but is actually a 32-bit djb2 hash: the staleness contract this function exists to serve is unenforceable as written', () => {
+    // types.ts:23 and :38 both say, verbatim, "SHA1 of the full file content"
+    // / "SHA1 of the file content at detection time; check before applying
+    // fix". A real SHA1 hex digest is 40 characters. Any caller who reads
+    // the documented contract and independently computes SHA1 to verify a
+    // ViolationRecord.contentChecksum (exactly what the contract instructs:
+    // "Caller must verify record.contentChecksum matches the current
+    // content before applying") will NEVER get a match, on any input —
+    // the two algorithms don't even produce comparable output shapes. The
+    // staleness check the type system promises does not exist anywhere in
+    // the codebase; the doc describes a contract that was never built.
+    const sha1Hex = createHash('sha1').update('hello').digest('hex')
+    expect(contentChecksum('hello')).toBe(sha1Hex) // FAILS today: '0a9cede7' !== real sha1
+    expect(contentChecksum('hello')).toHaveLength(40) // FAILS today: length is 8
+  })
+
+  it('CATCH 5 — overlapping patches silently corrupt content instead of erroring: one patch\'s entire replacement vanishes AND an untouched line outside either patch\'s range gets deleted', () => {
+    // Two ViolationRecords whose line ranges spatially overlap is not exotic:
+    // nothing in Coordinator.processAll() or ViolationHandler.detect() checks
+    // for overlap between different handlers' violations before computing
+    // patches — dependsOn only orders *which handler runs first*, not
+    // whether their target ranges collide. A heavily malformed real ADR
+    // (exactly what the "800-file corpus audit" v1 scope item exists to
+    // stress-test) can easily produce two adjacent-or-overlapping violations.
+    const content = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'].join('\n')
+    const result = applyPatches(content, [
+      { lineStart: 2, lineEnd: 4, replacement: 'AAA' },
+      { lineStart: 3, lineEnd: 5, replacement: 'BBB' }, // overlaps patch 1 on lines 3-4
+    ])
+    // What actually happens: patches are applied in raw lineStart-descending
+    // order with no overlap check. Patch 2 splices first (removing L3-L5,
+    // inserting 'BBB'), which shifts the array; patch 1's *fixed-width*
+    // splice (still computed against the ORIGINAL line numbers) then
+    // consumes 3 lines starting at its original offset — which, after the
+    // shift, sweeps up 'BBB' (patch 2's entire replacement, gone) AND 'L6'
+    // (a line neither patch targeted, silently deleted). No error is
+    // thrown; nothing signals that two patches ever conflicted.
+    expect(result).toContain('BBB') // FAILS today — 'BBB' was silently consumed and dropped
+    expect(result).toContain('L6') // FAILS today — L6 was silently deleted despite being outside both patches' ranges
   })
 })
 
