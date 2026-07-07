@@ -10,7 +10,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { parseSeed } from '../parser/seedExtractor'
-import type { SeedFile } from '../parser/types'
+import type { SeedFile, Question } from '../parser/types'
 
 // ---------------------------------------------------------------------------
 // SEED_INCOMPLETE cross-reference detection (ADR-0016)
@@ -169,6 +169,18 @@ export class SeedIndex {
   /** Seeds whose "Derived Into" section still has placeholder text (ADR-0016 precondition). */
   incompleteSeeds(): SeedFile[] {
     return this.allSeeds().filter(s => s.derivedIntoHasPlaceholder)
+  }
+
+  /**
+   * ADR-0018 Step 3: all open (unanswered) questions across every indexed
+   * seed, for the Open Questions panel's merge with AdrIndex's questions.
+   * Read-only aggregation — does not touch the panel or the draft-key
+   * scheme, which need a source-aware key before seeds can safely use them
+   * (flagged separately: a seed's questions all having no ADR number risks
+   * draft-key collisions across different seeds if naively assigned one).
+   */
+  allOpenQuestions(): Question[] {
+    return this.allSeeds().flatMap(s => s.questions.filter(q => !q.isAnswered))
   }
 
   // -------------------------------------------------------------------------

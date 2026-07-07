@@ -136,3 +136,42 @@ describe('SeedIndex.indexDirectory: docs/adr/.working/ exclusion (ADR-0023)', ()
     })
   })
 })
+
+describe('SeedIndex.allOpenQuestions (ADR-0018 Step 3)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-index-questions-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('aggregates unanswered questions across multiple seeds', () => {
+    fs.writeFileSync(
+      path.join(dir, 'seed-2026-07-07-a.md'),
+      '# SEED: A\n\n## Brain Dump\n\n### QST: Open one?\n\n- Status: unanswered\n',
+    )
+    fs.writeFileSync(
+      path.join(dir, 'seed-2026-07-07-b.md'),
+      '# SEED: B\n\n## Brain Dump\n\n### QST: Open two?\n\n- Status: unanswered\n\n### QST: Answered one?\n\n- Status: answered\n\n**ANS:** (by Jérémie)\nDone.\n',
+    )
+
+    const index = new SeedIndex()
+    return index.indexDirectory(dir).then(() => {
+      const open = index.allOpenQuestions()
+      expect(open).toHaveLength(2)
+      expect(open.map(q => q.text).sort()).toEqual(['Open one?', 'Open two?'])
+      expect(open.every(q => q.sourceKind === 'seed')).toBe(true)
+    })
+  })
+
+  it('returns an empty array when no seed has open questions', () => {
+    fs.writeFileSync(path.join(dir, 'seed-2026-07-07-c.md'), '# SEED: C\n\n## Brain Dump\n\nJust prose.\n')
+    const index = new SeedIndex()
+    return index.indexDirectory(dir).then(() => {
+      expect(index.allOpenQuestions()).toEqual([])
+    })
+  })
+})
