@@ -44,7 +44,11 @@ jobs:
         id: test
         run: |
           npm test -- --reporter=verbose 2>&1 | tee test-output.txt
-          PASSED=$(grep -oP '\d+ passed' test-output.txt | grep -oP '\d+' | head -1)
+          # grep -w "Tests" (not the raw '\d+ passed' pattern) — vitest's
+          # verbose reporter prints "Test Files N passed" *before* "Tests N
+          # passed", and the old pattern matched the file count, not the
+          # test count (confirmed: reported "8" when the true total was 280).
+          PASSED=$(grep -w "Tests" test-output.txt | grep -oP '\d+(?= passed)' | head -1)
           echo "passed=${PASSED:-0}" >> $GITHUB_OUTPUT
 
       - name: Write step summary
