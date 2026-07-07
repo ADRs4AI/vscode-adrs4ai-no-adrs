@@ -56,24 +56,58 @@ describe('computeOccurrenceOrdinals', () => {
 
 describe('computeDraftKey', () => {
   it('is identical for the same ADR + question + ordinal', () => {
-    const k1 = computeDraftKey(3, 'Which database?', 0)
-    const k2 = computeDraftKey(3, 'Which database?', 0)
+    const k1 = computeDraftKey('3', 'Which database?', 0)
+    const k2 = computeDraftKey('3', 'Which database?', 0)
     expect(k1).toBe(k2)
   })
 
   it('differs across ADR number, question text, or ordinal', () => {
-    const base = computeDraftKey(3, 'Which database?', 0)
-    expect(computeDraftKey(4, 'Which database?', 0)).not.toBe(base)
-    expect(computeDraftKey(3, 'Which cache?', 0)).not.toBe(base)
-    expect(computeDraftKey(3, 'Which database?', 1)).not.toBe(base)
+    const base = computeDraftKey('3', 'Which database?', 0)
+    expect(computeDraftKey('4', 'Which database?', 0)).not.toBe(base)
+    expect(computeDraftKey('3', 'Which cache?', 0)).not.toBe(base)
+    expect(computeDraftKey('3', 'Which database?', 1)).not.toBe(base)
   })
 
   it('is robust to line-shift-only changes (same key before/after reordering elsewhere)', () => {
     // Answering an earlier question in the file shifts every later question's
     // line number — the key must not depend on line number at all.
-    const key = computeDraftKey(3, 'Which database?', 0)
-    expect(key).toBe(computeDraftKey(3, 'Which database?', 0))
+    const key = computeDraftKey('3', 'Which database?', 0)
+    expect(key).toBe(computeDraftKey('3', 'Which database?', 0))
     expect(key).toContain(questionTextHash('Which database?'))
+  })
+
+  // ADR-0018 Step 3 (seed questions in the panel): the exact collision found
+  // and adjudicated before shipping — see
+  // docs/inbox/2026-07-07-2127-flint-to-facet-seed-questions-draft-key-collision-fork.md
+  // and docs/inbox/2026-07-07-2141-facet-to-flint-adjudication-option-a-container-key-plus-regression-test.md.
+  // Seeds have no ADR number; naively passing 0 for every seed made two
+  // *different* seeds' first-questions-with-matching-text collide on one key
+  // — a typed draft in seed A would silently appear as the "restored draft"
+  // for seed B's similarly-worded question. Fixed by widening the first
+  // component from a bare ADR number to a container-scoped string ID.
+  it('CATCH — two different seeds with matching question text/ordinal must NOT collide', () => {
+    // Before this fix, computeDraftKey took a bare ADR number; seeds have
+    // none, so every seed would have passed the same sentinel (0), and this
+    // exact scenario — two different seeds, same question text, same
+    // ordinal — would have produced the identical key `0::<hash>::0`.
+    // Typing a draft in seed A would then silently surface as the "draft
+    // restored" text for seed B's unrelated question.
+    const questionText = 'What approach should we take?'
+    const ordinal = 0
+
+    const seedAKey = computeDraftKey('/repo/docs/adr/seed-2026-07-01-a.md', questionText, ordinal)
+    const seedBKey = computeDraftKey('/repo/docs/adr/seed-2026-07-02-b.md', questionText, ordinal)
+    expect(seedAKey).not.toBe(seedBKey)
+  })
+
+  it('PINNED — an ADR draft key is byte-identical before and after the containerId widening', () => {
+    // The "unchanged behavior for ADRs" claim, as a test: String(3) must
+    // produce the exact same key text the old numeric-3 scheme did, so
+    // every draft written under the pre-fix scheme still resolves correctly
+    // after this deploys (no migration, no orphaning of existing drafts.json
+    // entries).
+    const key = computeDraftKey(String(3), 'Which database?', 0)
+    expect(key).toBe(`3::${questionTextHash('Which database?')}::0`)
   })
 })
 
@@ -94,14 +128,14 @@ describe('DraftStore', () => {
 
   it('save() then get() round-trips the draft text', () => {
     const store = new DraftStore(dir)
-    const key = computeDraftKey(3, 'Which database?', 0)
+    const key = computeDraftKey('3', 'Which database?', 0)
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'I think Postgres.', '2026-07-06T20:00:00Z')
     expect(store.get(key)?.draftText).toBe('I think Postgres.')
   })
 
   it('persists to docs/adr/.working/drafts.json (committed substrate, not a sidecar)', () => {
     const store = new DraftStore(dir)
-    const key = computeDraftKey(3, 'Which database?', 0)
+    const key = computeDraftKey('3', 'Which database?', 0)
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'Draft text', '2026-07-06T20:00:00Z')
     const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'drafts.json'), 'utf8'))
     expect(onDisk).toHaveLength(1)
@@ -109,7 +143,7 @@ describe('DraftStore', () => {
   })
 
   it('a fresh DraftStore instance reloads persisted drafts from disk', () => {
-    const key = computeDraftKey(3, 'Which database?', 0)
+    const key = computeDraftKey('3', 'Which database?', 0)
     const store1 = new DraftStore(dir)
     store1.save(key, '/fake/0003.md', 3, 'Which database?', 'Persisted draft', '2026-07-06T20:00:00Z')
 
@@ -119,7 +153,7 @@ describe('DraftStore', () => {
 
   it('save() keeps prior revisions in history (capped)', () => {
     const store = new DraftStore(dir)
-    const key = computeDraftKey(3, 'Which database?', 0)
+    const key = computeDraftKey('3', 'Which database?', 0)
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'v1', '2026-07-06T20:00:00Z')
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'v2', '2026-07-06T20:00:01Z')
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'v3', '2026-07-06T20:00:02Z')
@@ -130,7 +164,7 @@ describe('DraftStore', () => {
 
   it('promote() archives the draft and removes it from the active set', () => {
     const store = new DraftStore(dir)
-    const key = computeDraftKey(3, 'Which database?', 0)
+    const key = computeDraftKey('3', 'Which database?', 0)
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'Final answer text', '2026-07-06T20:00:00Z')
     store.promote(key, '2026-07-06T20:05:00Z')
 
@@ -143,7 +177,7 @@ describe('DraftStore', () => {
 
   it('promote() never deletes — the archive is a separate, permanent file', () => {
     const store = new DraftStore(dir)
-    const key = computeDraftKey(3, 'Which database?', 0)
+    const key = computeDraftKey('3', 'Which database?', 0)
     store.save(key, '/fake/0003.md', 3, 'Which database?', 'Answer', '2026-07-06T20:00:00Z')
     store.promote(key, '2026-07-06T20:05:00Z')
 
@@ -155,8 +189,8 @@ describe('DraftStore', () => {
 
   it('orphans() finds drafts whose key no longer matches any live question', () => {
     const store = new DraftStore(dir)
-    const staleKey = computeDraftKey(3, 'Which database?', 0)
-    const liveKey = computeDraftKey(3, 'Which cache?', 0)
+    const staleKey = computeDraftKey('3', 'Which database?', 0)
+    const liveKey = computeDraftKey('3', 'Which cache?', 0)
     store.save(staleKey, '/fake/0003.md', 3, 'Which database?', 'Old draft', '2026-07-06T20:00:00Z')
     store.save(liveKey, '/fake/0003.md', 3, 'Which cache?', 'Live draft', '2026-07-06T20:01:00Z')
 
@@ -167,8 +201,8 @@ describe('DraftStore', () => {
 
   it('reattach() moves a draft to a new key without touching its text — never silent (caller-confirmed only)', () => {
     const store = new DraftStore(dir)
-    const oldKey = computeDraftKey(3, 'Which database?', 0)
-    const newKey = computeDraftKey(3, 'Which database engine?', 0)
+    const oldKey = computeDraftKey('3', 'Which database?', 0)
+    const newKey = computeDraftKey('3', 'Which database engine?', 0)
     store.save(oldKey, '/fake/0003.md', 3, 'Which database?', 'My answer', '2026-07-06T20:00:00Z')
 
     store.reattach(oldKey, newKey, '2026-07-06T20:10:00Z')
@@ -256,7 +290,7 @@ describe('DEBRIEF-001 acceptance fixture: rename + rewrite must not destroy an i
     const adrBefore = parseAdr(original, originalPath)
     const q = adrBefore.questions[0]
     const ordinals = computeOccurrenceOrdinals(adrBefore.questions.map(qq => qq.text))
-    const key = computeDraftKey(adrBefore.number, q.text, ordinals[0])
+    const key = computeDraftKey(String(adrBefore.number), q.text, ordinals[0])
 
     const store = new DraftStore(dir)
 
@@ -291,7 +325,7 @@ describe('DEBRIEF-001 acceptance fixture: rename + rewrite must not destroy an i
     const adrAfter = parseAdr(rewritten, renamedPath)
     const qAfter = adrAfter.questions[0]
     const ordinalsAfter = computeOccurrenceOrdinals(adrAfter.questions.map(qq => qq.text))
-    const keyAfter = computeDraftKey(adrAfter.number, qAfter.text, ordinalsAfter[0])
+    const keyAfter = computeDraftKey(String(adrAfter.number), qAfter.text, ordinalsAfter[0])
 
     // Same question text, same ADR number (the rewrite didn't change the
     // question or the file's number) → same key → the draft survives
@@ -320,7 +354,7 @@ describe('DEBRIEF-001 acceptance fixture: rename + rewrite must not destroy an i
     fs.writeFileSync(originalPath, original)
     const adrBefore = parseAdr(original, originalPath)
     const q = adrBefore.questions[0]
-    const key = computeDraftKey(adrBefore.number, q.text, 0)
+    const key = computeDraftKey(String(adrBefore.number), q.text, 0)
 
     const store = new DraftStore(dir)
     store.save(key, originalPath, adrBefore.number, q.text, 'In-progress human answer.', '2026-07-06T21:05:00Z')
@@ -341,7 +375,7 @@ describe('DEBRIEF-001 acceptance fixture: rename + rewrite must not destroy an i
     fs.writeFileSync(originalPath, rewritten)
     const adrAfter = parseAdr(rewritten, originalPath)
     const liveRefs = adrAfter.questions.map((qq, i) => ({
-      key: computeDraftKey(adrAfter.number, qq.text, i),
+      key: computeDraftKey(String(adrAfter.number), qq.text, i),
       text: qq.text,
       adrNumber: adrAfter.number,
     }))
@@ -384,8 +418,8 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     // Not exotic: a VS Code crash, OS kill, or disk-full event mid-`fs.writeFileSync`
     // is exactly what DEBRIEF-001's "partial-failure states" target names.
     const store1 = new DraftStore(dir)
-    const keyA = computeDraftKey(3, 'Which database?', 0)
-    const keyB = computeDraftKey(4, 'Which cache?', 0)
+    const keyA = computeDraftKey('3', 'Which database?', 0)
+    const keyB = computeDraftKey('4', 'Which cache?', 0)
     store1.save(keyA, '/fake/0003.md', 3, 'Which database?', 'Answer A, in progress.', '2026-07-06T20:00:00Z')
     store1.save(keyB, '/fake/0004.md', 4, 'Which cache?', 'Answer B, in progress.', '2026-07-06T20:01:00Z')
 
@@ -414,8 +448,8 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     // Two windows on the same workspace answering different ADRs is ordinary
     // multi-window usage, not a contrived scenario — the brief names this
     // target explicitly ("concurrent writes to one QST from two sessions").
-    const keyA = computeDraftKey(3, 'Which database?', 0)
-    const keyB = computeDraftKey(4, 'Which cache?', 0)
+    const keyA = computeDraftKey('3', 'Which database?', 0)
+    const keyB = computeDraftKey('4', 'Which cache?', 0)
 
     const session1 = new DraftStore(dir)
     session1.save(keyA, '/fake/0003.md', 3, 'Which database?', 'Session 1 answer.', '2026-07-06T20:00:00Z')
@@ -439,7 +473,7 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     // closing question) is common, ordinary ADR authoring — not exotic.
     //
     // Note on this test's shape (a correction to the originally-filed catch):
-    // computeDraftKey(3, 'Any other concerns?', 1) is a pure function of its
+    // computeDraftKey('3', 'Any other concerns?', 1) is a pure function of its
     // three arguments — calling it twice with identical arguments can only
     // ever produce the identical string, so no fix expressible as "make
     // store.get() of that same string return something different" can exist
@@ -454,7 +488,7 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     const textsBefore = ['Which database?', 'Any other concerns?', 'Any other concerns?']
     const ordinalsBefore = computeOccurrenceOrdinals(textsBefore)
     const totalsBefore = computeOccurrenceCounts(textsBefore) // [1, 2, 2]
-    const keyForDeploySectionClosingQ = computeDraftKey(3, 'Any other concerns?', ordinalsBefore[2]) // ordinal 1
+    const keyForDeploySectionClosingQ = computeDraftKey('3', 'Any other concerns?', ordinalsBefore[2]) // ordinal 1
 
     const store = new DraftStore(dir)
     store.save(
@@ -471,7 +505,7 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     // and the *sibling count* for that hash is now 3, not 2.
     const textsAfter = ['Which database?', 'Any other concerns?', 'Any other concerns?', 'Any other concerns?']
     const totalsAfter = computeOccurrenceCounts(textsAfter) // [1, 3, 3, 3]
-    const keyNowAtOrdinal1 = computeDraftKey(3, 'Any other concerns?', 1) // same string as keyForDeploySectionClosingQ
+    const keyNowAtOrdinal1 = computeDraftKey('3', 'Any other concerns?', 1) // same string as keyForDeploySectionClosingQ
 
     // The key is technically "live" (a real, different question occupies
     // ordinal 1 now) and its text even matches ('Any other concerns?' is
@@ -487,7 +521,7 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     // don't match what was saved, so the reattach picker gets a chance to
     // ask a human rather than the panel silently misattaching it.
     const liveRefs = [
-      { key: computeDraftKey(3, 'Which database?', 0), text: 'Which database?', adrNumber: 3, totalOccurrences: totalsAfter[0] },
+      { key: computeDraftKey('3', 'Which database?', 0), text: 'Which database?', adrNumber: 3, totalOccurrences: totalsAfter[0] },
       { key: keyNowAtOrdinal1, text: 'Any other concerns?', adrNumber: 3, totalOccurrences: totalsAfter[1] },
     ]
     const orphans = store.orphans(liveRefs)

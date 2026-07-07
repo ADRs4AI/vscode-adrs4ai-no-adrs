@@ -1,8 +1,17 @@
 /**
  * Draft keying — ADR-0023 (Anti-Clobbering Posture, Decision 2)
  *
- * draftKey = adrNumber ⊕ sha1(normalize(questionHeadingText)) ⊕ occurrenceOrdinal
+ * draftKey = containerId ⊕ sha1(normalize(questionHeadingText)) ⊕ occurrenceOrdinal
  *
+ * - containerId: a string identifying the source document — `String(adrNumber)`
+ *   for ADRs (unchanged from the original numeric scheme, just stringified),
+ *   the seed's file path/slug for seeds (ADR-0018 Step 3). Originally this
+ *   was a bare ADR number; extending it to seeds naively (passing `0` for
+ *   every seed) would collide across *different* seeds whose questions share
+ *   text and ordinal — one seed's typed draft silently appearing as another
+ *   seed's "restored draft." Caught before shipping (2026-07-07), adjudicated
+ *   as Option A over a numeric hash surrogate (Option B, rejected: opaque,
+ *   works against ADR-0023's own completist/inspectable-substrate posture).
  * - normalize: trim, collapse whitespace, lowercase, strip a "QST:" prefix —
  *   so cosmetic edits (extra space, case) don't orphan a draft.
  * - occurrenceOrdinal: among questions in the same file with the same
@@ -49,8 +58,8 @@ export function computeOccurrenceOrdinals(questionTexts: string[]): number[] {
 }
 
 /** Assemble the draft key from its three components. */
-export function computeDraftKey(adrNumber: number, questionText: string, occurrenceOrdinal: number): string {
-  return `${adrNumber}::${questionTextHash(questionText)}::${occurrenceOrdinal}`
+export function computeDraftKey(containerId: string, questionText: string, occurrenceOrdinal: number): string {
+  return `${containerId}::${questionTextHash(questionText)}::${occurrenceOrdinal}`
 }
 
 /**

@@ -181,7 +181,7 @@ export class OpenQuestionsPanel {
         .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
         .filter(({ q }) => !q.isAnswered)
         .map(({ q, ordinal, total }) => {
-          const draftKey = computeDraftKey(adr.number, q.text, ordinal)
+          const draftKey = computeDraftKey(String(adr.number), q.text, ordinal)
           // getIfMatching, not get: a stale key whose duplicate-text group
           // shape has shifted (write-adversary CATCH 3) must never silently
           // restore into the wrong question's answer box.
