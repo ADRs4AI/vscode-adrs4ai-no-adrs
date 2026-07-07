@@ -1901,3 +1901,79 @@ describe('Regression tests', () => {
     expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Write-adversary finding (Quarry 5): openQuestionsPanel.ts's writeAnswer()
+// re-resolves a question's current position by id from a fresh parse rather
+// than trusting a client-supplied lineStart, which can go stale if the file
+// shifted under an in-flight answer (critical under the drift fence's
+// "force" path, which skips the checksum check entirely). writeAnswer()
+// itself isn't unit-testable here (private method, live vscode.workspace
+// dependency, no vscode-mock harness in this repo yet) — this test verifies
+// the mechanism the fix depends on: parseAdr + find-by-id survives a line
+// shift and lands on the question's NEW correct line, not the stale one.
+// See docs/inbox/2026-07-07-2018-quarry-to-fitter-three-catches-in-the-
+// shipped-draft-store.md's "flagged-not-yet-reproduced finding" section.
+// ---------------------------------------------------------------------------
+
+describe('Write-adversary finding: question re-resolution by id survives a line shift', () => {
+  it('find-by-id locates the question at its NEW lineStart after content shifts above it, not the stale render-time line', () => {
+    const original = `# ADR-0099: Two Questions
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+### QST: Which cache?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const before = parseAdr(original, '/fake/0099-two-questions.md')
+    const cacheQuestion = before.questions.find(q => q.text === 'Which cache?')!
+    const staleLineStart = cacheQuestion.lineStart
+
+    // Someone answers the FIRST question (adds lines), shifting everything below it.
+    const shifted = original.replace(
+      '**ANS:** (by Jérémie)\n[Fill this in]\n\n### QST: Which cache?',
+      '**ANS:** (by Jérémie)\nWe use Postgres.\nDecided after benchmarking three options over two weeks.\n\n### QST: Which cache?',
+    )
+    const after = parseAdr(shifted, '/fake/0099-two-questions.md')
+    const relocated = after.questions.find(q => q.id === cacheQuestion.id)!
+
+    expect(relocated.lineStart).toBeGreaterThan(staleLineStart)
+    expect(relocated.text).toBe('Which cache?')
+    // A write using the STALE line number would search starting well above
+    // where "Which cache?" now actually is — exactly the misattribution risk
+    // the id-based re-resolution fix closes.
+  })
+
+  it('find-by-id correctly returns no match when a question\'s heading text itself changed (safe refusal, not silent misattachment)', () => {
+    const original = `# ADR-0099: One Question
+
+- **Status**: Draft
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const before = parseAdr(original, '/fake/0099-one-question.md')
+    const question = before.questions[0]
+
+    const rewritten = original.replace('Which database?', 'Which database engine?')
+    const after = parseAdr(rewritten, '/fake/0099-one-question.md')
+
+    expect(after.questions.find(q => q.id === question.id)).toBeUndefined()
+  })
+})

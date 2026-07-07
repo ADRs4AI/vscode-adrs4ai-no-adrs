@@ -19,6 +19,7 @@ import * as path from 'path'
 import * as os from 'os'
 import type { AdrIndex } from '../index/adrIndex'
 import type { Recommendation } from '../parser/types'
+import { parseAdr } from '../parser/extractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
@@ -269,11 +270,29 @@ export class OpenQuestionsPanel {
         }
       }
 
+      // Re-resolve the question's CURRENT position by id rather than
+      // trusting msg.lineStart, which was captured at render time and can be
+      // stale — critical under `force` (the drift fence's checksum check is
+      // skipped there entirely). Write-adversary finding (Quarry 5): a stale
+      // line offset against shifted content can land the search window in a
+      // DIFFERENT question's block, silently overwriting it — misattribution,
+      // not just loss. Refuse (visible error) rather than guess when the
+      // question can't be relocated, e.g. its heading text itself changed.
+      const freshAdr = parseAdr(currentContent, msg.adrPath)
+      const currentQuestion = freshAdr.questions.find(q => q.id === msg.questionId)
+      if (!currentQuestion) {
+        this.panel.webview.postMessage({
+          type: 'error',
+          message: `Could not relocate this question in ${msg.adrPath} — it may have been edited or removed. Please answer it manually.`,
+        })
+        return
+      }
+
       const lines = currentContent.split('\n')
       const edit = new vscode.WorkspaceEdit()
 
       // Search window: from QST heading line (1-indexed → 0-indexed) forward
-      const start = msg.lineStart - 1
+      const start = currentQuestion.lineStart - 1
       const end = Math.min(start + 40, lines.length)
 
       let statusLineIdx = -1
@@ -313,7 +332,7 @@ export class OpenQuestionsPanel {
         // Fallback: can't find where to insert — report error
         this.panel.webview.postMessage({
           type: 'error',
-          message: `Could not find the ANS block near line ${msg.lineStart} in ${msg.adrPath}. Please answer this one manually.`,
+          message: `Could not find the ANS block near line ${currentQuestion.lineStart} in ${msg.adrPath}. Please answer this one manually.`,
         })
         return
       }
