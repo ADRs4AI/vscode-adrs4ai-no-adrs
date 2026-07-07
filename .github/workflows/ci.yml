@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel a stale run for the same branch/PR when a newer push supersedes it
+# (per epistemic-arc-mapping-skill's build-skill.yaml) — relevant here given
+# how fast commits have been landing tonight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Node 20 is being retired as the GitHub Actions runtime; force JS-based
 # actions onto Node 24 explicitly rather than waiting on each action's
 # default (per epistemic-arc-mapping-skill's Node 24 migration, 2026-03).
@@ -22,7 +29,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
