@@ -15,6 +15,7 @@ import {
   normalizeQuestionText,
   questionTextHash,
   computeOccurrenceOrdinals,
+  computeOccurrenceCounts,
   computeDraftKey,
 } from '../drafts/draftKey'
 import { DraftStore, textSimilarity, bestReattachCandidate } from '../drafts/draftStore'
@@ -159,7 +160,7 @@ describe('DraftStore', () => {
     store.save(staleKey, '/fake/0003.md', 3, 'Which database?', 'Old draft', '2026-07-06T20:00:00Z')
     store.save(liveKey, '/fake/0003.md', 3, 'Which cache?', 'Live draft', '2026-07-06T20:01:00Z')
 
-    const orphans = store.orphans(new Set([liveKey]))
+    const orphans = store.orphans([{ key: liveKey, text: 'Which cache?', adrNumber: 3 }])
     expect(orphans).toHaveLength(1)
     expect(orphans[0].key).toBe(staleKey)
   })
@@ -339,21 +340,20 @@ describe('DEBRIEF-001 acceptance fixture: rename + rewrite must not destroy an i
 `
     fs.writeFileSync(originalPath, rewritten)
     const adrAfter = parseAdr(rewritten, originalPath)
-    const liveKeys = new Set(adrAfter.questions.map((qq, i) => computeDraftKey(adrAfter.number, qq.text, i)))
-
-    // The old key no longer matches any live question — it's an orphan,
-    // not gone. The draft text is still fully recoverable from the store.
-    const orphans = store.orphans(liveKeys)
-    expect(orphans).toHaveLength(1)
-    expect(orphans[0].draftText).toBe('In-progress human answer.')
-
-    // And the reattach picker can suggest exactly this question back (same
-    // ADR, near-identical wording).
     const liveRefs = adrAfter.questions.map((qq, i) => ({
       key: computeDraftKey(adrAfter.number, qq.text, i),
       text: qq.text,
       adrNumber: adrAfter.number,
     }))
+
+    // The old key no longer matches any live question — it's an orphan,
+    // not gone. The draft text is still fully recoverable from the store.
+    const orphans = store.orphans(liveRefs)
+    expect(orphans).toHaveLength(1)
+    expect(orphans[0].draftText).toBe('In-progress human answer.')
+
+    // And the reattach picker can suggest exactly this question back (same
+    // ADR, near-identical wording).
     expect(bestReattachCandidate(orphans[0], liveRefs)).toBe(liveRefs[0].key)
   })
 })
@@ -434,31 +434,65 @@ describe('Adversarial findings: DraftStore silent-loss and silent-misattachment 
     expect(onDisk.get(keyB)?.draftText).toBe('Session 2 answer.')
   })
 
-  it('CATCH 3 — inserting a new occurrence of duplicate question text silently reattaches an existing draft to the WRONG question (no orphan flag, no consent — worse than the "no silent auto-reattach" promise)', () => {
+  it('CATCH 3 — inserting a new occurrence of duplicate question text hands an existing draft\'s key to a DIFFERENT question; getIfMatching() refuses to restore it, and orphans() still flags it', () => {
     // Duplicated boilerplate QST wording across sections (e.g. a repeated
     // closing question) is common, ordinary ADR authoring — not exotic.
+    //
+    // Note on this test's shape (a correction to the originally-filed catch):
+    // computeDraftKey(3, 'Any other concerns?', 1) is a pure function of its
+    // three arguments — calling it twice with identical arguments can only
+    // ever produce the identical string, so no fix expressible as "make
+    // store.get() of that same string return something different" can exist
+    // without get() itself becoming unsound for ordinary lookups (which
+    // CATCH 1/2's own assertions, and every non-adversarial test above,
+    // depend on). The real fix closes the actual danger Quarry named
+    // (silent misattachment across a duplicate-text ordinal shift) at the
+    // two places it's actually observable: the RESTORE path (a safe
+    // accessor that refuses to trust a key whose duplicate-group shape
+    // changed) and the ORPHAN-DETECTION path (still flags it for the
+    // reattach picker even though the bare key is technically "live").
     const textsBefore = ['Which database?', 'Any other concerns?', 'Any other concerns?']
     const ordinalsBefore = computeOccurrenceOrdinals(textsBefore)
+    const totalsBefore = computeOccurrenceCounts(textsBefore) // [1, 2, 2]
     const keyForDeploySectionClosingQ = computeDraftKey(3, 'Any other concerns?', ordinalsBefore[2]) // ordinal 1
 
     const store = new DraftStore(dir)
     store.save(
       keyForDeploySectionClosingQ, '/fake/0003.md', 3, 'Any other concerns?',
       'No, this covers it for the deploy section.', '2026-07-06T20:00:00Z',
+      totalsBefore[2], // 2 siblings shared this hash at save time
     )
 
     // Human inserts a THIRD occurrence of the same duplicate text earlier in
     // the document (a new section's closing question, placed before the
     // deploy section) — an ordinary edit, not a rename, not a deletion.
     // Document order among duplicates shifts: what was ordinal-1 (deploy
-    // section) is now ordinal-2; a DIFFERENT question now occupies ordinal-1.
-    const keyNowAtOrdinal1 = computeDraftKey(3, 'Any other concerns?', 1)
+    // section) is now ordinal-2; a DIFFERENT question now occupies ordinal-1,
+    // and the *sibling count* for that hash is now 3, not 2.
+    const textsAfter = ['Which database?', 'Any other concerns?', 'Any other concerns?', 'Any other concerns?']
+    const totalsAfter = computeOccurrenceCounts(textsAfter) // [1, 3, 3, 3]
+    const keyNowAtOrdinal1 = computeDraftKey(3, 'Any other concerns?', 1) // same string as keyForDeploySectionClosingQ
 
-    // BUG: this key is LIVE — a real (different) question occupies ordinal 1
-    // now — so orphans() will never flag it as needing reattach-confirmation.
-    // The panel will silently pre-fill the NEW question's answer box with
-    // the deploy section's old draft text, attributed to the wrong question,
-    // with no drift warning and no "reattach to..." consent prompt at all.
-    expect(store.get(keyNowAtOrdinal1)).toBeUndefined()
+    // The key is technically "live" (a real, different question occupies
+    // ordinal 1 now) and its text even matches ('Any other concerns?' is
+    // the shared boilerplate) — so a check on text alone isn't enough. The
+    // sibling-count mismatch (2 at save time vs. 3 now) is the signal that
+    // something in this duplicate-text group shifted, and getIfMatching()
+    // refuses to restore on that basis: silently pre-filling the wrong
+    // question's answer box would be worse than not restoring at all.
+    expect(store.getIfMatching(keyNowAtOrdinal1, 'Any other concerns?', totalsAfter[1])).toBeUndefined()
+
+    // And it's not silently lost either — orphans() still flags it (even
+    // though liveByKey technically has this key) because the live totals
+    // don't match what was saved, so the reattach picker gets a chance to
+    // ask a human rather than the panel silently misattaching it.
+    const liveRefs = [
+      { key: computeDraftKey(3, 'Which database?', 0), text: 'Which database?', adrNumber: 3, totalOccurrences: totalsAfter[0] },
+      { key: keyNowAtOrdinal1, text: 'Any other concerns?', adrNumber: 3, totalOccurrences: totalsAfter[1] },
+    ]
+    const orphans = store.orphans(liveRefs)
+    expect(orphans).toHaveLength(1)
+    expect(orphans[0].key).toBe(keyForDeploySectionClosingQ)
+    expect(orphans[0].draftText).toBe('No, this covers it for the deploy section.')
   })
 })

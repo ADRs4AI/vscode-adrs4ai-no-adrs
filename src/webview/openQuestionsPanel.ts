@@ -21,7 +21,7 @@ import type { AdrIndex } from '../index/adrIndex'
 import type { Recommendation } from '../parser/types'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
-import { computeDraftKey, computeOccurrenceOrdinals } from '../drafts/draftKey'
+import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -45,6 +45,8 @@ interface WebviewQuestion {
   lineStart: number  // 1-indexed line of the ### QST: heading
   /** ADR-0023: adrNumber+textHash+ordinal — stable across line shifts. */
   draftKey: string
+  /** ADR-0023 CATCH 3 guard: sibling count sharing this question's text-hash in the ADR right now. */
+  totalOccurrences: number
   /** ADR-0023 drift fence: the ADR file's content checksum at render time. */
   fileChecksum: string
   /** ADR-0023: restored draft text, if a draft exists for this question's key. */
@@ -72,7 +74,7 @@ type WebviewMessage =
     }
   | { type: 'skip' }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
-  | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string }
+  | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string; totalOccurrences: number }
   | { type: 'refreshRequest' }
   | { type: 'ready' }
 
@@ -118,6 +120,15 @@ export class OpenQuestionsPanel {
       ? path.join(workspaceRoot, adrDirRel, '.working')
       : path.join(os.tmpdir(), 'adr-drafts-no-workspace')
     this.draftStore = new DraftStore(workingDir)
+    if (this.draftStore.quarantinedFiles.length > 0) {
+      // CATCH 1 (write-adversary): a corrupt drafts.json/drafts-archive.json
+      // was found and quarantined (renamed aside, never deleted) rather than
+      // silently discarded. Surface it — recovery from the .bak mirror
+      // happens automatically, but the human should know it happened.
+      vscode.window.showWarningMessage(
+        `ADR Manager: found and quarantined ${this.draftStore.quarantinedFiles.length} corrupt draft file(s); recovered from backup where possible. See ${this.draftStore.quarantinedFiles.join(', ')}.`,
+      )
+    }
 
     this.panel = vscode.window.createWebviewPanel(
       'adrOpenQuestions',
@@ -158,17 +169,22 @@ export class OpenQuestionsPanel {
         ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
         : undefined
 
-      // ADR-0023: occurrence ordinals computed over ALL questions in the file
-      // (not just unanswered ones) — the key must be stable regardless of
-      // which questions have already been answered and filtered out below.
+      // ADR-0023: occurrence ordinals/counts computed over ALL questions in
+      // the file (not just unanswered ones) — the key must be stable
+      // regardless of which questions have already been answered and
+      // filtered out below.
       const ordinals = computeOccurrenceOrdinals(adr.questions.map(q => q.text))
+      const totals = computeOccurrenceCounts(adr.questions.map(q => q.text))
 
       return adr.questions
-        .map((q, idx) => ({ q, ordinal: ordinals[idx] }))
+        .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
         .filter(({ q }) => !q.isAnswered)
-        .map(({ q, ordinal }) => {
+        .map(({ q, ordinal, total }) => {
           const draftKey = computeDraftKey(adr.number, q.text, ordinal)
-          const draft = this.draftStore.get(draftKey)
+          // getIfMatching, not get: a stale key whose duplicate-text group
+          // shape has shifted (write-adversary CATCH 3) must never silently
+          // restore into the wrong question's answer box.
+          const draft = this.draftStore.getIfMatching(draftKey, q.text, total)
           return {
             id: q.id,
             text: q.text,
@@ -184,6 +200,7 @@ export class OpenQuestionsPanel {
             adrPath: adr.path,
             lineStart: q.lineStart,
             draftKey,
+            totalOccurrences: total,
             fileChecksum: adr.checksum,
             draftText: draft?.draftText,
             draftSavedAt: draft?.updatedAt,
@@ -209,7 +226,10 @@ export class OpenQuestionsPanel {
       case 'jumpTo': await this.openAtLine(msg.adrPath, msg.lineNumber); break
       case 'draft':
         // ADR-0023: debounced (~500ms) auto-save from the webview's textarea input.
-        this.draftStore.save(msg.draftKey, msg.adrPath, msg.adrNumber, msg.questionText, msg.draftText, new Date().toISOString())
+        this.draftStore.save(
+          msg.draftKey, msg.adrPath, msg.adrNumber, msg.questionText, msg.draftText,
+          new Date().toISOString(), msg.totalOccurrences,
+        )
         break
       case 'refreshRequest':
         // ADR-0023 drift fence, "Refresh" choice: force a re-parse so the
@@ -1115,7 +1135,7 @@ $id('ans').addEventListener('input', () => {
   draftSaveTimer = setTimeout(() => {
     vscode.postMessage({
       type: 'draft', draftKey: q.draftKey, adrPath: q.adrPath, adrNumber: q.adrNumber,
-      questionText: q.text, draftText: $id('ans').value,
+      questionText: q.text, draftText: $id('ans').value, totalOccurrences: q.totalOccurrences,
     });
     $id('draft-flash').style.display = 'inline-flex';
     setTimeout(() => { $id('draft-flash').style.display = 'none'; }, 900);

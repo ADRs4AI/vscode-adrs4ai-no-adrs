@@ -11,8 +11,10 @@
  * to `drafts-archive.json` — permanent purgatory; no purge mechanism exists
  * yet (the ADR names ≥30 days as a future possibility, "if ever").
  *
- * All timestamps are passed in by the caller (never computed internally)
- * so this class stays deterministic and unit-testable.
+ * Hardened 2026-07-07 against three catches from Quarry 5 (write-adversary):
+ * see docs/inbox/2026-07-07-2018-quarry-to-fitter-three-catches-in-the-
+ * shipped-draft-store.md. All timestamps are still caller-supplied so this
+ * class stays deterministic and unit-testable.
  */
 
 import * as fs from 'fs'
@@ -28,6 +30,14 @@ export interface DraftRecord {
   updatedAt: string
   /** Prior draftText revisions, oldest first, capped at MAX_HISTORY. */
   history: string[]
+  /**
+   * How many questions in the ADR shared questionText's normalized hash at
+   * save time (CATCH 3 guard). A restore is only trusted when this still
+   * matches the current document — if it changed, a duplicate-text question
+   * was inserted or removed and the ordinal-based key may now point at a
+   * different physical question than the one this draft was written for.
+   */
+  totalOccurrences: number
 }
 
 export interface ArchivedDraftRecord extends DraftRecord {
@@ -43,44 +53,131 @@ export class DraftStore {
   private readonly draftsPath: string
   private readonly archivePath: string
 
+  /**
+   * Paths of any corrupt files quarantined during load (CATCH 1) — e.g.
+   * `drafts.json.corrupt-1720383600000`. Empty in the normal case. Callers
+   * (the panel) should warn the human when this is non-empty rather than
+   * let the recovery happen invisibly.
+   */
+  readonly quarantinedFiles: string[] = []
+
   constructor(private readonly workingDir: string) {
     this.draftsPath = path.join(workingDir, 'drafts.json')
     this.archivePath = path.join(workingDir, 'drafts-archive.json')
-    this.load()
+    this.reload()
   }
 
-  private load(): void {
-    try {
-      if (fs.existsSync(this.draftsPath)) {
-        const raw = JSON.parse(fs.readFileSync(this.draftsPath, 'utf8')) as DraftRecord[]
-        this.drafts = new Map(raw.map(d => [d.key, d]))
-      }
-    } catch {
-      // Corrupt or unreadable — start fresh rather than crash the panel.
-      this.drafts = new Map()
+  // ---------------------------------------------------------------------------
+  // Load / persist — atomic writes + backup mirror + quarantine-on-corruption
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Re-read both files from disk into memory. Called on construction and at
+   * the start of every mutating method (CATCH 2): re-reading immediately
+   * before applying a single-key change, rather than trusting a possibly-
+   * stale in-memory snapshot, means two concurrent DraftStore instances
+   * (two VS Code windows) each pick up the other's latest persisted state
+   * before writing their own change — turning "last full-file write wins,
+   * unconditionally" into "only a genuinely simultaneous write can collide."
+   */
+  private reload(): void {
+    this.drafts = new Map(this.loadArrayWithBackup<DraftRecord>(this.draftsPath).map(d => [d.key, d]))
+    this.archive = this.loadArrayWithBackup<ArchivedDraftRecord>(this.archivePath)
+  }
+
+  /**
+   * Read a JSON array file, falling back to its `.bak` mirror if the primary
+   * is missing-but-corrupt (CATCH 1: a truncated write, e.g. a crash mid-
+   * `fs.writeFileSync`). A corrupt primary is quarantined (renamed aside,
+   * never deleted) rather than silently discarded, so the fallback to `.bak`
+   * never has to compete with an overwrite of forensic evidence.
+   */
+  private loadArrayWithBackup<T>(primaryPath: string): T[] {
+    if (fs.existsSync(primaryPath)) {
+      const parsed = this.tryParseArray<T>(primaryPath)
+      if (parsed !== null) return parsed
+      this.quarantine(primaryPath)
     }
+    const backupPath = this.backupPathFor(primaryPath)
+    return this.tryParseArray<T>(backupPath) ?? []
+  }
+
+  private tryParseArray<T>(filePath: string): T[] | null {
+    if (!fs.existsSync(filePath)) return null
     try {
-      if (fs.existsSync(this.archivePath)) {
-        this.archive = JSON.parse(fs.readFileSync(this.archivePath, 'utf8')) as ArchivedDraftRecord[]
-      }
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+      return Array.isArray(parsed) ? (parsed as T[]) : null
     } catch {
-      this.archive = []
+      return null
     }
+  }
+
+  private quarantine(filePath: string): void {
+    try {
+      const quarantinePath = `${filePath}.corrupt-${Date.now()}`
+      fs.renameSync(filePath, quarantinePath)
+      this.quarantinedFiles.push(quarantinePath)
+    } catch {
+      // Best effort — if even the rename fails, don't crash the panel over it.
+    }
+  }
+
+  private backupPathFor(filePath: string): string {
+    return `${filePath}.bak`
+  }
+
+  /**
+   * Write `data` to `primaryPath` AND mirror it to `primaryPath.bak`, both
+   * atomically (temp file + rename — a crash mid-write leaves the previous,
+   * complete file in place rather than a truncated one). The backup always
+   * mirrors the just-written primary, so if the primary is later found
+   * corrupt (e.g. external truncation), the backup is a same-generation,
+   * complete fallback — not one write behind.
+   */
+  private writeArrayWithBackup(primaryPath: string, data: unknown[]): void {
+    fs.mkdirSync(this.workingDir, { recursive: true })
+    const json = JSON.stringify(data, null, 2)
+    this.writeFileAtomic(primaryPath, json)
+    this.writeFileAtomic(this.backupPathFor(primaryPath), json)
+  }
+
+  private writeFileAtomic(filePath: string, content: string): void {
+    const tmpPath = `${filePath}.tmp-${process.pid}`
+    fs.writeFileSync(tmpPath, content)
+    fs.renameSync(tmpPath, filePath)
   }
 
   private persistDrafts(): void {
-    fs.mkdirSync(this.workingDir, { recursive: true })
-    fs.writeFileSync(this.draftsPath, JSON.stringify(Array.from(this.drafts.values()), null, 2))
+    this.writeArrayWithBackup(this.draftsPath, Array.from(this.drafts.values()))
   }
 
   private persistArchive(): void {
-    fs.mkdirSync(this.workingDir, { recursive: true })
-    fs.writeFileSync(this.archivePath, JSON.stringify(this.archive, null, 2))
+    this.writeArrayWithBackup(this.archivePath, this.archive)
   }
 
-  /** Look up a draft by key. */
+  // ---------------------------------------------------------------------------
+  // Reads
+  // ---------------------------------------------------------------------------
+
+  /** Raw lookup by key — trusts the caller. Prefer getIfMatching() for restore-on-render. */
   get(key: string): DraftRecord | undefined {
     return this.drafts.get(key)
+  }
+
+  /**
+   * Safe accessor for restore-on-render: returns the draft only if its
+   * stored questionText and totalOccurrences both still match what the
+   * caller sees right now for this key. Guards against CATCH 3 (ordinal
+   * reindexing handing a stale key to a different live question) — a
+   * mismatch on either axis means don't trust it, full stop, rather than
+   * silently pre-filling the wrong answer.
+   */
+  getIfMatching(key: string, currentQuestionText: string, currentTotalOccurrences: number): DraftRecord | undefined {
+    const draft = this.drafts.get(key)
+    if (!draft) return undefined
+    if (normalizeQuestionText(draft.questionText) !== normalizeQuestionText(currentQuestionText)) return undefined
+    if (draft.totalOccurrences !== currentTotalOccurrences) return undefined
+    return draft
   }
 
   /** All active (non-archived) drafts. */
@@ -93,17 +190,43 @@ export class DraftStore {
     return [...this.archive]
   }
 
+  // ---------------------------------------------------------------------------
+  // Mutations
+  // ---------------------------------------------------------------------------
+
   /**
    * Auto-save on keystroke (debounced ~500ms by the caller, per ADR-0023's
    * answered auto-save/restore QST). Idempotent per key — one draft per slot.
+   *
+   * If an existing record at this key belongs to a genuinely different
+   * question (a key-collision from ordinal reindexing, CATCH 3), its content
+   * is archived (reason: 'replaced') rather than folded into this question's
+   * history or silently overwritten — the old content is never discarded,
+   * only relocated.
    */
-  save(key: string, adrPath: string, adrNumber: number, questionText: string, draftText: string, now: string): void {
+  save(
+    key: string,
+    adrPath: string,
+    adrNumber: number,
+    questionText: string,
+    draftText: string,
+    now: string,
+    totalOccurrences = 1,
+  ): void {
+    this.reload()
     const existing = this.drafts.get(key)
-    const history = existing
-      ? [...existing.history, existing.draftText].slice(-MAX_HISTORY)
+    const sameQuestion = !!existing && normalizeQuestionText(existing.questionText) === normalizeQuestionText(questionText)
+
+    if (existing && !sameQuestion) {
+      this.archive.push({ ...existing, archivedAt: now, reason: 'replaced' })
+    }
+
+    const history = sameQuestion
+      ? [...existing!.history, existing!.draftText].slice(-MAX_HISTORY)
       : []
-    this.drafts.set(key, { key, adrPath, adrNumber, questionText, draftText, updatedAt: now, history })
+    this.drafts.set(key, { key, adrPath, adrNumber, questionText, draftText, updatedAt: now, history, totalOccurrences })
     this.persistDrafts()
+    if (existing && !sameQuestion) this.persistArchive()
   }
 
   /**
@@ -112,6 +235,7 @@ export class DraftStore {
    * active set. Safe to call on a key with no active draft (no-op).
    */
   promote(key: string, now: string): void {
+    this.reload()
     const existing = this.drafts.get(key)
     if (!existing) return
     this.archive.push({ ...existing, archivedAt: now, reason: 'promoted' })
@@ -120,9 +244,22 @@ export class DraftStore {
     this.persistArchive()
   }
 
-  /** Drafts whose key no longer matches any currently-live question — candidates for reattach. */
-  orphans(liveKeys: ReadonlySet<string>): DraftRecord[] {
-    return this.all().filter(d => !liveKeys.has(d.key))
+  /**
+   * Drafts that don't safely match any currently-live question — candidates
+   * for the reattach picker. A draft is live only if its key exists among
+   * `liveQuestions` AND its stored questionText/totalOccurrences both match
+   * what's live there now (CATCH 3: a key can be technically "present" in
+   * the live set while actually belonging to a different question).
+   */
+  orphans(liveQuestions: ReadonlyArray<LiveQuestionRef>): DraftRecord[] {
+    const liveByKey = new Map(liveQuestions.map(q => [q.key, q]))
+    return this.all().filter(d => {
+      const live = liveByKey.get(d.key)
+      if (!live) return true
+      if (normalizeQuestionText(live.text) !== normalizeQuestionText(d.questionText)) return true
+      if (live.totalOccurrences !== undefined && live.totalOccurrences !== d.totalOccurrences) return true
+      return false
+    })
   }
 
   /**
@@ -131,6 +268,7 @@ export class DraftStore {
    * "reattach to..." picker), per ADR-0023's "no silent auto-reattach."
    */
   reattach(oldKey: string, newKey: string, now: string): void {
+    this.reload()
     const existing = this.drafts.get(oldKey)
     if (!existing) return
     this.drafts.delete(oldKey)
@@ -166,6 +304,8 @@ export interface LiveQuestionRef {
   key: string
   text: string
   adrNumber: number
+  /** Total sibling count sharing text's normalized hash in this ADR right now (CATCH 3 guard). */
+  totalOccurrences?: number
 }
 
 /**
@@ -174,7 +314,10 @@ export interface LiveQuestionRef {
  * question if none share the orphan's ADR. Returns undefined only when no
  * live questions exist at all.
  */
-export function bestReattachCandidate(orphan: DraftRecord, liveQuestions: LiveQuestionRef[]): string | undefined {
+export function bestReattachCandidate(
+  orphan: Pick<DraftRecord, 'adrNumber' | 'questionText'>,
+  liveQuestions: LiveQuestionRef[],
+): string | undefined {
   const sameAdr = liveQuestions.filter(q => q.adrNumber === orphan.adrNumber)
   const pool = sameAdr.length > 0 ? sameAdr : liveQuestions
   if (pool.length === 0) return undefined

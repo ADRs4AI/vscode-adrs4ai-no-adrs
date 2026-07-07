@@ -52,3 +52,24 @@ export function computeOccurrenceOrdinals(questionTexts: string[]): number[] {
 export function computeDraftKey(adrNumber: number, questionText: string, occurrenceOrdinal: number): string {
   return `${adrNumber}::${questionTextHash(questionText)}::${occurrenceOrdinal}`
 }
+
+/**
+ * For a list of question texts in document order, compute each one's TOTAL
+ * sibling count: how many questions in the whole list share its normalized-
+ * text hash. Used alongside occurrenceOrdinal to detect the case ordinal
+ * alone can't: inserting a new occurrence of duplicate text changes the
+ * *count* even when a specific ordinal slot's key string is unchanged (a
+ * genuinely different question can inherit a stale ordinal's key when
+ * duplicate-worded questions are common — write-adversary CATCH 3). A
+ * restore that also checks "the sibling count I saved against is the count
+ * I see now" refuses to trust a key whose duplicate-group shape has shifted,
+ * rather than silently misattaching content to the wrong question.
+ */
+export function computeOccurrenceCounts(questionTexts: string[]): number[] {
+  const totals = new Map<string, number>()
+  for (const text of questionTexts) {
+    const hash = questionTextHash(text)
+    totals.set(hash, (totals.get(hash) ?? 0) + 1)
+  }
+  return questionTexts.map(text => totals.get(questionTextHash(text))!)
+}
