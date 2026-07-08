@@ -728,6 +728,32 @@ def _tmux_set_status_right(session_name: str, title: str, socket: str | None = N
         pass
 
 
+def _tmux_set_status_left(session_name: str, project_tag: str, socket: str | None = None) -> None:
+    """Set status-left directly to the literal project tag, bypassing tmux's
+    own `#S` (full session name) substitution.
+
+    Jérémie's own framing (2026-07-07), once the title fix made seat.conf's
+    directives live for the first time: tmux's format-string language is for
+    when the *caller* doesn't know the values ahead of time — but this
+    launcher composes every value (project, alias, display name) in Python
+    before it ever invokes tmux, so it hands over the final literal directly
+    rather than asking tmux's own, more limited variable language to
+    reconstruct a piece of it. `#S` stays the load-bearing, must-be-unique
+    session identifier tmux keys has-session/attach/kill-session off of;
+    this only changes what a human sees in the corner of the status bar,
+    independent of that identifier. Best-effort: cosmetic, never worth
+    crashing launch/attach over."""
+    import subprocess
+    try:
+        subprocess.run(
+            _tmux_argv("set-option", "-t", session_name, "status-left", f"[{project_tag}] ", socket=socket),
+            capture_output=True,
+            check=True,
+        )
+    except Exception:
+        pass
+
+
 def _tmux_set_titles_string(session_name: str, title: str, socket: str | None = None) -> None:
     """Per-session override of set-titles-string to the literal display-name
     title — same bypass technique as _tmux_set_status_right, applied to the
@@ -905,6 +931,7 @@ def cmd_launch(args: argparse.Namespace) -> None:
         )
         if color_hex:
             _tmux_set_status_color(session_name, color_hex, socket=socket)
+        _tmux_set_status_left(session_name, _project_tag(), socket=socket)
         _tmux_set_status_right(session_name, title, socket=socket)
         _tmux_set_titles_string(session_name, title, socket=socket)
 
@@ -960,6 +987,7 @@ def cmd_launch(args: argparse.Namespace) -> None:
 
         if color_hex:
             _tmux_set_status_color(session_name, color_hex, socket=socket)
+        _tmux_set_status_left(session_name, _project_tag(), socket=socket)
         _tmux_set_status_right(session_name, title, socket=socket)
         _tmux_set_titles_string(session_name, title, socket=socket)
 
@@ -1071,6 +1099,7 @@ def cmd_update_titles(_args: argparse.Namespace) -> None:
 
         if color_hex:
             _tmux_set_status_color(session_name, color_hex, socket=socket)
+        _tmux_set_status_left(session_name, _project_tag(), socket=socket)
         _tmux_set_status_right(session_name, title, socket=socket)
         _tmux_set_titles_string(session_name, title, socket=socket)
 
