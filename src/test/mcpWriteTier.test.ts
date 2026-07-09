@@ -235,3 +235,128 @@ describe('updateResolution', () => {
     expect(writeCount()).toBe(0)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Adversarial findings (Quarry 5, write-adversary seat). All currently
+// FAILING — every mutating tool reads the whole file, computes new content in
+// memory, then writes the whole file back; nothing serializes two concurrent
+// calls against the same path. `base_checksum` is OPTIONAL (by design, per
+// ADR-0021 — "anchored writes are safe with no prior read"), so the common,
+// unguarded call shape is exactly the one exercised here. Filed to Relay per
+// docs/inbox/2026-07-07-2200-quarry-to-relay-three-concurrency-catches-in-the-write-tier.md
+// (routed per CONVENTIONS §3, not fixed unilaterally here).
+// ---------------------------------------------------------------------------
+
+const TWO_QUESTION_FIXTURE = `# ADR-0001: Test Decision
+
+- **Date**: 2026-01-01
+- **Iteration**: 1
+- **Status**: Draft
+- **Deciders**: Jérémie Lumbroso
+
+---
+
+## Questions
+
+### QST: What is the scope?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+### QST: What is the deploy target?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+---
+
+## Iterations
+
+### Iteration 1 (2026-01-01)
+- Human: Started.
+- AI: Drafted.
+- Outcome: Draft created.
+
+---
+
+## Links
+`
+
+describe('Adversarial findings: concurrency races in the write tier', () => {
+  it('CATCH 7 — two concurrent answer_question calls on TWO DIFFERENT questions in the same file: the second write silently discards the first answer', async () => {
+    // Two ordinary sessions (or two MCP clients) answering different open
+    // questions in the SAME ADR at roughly the same moment — not a contrived
+    // double-write to one QST, just two callers who happen to share a file.
+    // Neither supplies base_checksum (the documented common case: "anchored
+    // writes are safe with no prior read").
+    const { ctx, files } = makeContext(TWO_QUESTION_FIXTURE)
+    const adr = parseAdr(TWO_QUESTION_FIXTURE, ADR_PATH)
+    const scopeQ = adr.questions.find((q) => q.text === 'What is the scope?')!
+    const deployQ = adr.questions.find((q) => q.text === 'What is the deploy target?')!
+
+    await Promise.all([
+      answerQuestion(ctx, '1', scopeQ.id, 'Postgres.', { author: 'quarry-test' }),
+      answerQuestion(ctx, '1', deployQ.id, 'AWS.', { author: 'quarry-test' }),
+    ])
+
+    const content = files.get(ADR_PATH)!
+    expect(content).toContain('Postgres.')
+    expect(content).toContain('AWS.') // FAILS today — whichever write lands second wins the WHOLE file, discarding the other's answer
+  })
+
+  it('CATCH 8 — a genuine retry race (same client_msg_id, near-simultaneous) reapplies the write twice instead of deduping it — masked by content coincidence unless you check writeCount', async () => {
+    // The documented purpose of client_msg_id is exactly this: "retries never
+    // double-answer or double-append." A network retry that fires before the
+    // first call's response returns — not sequential, actually concurrent —
+    // is the realistic shape of "retry storm," not a second call made after
+    // seeing the first one fail.
+    //
+    // First cut of this test asserted on the stacked-recommendation COUNT in
+    // the final content and it passed — which looked like "no bug" but
+    // wasn't: both calls compute the identical insert against the identical
+    // *original* content (the dedup check race means neither sees the
+    // other's write), so the second write silently overwrites the first with
+    // content that happens to look the same. writeCount() unmasks it: two
+    // writes happen despite one client_msg_id, which is the actual contract
+    // violation ("returns the cached prior result rather than reapplying").
+    const { ctx, writeCount } = makeContext(FIXTURE)
+    const adr = parseAdr(FIXTURE, ADR_PATH)
+    const q = adr.questions[0]
+
+    await Promise.all([
+      addRecommendation(ctx, '1', q.id, 'quarry-test', 'Use Postgres.', { clientMsgId: 'retry-abc' }),
+      addRecommendation(ctx, '1', q.id, 'quarry-test', 'Use Postgres.', { clientMsgId: 'retry-abc' }),
+    ])
+
+    expect(writeCount()).toBe(1) // FAILS today — both calls pass the cache-miss check before either records success, so both write (writeCount is 2)
+  })
+
+  it('CATCH 9 — two concurrent append_iteration calls both read the same pre-write MAX: the second call\'s entire entry is silently lost, not just mis-numbered', async () => {
+    // ADR-0021's own stated justification for moving this server-side was to
+    // fix a real miscount Lapidary hit doing this by hand. Moving the
+    // computation server-side doesn't serialize the read-compute-write
+    // sequence against a second concurrent caller — it just moves the same
+    // shaped race into the tool that was supposed to close it.
+    //
+    // First cut of this test asserted on duplicate iteration NUMBERS and it
+    // passed — also masked: the second write overwrites the file wholesale
+    // (built from the same pre-write content the first call read), so the
+    // final file has exactly ONE "### Iteration 2", not two. That looks like
+    // "no collision" but is actually worse: one caller's entire iteration
+    // entry — human/AI/outcome text and all — vanished with no error, the
+    // same silent-loss shape as CATCH 7, just for the iterations log instead
+    // of an answer.
+    const { ctx, files } = makeContext(FIXTURE)
+
+    await Promise.all([
+      appendIteration(ctx, '1', { outcome: 'first', date: '2026-07-08' }),
+      appendIteration(ctx, '1', { outcome: 'second', date: '2026-07-08' }),
+    ])
+
+    const content = files.get(ADR_PATH)!
+    expect(content).toContain('- Outcome: first')
+    expect(content).toContain('- Outcome: second') // FAILS today — whichever call wrote first is silently discarded
+  })
+})
