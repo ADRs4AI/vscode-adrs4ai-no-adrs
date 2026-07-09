@@ -2,14 +2,14 @@
 # Rearrange freely; lines are read top to bottom. Aliases not listed
 # here (e.g. a newly-registered seat) are appended after, alphabetically.
 # This file is yours — regeneration only ever touches terminals.json.
-cairn
-facet
-fitter
-flint
-hearth
 lapidary
-lintel
-quarry
+facet
 relay
+cairn
+hearth
 surveyor
 touchstone
+fitter
+flint
+lintel
+quarry
