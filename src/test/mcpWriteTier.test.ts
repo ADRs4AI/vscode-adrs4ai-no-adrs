@@ -243,7 +243,7 @@ describe('updateResolution', () => {
 // calls against the same path. `base_checksum` is OPTIONAL (by design, per
 // ADR-0021 — "anchored writes are safe with no prior read"), so the common,
 // unguarded call shape is exactly the one exercised here. Filed to Relay per
-// docs/inbox/2026-07-07-2200-quarry-to-relay-three-concurrency-catches-in-the-write-tier.md
+// docs/inbox/2026-07-09-1934-quarry-to-relay-three-concurrency-catches-in-the-write-tier.md
 // (routed per CONVENTIONS §3, not fixed unilaterally here).
 // ---------------------------------------------------------------------------
 
