@@ -18,8 +18,10 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as os from 'os'
 import type { AdrIndex } from '../index/adrIndex'
-import type { Recommendation } from '../parser/types'
+import type { SeedIndex } from '../index/seedIndex'
+import type { Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
+import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
@@ -46,6 +48,22 @@ interface WebviewQuestion {
   lineStart: number  // 1-indexed line of the ### QST: heading
   /** ADR-0023: adrNumber+textHash+ordinal — stable across line shifts. */
   draftKey: string
+  /**
+   * ADR-0018 Step 3: which container this question came from. Drives
+   * writeAnswer()'s relocation strategy (parseAdr vs parseSeed — a seed
+   * question's id/draftKey scheme is not resolvable via parseAdr) and the
+   * synchronous reindex call after a successful write.
+   */
+  sourceKind: 'adr' | 'seed'
+  /**
+   * ADR-0018 Step 3: TOC grouping key/label, computed server-side so the
+   * webview never has to reconstruct "ADR-NNNN:" vs "SEED (date):"
+   * formatting itself. Prefixed so a plain string sort puts ADRs before
+   * seeds (the ratified ordering, ADR-0018 QST-2 ANS) without needing a
+   * container-kind-aware comparator in the webview.
+   */
+  groupSortKey: string
+  groupLabel: string
   /** ADR-0023 CATCH 3 guard: sibling count sharing this question's text-hash in the ADR right now. */
   totalOccurrences: number
   /** ADR-0023 drift fence: the ADR file's content checksum at render time. */
@@ -72,6 +90,8 @@ type WebviewMessage =
       fileChecksum: string
       /** ADR-0023 drift fence: "Write anyway" — skip the checksum re-check. */
       force?: boolean
+      /** ADR-0018 Step 3: selects parseAdr vs parseSeed for relocation. */
+      sourceKind: 'adr' | 'seed'
     }
   | { type: 'skip' }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
@@ -106,12 +126,12 @@ export class OpenQuestionsPanel {
 
   // ---------------------------------------------------------------------------
 
-  static createOrShow(index: AdrIndex): void {
+  static createOrShow(index: AdrIndex, seedIndex: SeedIndex): void {
     if (OpenQuestionsPanel.instance) {
       OpenQuestionsPanel.instance.panel.reveal(vscode.ViewColumn.One)
       return
     }
-    new OpenQuestionsPanel(index)
+    new OpenQuestionsPanel(index, seedIndex)
   }
 
   /** Jump the open panel to a specific question by ID. Call after createOrShow. */
@@ -122,7 +142,7 @@ export class OpenQuestionsPanel {
     }, 150)
   }
 
-  private constructor(private readonly index: AdrIndex) {
+  private constructor(private readonly index: AdrIndex, private readonly seedIndex: SeedIndex) {
     OpenQuestionsPanel.instance = this
 
     // ADR-0023: docs/adr/.working/ — committed substrate, not a gitignored
@@ -164,12 +184,76 @@ export class OpenQuestionsPanel {
     // Refresh when index changes (file edits, saves, etc.)
     const unsubscribe = index.onChange(() => this.sendQuestions())
     this.disposables.push({ dispose: unsubscribe })
+    const unsubscribeSeeds = seedIndex.onChange(() => this.sendQuestions())
+    this.disposables.push({ dispose: unsubscribeSeeds })
 
     this.sendQuestions()
   }
 
+  /**
+   * ADR-0018 Step 3: shared per-question row builder, used for both ADR-
+   * sourced and seed-sourced questions. containerId feeds computeDraftKey
+   * (a bare ADR number for ADRs, the seed's path for seeds — the fork
+   * resolved in the draft-key fix); groupSortKey/groupLabel drive the
+   * webview's TOC without it needing any container-kind-aware logic itself.
+   */
+  private buildRows(
+    questions: Question[],
+    opts: {
+      containerId: string
+      adrPath: string
+      checksum: string
+      sourceKind: 'adr' | 'seed'
+      adrNumber: number
+      adrContext: string | undefined
+      groupSortKey: string
+      groupLabel: string
+    },
+  ): WebviewQuestion[] {
+    // ADR-0023: occurrence ordinals/counts computed over ALL questions in
+    // the file (not just unanswered ones) — the key must be stable
+    // regardless of which questions have already been answered and
+    // filtered out below.
+    const ordinals = computeOccurrenceOrdinals(questions.map(q => q.text))
+    const totals = computeOccurrenceCounts(questions.map(q => q.text))
+
+    return questions
+      .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
+      .filter(({ q }) => !q.isAnswered)
+      .map(({ q, ordinal, total }) => {
+        const draftKey = computeDraftKey(opts.containerId, q.text, ordinal)
+        // getIfMatching, not get: a stale key whose duplicate-text group
+        // shape has shifted (write-adversary CATCH 3) must never silently
+        // restore into the wrong question's answer box.
+        const draft = this.draftStore.getIfMatching(draftKey, q.text, total)
+        return {
+          id: q.id,
+          text: q.text,
+          whyAsking: q.whyAsking,
+          need: q.need,
+          recommendation: q.recommendation,
+          recommendations: q.recommendations,
+          body: q.rawBody,
+          bodyPost: q.rawBodyPost,
+          adrContext: opts.adrContext,
+          adrNumber: opts.adrNumber,
+          adrTitle: opts.groupLabel,
+          adrPath: opts.adrPath,
+          lineStart: q.lineStart,
+          draftKey,
+          totalOccurrences: total,
+          fileChecksum: opts.checksum,
+          draftText: draft?.draftText,
+          draftSavedAt: draft?.updatedAt,
+          sourceKind: opts.sourceKind,
+          groupSortKey: opts.groupSortKey,
+          groupLabel: opts.groupLabel,
+        }
+      })
+  }
+
   private sendQuestions(): void {
-    const questions: WebviewQuestion[] = this.index.allAdrs().flatMap(adr => {
+    const adrRows: WebviewQuestion[] = this.index.allAdrs().flatMap(adr => {
       const cleanTitle = adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || adr.title
       // ADR-0010: Collect context from sections before ## Questions for the collapsible context box.
       // Include: Human Context, AI Interpretation (and any other ## sections before Questions).
@@ -184,44 +268,36 @@ export class OpenQuestionsPanel {
         ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
         : undefined
 
-      // ADR-0023: occurrence ordinals/counts computed over ALL questions in
-      // the file (not just unanswered ones) — the key must be stable
-      // regardless of which questions have already been answered and
-      // filtered out below.
-      const ordinals = computeOccurrenceOrdinals(adr.questions.map(q => q.text))
-      const totals = computeOccurrenceCounts(adr.questions.map(q => q.text))
-
-      return adr.questions
-        .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
-        .filter(({ q }) => !q.isAnswered)
-        .map(({ q, ordinal, total }) => {
-          const draftKey = computeDraftKey(String(adr.number), q.text, ordinal)
-          // getIfMatching, not get: a stale key whose duplicate-text group
-          // shape has shifted (write-adversary CATCH 3) must never silently
-          // restore into the wrong question's answer box.
-          const draft = this.draftStore.getIfMatching(draftKey, q.text, total)
-          return {
-            id: q.id,
-            text: q.text,
-            whyAsking: q.whyAsking,
-            need: q.need,
-            recommendation: q.recommendation,
-            recommendations: q.recommendations,
-            body: q.rawBody,
-            bodyPost: q.rawBodyPost,
-            adrContext,
-            adrNumber: adr.number,
-            adrTitle: cleanTitle,
-            adrPath: adr.path,
-            lineStart: q.lineStart,
-            draftKey,
-            totalOccurrences: total,
-            fileChecksum: adr.checksum,
-            draftText: draft?.draftText,
-            draftSavedAt: draft?.updatedAt,
-          }
-        })
+      const num = String(adr.number).padStart(4, '0')
+      return this.buildRows(adr.questions, {
+        containerId: String(adr.number),
+        adrPath: adr.path,
+        checksum: adr.checksum,
+        sourceKind: 'adr',
+        adrNumber: adr.number,
+        adrContext,
+        // '0-' prefix sorts all ADRs before all seeds ('1-' below); zero-padded
+        // number keeps ADRs in numeric order among themselves.
+        groupSortKey: `0-${num}`,
+        groupLabel: `ADR-${num}: ${cleanTitle}`,
+      })
     })
+
+    const seedRows: WebviewQuestion[] = this.seedIndex.allSeeds().flatMap(seed => {
+      const dateStr = seed.date ? ` (${seed.date})` : ''
+      return this.buildRows(seed.questions, {
+        containerId: seed.path,
+        adrPath: seed.path,
+        checksum: seed.checksum,
+        sourceKind: 'seed',
+        adrNumber: 0,
+        adrContext: undefined,
+        groupSortKey: `1-${seed.path}`,
+        groupLabel: `SEED${dateStr}: ${seed.topic}`,
+      })
+    })
+
+    const questions = [...adrRows, ...seedRows]
 
     const cfg = vscode.workspace.getConfiguration('adrManager')
     const settingsName = cfg.get<string>('humanName', '')
@@ -269,6 +345,7 @@ export class OpenQuestionsPanel {
     draftKey: string
     fileChecksum: string
     force?: boolean
+    sourceKind: 'adr' | 'seed'
   }): Promise<void> {
     try {
       const uri = vscode.Uri.file(msg.adrPath)
@@ -300,14 +377,28 @@ export class OpenQuestionsPanel {
       // duplicate-slug disambiguator embeds the raw heading line number
       // (extractor.ts buildSection), so an edit anywhere ABOVE a duplicate-
       // text question changes its id even though the question itself never
-      // changed. draftKey (adrNumber + normalized-text hash + occurrence
+      // changed. draftKey (containerId + normalized-text hash + occurrence
       // ordinal — computeDraftKey/draftKey.ts) carries no line number at
       // all, so it survives exactly the shift id can't; try it first, with
       // id as a secondary confirmation for the common (non-duplicate) case.
-      const freshAdr = parseAdr(currentContent, msg.adrPath)
-      const freshOrdinals = computeOccurrenceOrdinals(freshAdr.questions.map(q => q.text))
-      const currentQuestion = freshAdr.questions.find((q, i) =>
-        computeDraftKey(String(freshAdr.number), q.text, freshOrdinals[i]) === msg.draftKey || q.id === msg.questionId,
+      //
+      // ADR-0018 Step 3: a seed question's id/draftKey scheme is only
+      // resolvable via parseSeed's own question list — parseAdr's collector
+      // doesn't know about seed-scoped ids, so re-parsing a seed file with
+      // parseAdr would never find the question, no matter how it's matched.
+      let freshQuestions: Question[]
+      let freshContainerId: string
+      if (msg.sourceKind === 'seed') {
+        freshQuestions = parseSeed(currentContent, msg.adrPath).questions
+        freshContainerId = msg.adrPath
+      } else {
+        const freshAdr = parseAdr(currentContent, msg.adrPath)
+        freshQuestions = freshAdr.questions
+        freshContainerId = String(freshAdr.number)
+      }
+      const freshOrdinals = computeOccurrenceOrdinals(freshQuestions.map(q => q.text))
+      const currentQuestion = freshQuestions.find((q, i) =>
+        computeDraftKey(freshContainerId, q.text, freshOrdinals[i]) === msg.draftKey || q.id === msg.questionId,
       )
       if (!currentQuestion) {
         this.panel.webview.postMessage({
@@ -378,7 +469,13 @@ export class OpenQuestionsPanel {
       // manual editor save nudged the watcher. Reindexing synchronously here
       // makes the refresh immediate and deterministic; the watcher remains a
       // (now redundant, harmless) backup path for externally-made changes.
-      this.index.indexFile(msg.adrPath)
+      // ADR-0018 Step 3: reindex the container this write actually belongs
+      // to — indexing a seed path via AdrIndex would misfile it there.
+      if (msg.sourceKind === 'seed') {
+        this.seedIndex.indexFile(msg.adrPath)
+      } else {
+        this.index.indexFile(msg.adrPath)
+      }
 
       // ADR-0023: answer submitted is one atomic event — the draft is
       // promoted (archived, never deleted), not left dangling in the active set.
@@ -1129,16 +1226,20 @@ function showOverlay() {
 function hideOverlay() { $id('q-overlay').classList.remove('open'); }
 function renderOverlay() {
   $id('q-panel-title').textContent = 'Open Questions (' + questions.length + ')';
-  const byAdr = {};
+  // ADR-0018 Step 3: group by server-computed groupSortKey/groupLabel, not
+  // adrNumber directly — seeds have no number, so grouping by adrNumber
+  // alone would merge every seed's questions into one bogus "ADR-0000"
+  // group. A plain string sort on groupSortKey keeps ADRs before seeds
+  // (the '0-'/'1-' prefixes) without any container-kind-aware JS here.
+  const byGroup = {};
   questions.forEach((q, i) => {
-    if (!byAdr[q.adrNumber]) byAdr[q.adrNumber] = { title: q.adrTitle, number: q.adrNumber, items: [] };
-    byAdr[q.adrNumber].items.push({ q, i });
+    if (!byGroup[q.groupSortKey]) byGroup[q.groupSortKey] = { label: q.groupLabel, items: [] };
+    byGroup[q.groupSortKey].items.push({ q, i });
   });
   let html = '';
-  for (const k of Object.keys(byAdr).sort((a,b) => Number(a)-Number(b))) {
-    const g = byAdr[k];
-    const num = String(g.number).padStart(4,'0');
-    html += '<div class="q-adr-hd">ADR-' + num + ': ' + g.title + '</div>';
+  for (const k of Object.keys(byGroup).sort()) {
+    const g = byGroup[k];
+    html += '<div class="q-adr-hd">' + g.label + '</div>';
     for (const {q,i} of g.items) {
       html += '<button class="q-item' + (i===idx?' current':'') + '" data-qi="' + i + '">' + q.text + '</button>';
     }
@@ -1174,7 +1275,7 @@ function submit(force) {
   vscode.postMessage({
     type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart,
     answerText: text, authorName: author, draftKey: q.draftKey, fileChecksum: q.fileChecksum,
-    force: !!force,
+    force: !!force, sourceKind: q.sourceKind,
   });
 }
 
@@ -1224,7 +1325,7 @@ function render() {
   const pct = (idx / questions.length) * 100;
   $id('counter').textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
   $id('pbar').style.width = pct + '%';
-  $id('adr-link').textContent = 'ADR-' + String(q.adrNumber).padStart(4,'0') + ': ' + q.adrTitle;
+  $id('adr-link').textContent = q.groupLabel;
 
   $id('qtext').textContent = q.text;
 

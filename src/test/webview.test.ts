@@ -133,6 +133,37 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('this.questionsGeneration')
     expect(PANEL_SRC).toContain('generation: this.questionsGeneration')
   })
+
+  // ADR-0018 Step 3: seed questions merged into the panel's read/write path.
+  it('ADR-0018 Step 3: TOC groups by server-computed groupSortKey/groupLabel, not adrNumber directly', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    // Regression: grouping by adrNumber alone would merge every seed's
+    // questions into one bogus "ADR-0000" group, since seeds all share the
+    // same adrNumber sentinel (0).
+    expect(script).toContain('byGroup[q.groupSortKey]')
+    expect(script).not.toContain('byAdr[q.adrNumber]')
+  })
+
+  it('ADR-0018 Step 3: submit() forwards sourceKind so writeAnswer can pick parseAdr vs parseSeed', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('sourceKind: q.sourceKind')
+  })
+
+  it('ADR-0018 Step 3: createOrShow and the constructor both take a SeedIndex', () => {
+    expect(PANEL_SRC).toContain('createOrShow(index: AdrIndex, seedIndex: SeedIndex)')
+    expect(PANEL_SRC).toContain('constructor(private readonly index: AdrIndex, private readonly seedIndex: SeedIndex)')
+  })
+
+  it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
+    expect(PANEL_SRC).toContain("msg.sourceKind === 'seed'")
+    expect(PANEL_SRC).toContain('parseSeed(currentContent, msg.adrPath)')
+  })
+
+  it('ADR-0018 Step 3: reindexes the seed index (not the ADR index) after a seed write', () => {
+    expect(PANEL_SRC).toContain('this.seedIndex.indexFile(msg.adrPath)')
+  })
 })
 
 // ---------------------------------------------------------------------------

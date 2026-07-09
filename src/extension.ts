@@ -155,7 +155,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.openQuestionsPanel', () => {
-      if (index) OpenQuestionsPanel.createOrShow(index);
+      if (index && seedIndex) OpenQuestionsPanel.createOrShow(index, seedIndex);
     }),
 
     vscode.commands.registerCommand('adrManager.filterQuestions', () => {
@@ -167,8 +167,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.goToQuestionInPanel', (item) => {
-      if (item?.question && index) {
-        OpenQuestionsPanel.createOrShow(index);
+      if (item?.question && index && seedIndex) {
+        OpenQuestionsPanel.createOrShow(index, seedIndex);
         OpenQuestionsPanel.navigateTo(item.question.id);
       }
     }),
