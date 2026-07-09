@@ -140,7 +140,19 @@ export function applyAppendIteration(
   if (entry.ai) bodyLines.push(`- AI: ${entry.ai}`)
   if (entry.outcome) bodyLines.push(`- Outcome: ${entry.outcome}`)
 
-  const insertAt = iterationsSection.lineEnd
+  // `iterationsSection.lineEnd` includes the section's trailing `---`
+  // separator and any blank lines before the next heading (confirmed by
+  // direct inspection — the parser's body text for a trailing section runs
+  // through that `---`). Inserting naively at `lineEnd` shoves that
+  // separator into the middle of the iterations log instead of leaving it
+  // as the terminator before the next section. Insert right after the last
+  // real content line instead, skipping trailing blank/`---` lines.
+  let insertAt = iterationsSection.lineEnd - 1 // 0-indexed, inclusive last body line
+  while (insertAt > 0 && (lines[insertAt].trim() === '' || lines[insertAt].trim() === '---')) {
+    insertAt--
+  }
+  insertAt += 1 // slice point: right after the last real content line
+
   const newLines = [...lines.slice(0, insertAt), ...bodyLines, ...lines.slice(insertAt)]
   const diff = `+ ${bodyLines.join('\\n')}`
 

@@ -24,6 +24,7 @@ import {
 } from './reference'
 import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution } from './writeOps'
 import { getCached, recordSuccess } from './dedupe'
+import { withPathLock } from './pathLock'
 
 function bracket(ref: string): string {
   return `[${ref}]`
@@ -323,7 +324,17 @@ export interface AnswerQuestionOptions {
   attempt?: number
 }
 
-/** answer_question — replace semantics; anchored write, safe with no prior read. */
+/**
+ * answer_question — replace semantics; anchored write, safe with no prior
+ * read. The dedup check and the whole read→mutate→write sequence run inside
+ * a per-path lock (Quarry 5's CATCH 7/8 fix, 2026-07-09): without it, two
+ * concurrent calls on the same file both read the same pre-write snapshot
+ * and whichever writes last silently discards the other's answer; and two
+ * concurrent calls sharing a `client_msg_id` both pass the cache-miss check
+ * before either records success, defeating the dedup contract. Serializing
+ * per path closes both — the second call in any race now sees the first
+ * call's completed result before it starts.
+ */
 export async function answerQuestion(
   ctx: RepositoryContext,
   adrRef: string,
@@ -331,9 +342,6 @@ export async function answerQuestion(
   answerText: string,
   options: AnswerQuestionOptions = {},
 ): Promise<string> {
-  const cached = getCached('answer_question', options.clientMsgId)
-  if (cached !== undefined) return cached
-
   if (!options.author?.trim()) {
     return 'error: missing_author\nmessage: answer_question requires an explicit author (a specific model slug, never "AI") — no default is configured.'
   }
@@ -341,17 +349,22 @@ export async function answerQuestion(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  const currentContent = await ctx.readFile(resolved.adr.path)
-  const conflict = checkConflict(currentContent, options.baseChecksum)
-  if (conflict) return conflict
+  return withPathLock(resolved.adr.path, async () => {
+    const cached = getCached('answer_question', options.clientMsgId)
+    if (cached !== undefined) return cached
 
-  const result = applyAnswerQuestion(currentContent, resolved.adr.path, questionId, answerText, options.author.trim())
-  if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+    const currentContent = await ctx.readFile(resolved.adr.path)
+    const conflict = checkConflict(currentContent, options.baseChecksum)
+    if (conflict) return conflict
 
-  await ctx.writeFile(resolved.adr.path, result.newContent)
-  const confirmation = `Answered ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
-  recordSuccess('answer_question', options.clientMsgId, confirmation)
-  return confirmation
+    const result = applyAnswerQuestion(currentContent, resolved.adr.path, questionId, answerText, options.author!.trim())
+    if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+    await ctx.writeFile(resolved.adr.path, result.newContent)
+    const confirmation = `Answered ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
+    recordSuccess('answer_question', options.clientMsgId, confirmation)
+    return confirmation
+  })
 }
 
 export interface AddRecommendationOptions {
@@ -359,7 +372,7 @@ export interface AddRecommendationOptions {
   attempt?: number
 }
 
-/** add_recommendation — append semantics; recommendations stack, ANS stays singular. */
+/** add_recommendation — append semantics; recommendations stack, ANS stays singular. Per-path locked, same reasoning as answer_question. */
 export async function addRecommendation(
   ctx: RepositoryContext,
   adrRef: string,
@@ -368,9 +381,6 @@ export async function addRecommendation(
   text: string,
   options: AddRecommendationOptions = {},
 ): Promise<string> {
-  const cached = getCached('add_recommendation', options.clientMsgId)
-  if (cached !== undefined) return cached
-
   if (!author?.trim()) {
     return 'error: missing_author\nmessage: add_recommendation requires an explicit author (a specific model slug, never "AI").'
   }
@@ -378,14 +388,19 @@ export async function addRecommendation(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  const currentContent = await ctx.readFile(resolved.adr.path)
-  const result = applyAddRecommendation(currentContent, resolved.adr.path, questionId, author.trim(), text, todayIsoDate())
-  if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+  return withPathLock(resolved.adr.path, async () => {
+    const cached = getCached('add_recommendation', options.clientMsgId)
+    if (cached !== undefined) return cached
 
-  await ctx.writeFile(resolved.adr.path, result.newContent)
-  const confirmation = `Added recommendation (by ${author.trim()}) to ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
-  recordSuccess('add_recommendation', options.clientMsgId, confirmation)
-  return confirmation
+    const currentContent = await ctx.readFile(resolved.adr.path)
+    const result = applyAddRecommendation(currentContent, resolved.adr.path, questionId, author.trim(), text, todayIsoDate())
+    if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+    await ctx.writeFile(resolved.adr.path, result.newContent)
+    const confirmation = `Added recommendation (by ${author.trim()}) to ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
+    recordSuccess('add_recommendation', options.clientMsgId, confirmation)
+    return confirmation
+  })
 }
 
 export interface AppendIterationEntry {
@@ -397,27 +412,36 @@ export interface AppendIterationEntry {
   attempt?: number
 }
 
-/** append_iteration — computes the next number server-side (MAX+1 over the actual log, not the header field). */
+/**
+ * append_iteration — computes the next number server-side (MAX+1 over the
+ * actual log, not the header field). Per-path locked: without it, two
+ * concurrent calls both compute MAX+1 from the same pre-write snapshot and
+ * the second write silently discards the first's entire entry (not merely a
+ * duplicate number) — the exact class of race append_iteration was already
+ * meant to close by moving the computation server-side (CATCH 9).
+ */
 export async function appendIteration(ctx: RepositoryContext, adrRef: string, entry: AppendIterationEntry = {}): Promise<string> {
-  const cached = getCached('append_iteration', entry.clientMsgId)
-  if (cached !== undefined) return cached
-
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  const currentContent = await ctx.readFile(resolved.adr.path)
-  const result = applyAppendIteration(currentContent, resolved.adr.path, {
-    human: entry.human,
-    ai: entry.ai,
-    outcome: entry.outcome,
-    date: entry.date ?? todayIsoDate(),
-  })
-  if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+  return withPathLock(resolved.adr.path, async () => {
+    const cached = getCached('append_iteration', entry.clientMsgId)
+    if (cached !== undefined) return cached
 
-  await ctx.writeFile(resolved.adr.path, result.newContent)
-  const confirmation = `Appended Iteration ${result.iterationNumber} to ${adrRefString(resolved.adr)}\n${result.diff}`
-  recordSuccess('append_iteration', entry.clientMsgId, confirmation)
-  return confirmation
+    const currentContent = await ctx.readFile(resolved.adr.path)
+    const result = applyAppendIteration(currentContent, resolved.adr.path, {
+      human: entry.human,
+      ai: entry.ai,
+      outcome: entry.outcome,
+      date: entry.date ?? todayIsoDate(),
+    })
+    if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+    await ctx.writeFile(resolved.adr.path, result.newContent)
+    const confirmation = `Appended Iteration ${result.iterationNumber} to ${adrRefString(resolved.adr)}\n${result.diff}`
+    recordSuccess('append_iteration', entry.clientMsgId, confirmation)
+    return confirmation
+  })
 }
 
 export interface UpdateResolutionOptions {
@@ -425,7 +449,7 @@ export interface UpdateResolutionOptions {
   attempt?: number
 }
 
-/** update_resolution — per ADR-0009; note is required (and server-validated) for fiat/contested. */
+/** update_resolution — per ADR-0009; note is required (and server-validated) for fiat/contested. Per-path locked, same reasoning as the other write tools. */
 export async function updateResolution(
   ctx: RepositoryContext,
   adrRef: string,
@@ -433,18 +457,20 @@ export async function updateResolution(
   note?: string,
   options: UpdateResolutionOptions = {},
 ): Promise<string> {
-  const cached = getCached('update_resolution', options.clientMsgId)
-  if (cached !== undefined) return cached
-
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  const currentContent = await ctx.readFile(resolved.adr.path)
-  const result = applyUpdateResolution(currentContent, resolution, note)
-  if (!result.ok) return result.error
+  return withPathLock(resolved.adr.path, async () => {
+    const cached = getCached('update_resolution', options.clientMsgId)
+    if (cached !== undefined) return cached
 
-  await ctx.writeFile(resolved.adr.path, result.newContent)
-  const confirmation = `Updated resolution for ${adrRefString(resolved.adr)} to '${resolution}'\n${result.diff}`
-  recordSuccess('update_resolution', options.clientMsgId, confirmation)
-  return confirmation
+    const currentContent = await ctx.readFile(resolved.adr.path)
+    const result = applyUpdateResolution(currentContent, resolution, note)
+    if (!result.ok) return result.error
+
+    await ctx.writeFile(resolved.adr.path, result.newContent)
+    const confirmation = `Updated resolution for ${adrRefString(resolved.adr)} to '${resolution}'\n${result.diff}`
+    recordSuccess('update_resolution', options.clientMsgId, confirmation)
+    return confirmation
+  })
 }
