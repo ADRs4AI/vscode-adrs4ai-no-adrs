@@ -90,5 +90,11 @@
     "github.copilot.enable": {
         "*": true,
         "terminal": false
-    }
+    },
+    "editor.hover.enabled": "off", // Avoid hover messages, especially in terminal
+    "workbench.hover.enabled": false,
+    "terminal.integrated.showLinkHover": false,
+    "terminal.integrated.hover.enabled": false,
+    "debug.inlineValues": "off",
+    "editor.hover.above": false
 }
