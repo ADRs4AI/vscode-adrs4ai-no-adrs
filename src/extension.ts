@@ -25,6 +25,7 @@ import { D62StatusWithAnnotationHandler } from './normalizer/handlers/d6-2-statu
 import { D65MissingBoldPreambleFieldHandler } from './normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { D96NoncanonicalNavCodeHeadingHandler } from './normalizer/handlers/d9-6-noncanonical-nav-code-heading'
 import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-missing-recommendation'
+import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { buildAdrCommitMessage } from './commit/commitMessage'
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,7 @@ const normalizerCoordinator = new Coordinator([
   new D65MissingBoldPreambleFieldHandler(),
   new D96NoncanonicalNavCodeHeadingHandler(),
   new D95MissingRecommendationHandler(),
+  new D94NonstandardFillPlaceholderHandler(),
 ])
 
 // ---------------------------------------------------------------------------

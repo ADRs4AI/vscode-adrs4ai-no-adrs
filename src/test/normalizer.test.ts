@@ -20,6 +20,7 @@ import { D62StatusWithAnnotationHandler } from '../normalizer/handlers/d6-2-stat
 import { D65MissingBoldPreambleFieldHandler } from '../normalizer/handlers/d6-5-missing-bold-preamble-field'
 import { D96NoncanonicalNavCodeHeadingHandler } from '../normalizer/handlers/d9-6-noncanonical-nav-code-heading'
 import { D95MissingRecommendationHandler } from '../normalizer/handlers/d9-5-missing-recommendation'
+import { D94NonstandardFillPlaceholderHandler } from '../normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { parseAdr } from '../parser/extractor'
 
 // ---------------------------------------------------------------------------
@@ -952,5 +953,99 @@ describe('D95MissingRecommendationHandler', () => {
     const adr = parseAdr(ZOO_0095_ANSWERED_NO_RECOMMENDATION, '/fake/0002.md')
     const records = handler.detect(ZOO_0095_ANSWERED_NO_RECOMMENDATION, adr)
     expect(records).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D9.4: NonstandardFillPlaceholderHandler
+// Live specimen, 2026-07-10: temp/0011-agent-sessions-json-linter-fuzzy-
+// field-and-shape-validation.md — "**ANS:** [unanswered]" where canon is
+// "**ANS:**" + newline + "[Fill this in]".
+// ---------------------------------------------------------------------------
+
+const ZOO_0094_SPECIMEN = `# ADR-0011: agent-sessions.json Linter
+
+- **Status**: Proposed
+
+---
+
+## Questions
+
+### QST: Hardcoded known-field vocabulary, or derived by scanning sibling registries?
+- Status: unanswered
+- Why asking: Trades simplicity against staying current.
+
+**ANS:** [unanswered]
+`
+
+const ZOO_0094_WITH_ATTRIBUTION = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Jérémie) [pending]
+`
+
+describe('D94NonstandardFillPlaceholderHandler', () => {
+  const handler = new D94NonstandardFillPlaceholderHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  it('detects the exact live specimen: "**ANS:** [unanswered]"', () => {
+    const records = handler.detect(ZOO_0094_SPECIMEN, parseResult)
+    expect(records).toHaveLength(1)
+    expect(records[0].handlerId).toBe('d9-4-nonstandard-fill-placeholder')
+  })
+
+  it('does NOT flag the canonical two-line "**ANS:**" + "[Fill this in]" form', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('does NOT flag a real inline answer', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+
+**ANS:** (by Human) We use Postgres.
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() rewrites to canonical two-line form, preserving indentation', () => {
+    const records = handler.detect(ZOO_0094_SPECIMEN, parseResult)
+    const patch = handler.fix(ZOO_0094_SPECIMEN, records[0])
+    expect(patch.replacement).toBe('**ANS:**\n[Fill this in]')
+  })
+
+  it('fix() preserves an attribution parenthetical when present', () => {
+    const records = handler.detect(ZOO_0094_WITH_ATTRIBUTION, parseResult)
+    expect(records).toHaveLength(1)
+    const patch = handler.fix(ZOO_0094_WITH_ATTRIBUTION, records[0])
+    expect(patch.replacement).toBe('**ANS:** (by Jérémie)\n[Fill this in]')
+  })
+
+  it('DMA: message validates the structure was correct before naming the deviation', () => {
+    const records = handler.detect(ZOO_0094_SPECIMEN, parseResult)
+    expect(records[0].description).toContain('QST heading and structure here are correct')
+  })
+
+  it('test discipline (ADR-0014): message contains the deviation-type slug', () => {
+    const records = handler.detect(ZOO_0094_SPECIMEN, parseResult)
+    expect(records[0].description).toContain('NONSTANDARD_FILL_PLACEHOLDER')
+  })
+
+  it('applying process() makes the ANS block canonical and re-parses cleanly', () => {
+    const patches = handler.process(ZOO_0094_SPECIMEN, parseResult)
+    const normalized = applyPatches(ZOO_0094_SPECIMEN, patches)
+    expect(normalized).toContain('**ANS:**\n[Fill this in]')
+    const adr = parseAdr(normalized, '/fake/zoo/0011-linter.md')
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 })
