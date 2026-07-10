@@ -113,6 +113,24 @@ describe('discoverRoots', () => {
   })
 })
 
+describe('discoverRoots against this repo itself (dogfooding the ADR-0025 QST-1 motivating example)', () => {
+  it('the committed docs/adr/.settings/roots.json block pattern keeps docs/research/*/ clones from becoming surprise subroots', () => {
+    // This is the exact scenario ADR-0025's QST-1 named as the reason
+    // automatic-only discovery (Option A) was rejected in favor of
+    // automatic-with-opt-out (Option C): "research clones under
+    // docs/research/ — this very repo has ~10 of them — would become
+    // subroots without user opt-in." Several of those clones (imessage-mcp,
+    // inbox-alchemy, elenchus-app, ...) have their own docs/adr/, so without
+    // the block pattern this repo's own workspace root would discover a
+    // handful of spurious roots the moment this scanner is wired into
+    // extension.ts.
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const result = discoverRoots(repoRoot, { adrDirRel: 'docs/adr' })
+    const childPaths = result.children.map(c => c.path)
+    expect(childPaths.some(p => p.includes(`${path.sep}docs${path.sep}research${path.sep}`))).toBe(false)
+  })
+})
+
 describe('computeNamespace', () => {
   let dir: string
 

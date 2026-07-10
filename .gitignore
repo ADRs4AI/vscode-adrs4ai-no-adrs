@@ -52,3 +52,8 @@ docs/submissions/*.out
 
 # Local research clones — external repos, reproducible from URLs in docs/research/README.md
 docs/research/*/
+
+# ADR-0025: per-root watcher instrumentation log. The file, not the whole
+# docs/adr/.settings/ folder — roots.json (allow/block config) is meant to
+# be committed and shared with the team; metrics.log is a local audit trail.
+docs/adr/.settings/metrics.log
