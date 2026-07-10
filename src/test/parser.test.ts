@@ -2160,3 +2160,125 @@ describe('Write-adversary finding: question re-resolution by id survives a line 
     expect(after.questions[1].id).toBe(secondOccurrenceIdBefore)
   })
 })
+
+// ---------------------------------------------------------------------------
+// D9.4 — live specimen, 2026-07-10: temp/0011-agent-sessions-json-linter-
+// fuzzy-field-and-shape-validation.md. A freshly-emitted ADR used
+// "**ANS:** [unanswered]" (inline, wrong stock token) where canon is
+// "**ANS:**" + newline + "[Fill this in]". Before this fix, [unanswered]
+// matched no placeholder pattern, became a real `answer`, and the question
+// silently vanished from the Open Questions panel AS ANSWERED — the
+// ADR-0024 founding bug's mirror image (there: vanishes as nonexistent;
+// here: vanishes as done). Reported by Lapidary 5,
+// docs/inbox/2026-07-10-0541-lapidary-to-flint-d9-4-specimen-live-
+// placeholder-drift-reads-as-answered.md.
+// ---------------------------------------------------------------------------
+
+describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', () => {
+  it('the live specimen\'s exact pattern: "**ANS:** [unanswered]" is NOT read as a real answer', () => {
+    const content = `# ADR-0011: agent-sessions.json Linter
+
+- **Status**: Proposed
+
+---
+
+## Questions
+
+### QST: Hardcoded known-field vocabulary, or derived by scanning sibling registries?
+- Status: unanswered
+- Why asking: Trades simplicity against staying current.
+
+**ANS:** [unanswered]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-linter.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.questions[0].answer).toBeUndefined()
+  })
+
+  it('flags the deviation with NONSTANDARD_PLACEHOLDER — never silent (Postel + DMA)', () => {
+    const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** [unanswered]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+    const warning = adr.parseWarnings.find(w => w.code === 'NONSTANDARD_PLACEHOLDER')
+    expect(warning).toBeDefined()
+    expect(warning?.message).toContain('[Fill this in]')
+  })
+
+  it.each(['[to be answered]', '[TBD]', '[pending]', '[todo]'])(
+    'also recognizes the synonym placeholder %s',
+    (placeholder) => {
+      const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** ${placeholder}
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+      expect(adr.questions[0].isAnswered).toBe(false)
+      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(true)
+    },
+  )
+
+  it('does NOT flag the canonical "[Fill this in]" placeholder — no new noise on existing behavior', () => {
+    const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Human)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(false)
+  })
+
+  it('guard the guard: a real answer that references something in brackets is NOT misread as a placeholder', () => {
+    // Lapidary 5's explicit ask: "[see ADR-0014]"-style bracketed *references*
+    // must still count as real content — only a body that IS one of the
+    // stock placeholder tokens, whole-content, counts as unanswered.
+    const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Human)
+[see ADR-0014]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+    expect(adr.questions[0].isAnswered).toBe(true)
+    expect(adr.questions[0].answer?.text).toBe('[see ADR-0014]')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(false)
+  })
+
+  it('guard the guard: a synonym word embedded in real prose (not the whole answer) is real content', () => {
+    const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Human)
+This is pending final review, but our lean is option A.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+    expect(adr.questions[0].isAnswered).toBe(true)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(false)
+  })
+})

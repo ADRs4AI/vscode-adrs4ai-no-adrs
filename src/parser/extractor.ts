@@ -440,6 +440,21 @@ const REC_ATTRIBUTION_RE = /^\((?:by|from)\s+([^,)]+?)(?:,\s*(.+))?\)\s*$/i;
 // from the ADR's Deciders line (single-AI ADRs dominate the legacy corpus).
 const AI_AUTHOR_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral|fable/i;
 
+// ADR-0012: the canonical placeholder — tolerated silently, no diagnostic.
+const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i;
+// D9.4 (live specimen, 2026-07-10, temp/0011-agent-sessions-json-linter-…):
+// models sometimes emit a *different* stock placeholder token — inline
+// "**ANS:** [unanswered]" instead of "**ANS:**" + newline + "[Fill this
+// in]". Before this fix, none of these matched PLACEHOLDER_CANONICAL_RE, so
+// the bracketed text became a real `answer` → isAnswered: true → the
+// question silently vanished from the Open Questions panel *as done*
+// (ADR-0024's founding bug in the opposite direction: there a question
+// vanished as nonexistent, here it vanishes as answered). Whole-content-only
+// (anchored ^...$) so a real answer that happens to reference something in
+// brackets — "[see ADR-0014]" — is never misread as a placeholder; only a
+// body that IS one of these stock tokens, and nothing else, counts.
+const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|tbd|pending|todo)[^\]]*\]$/i;
+
 function inferAuthorFromDeciders(deciders: string[]): string | undefined {
   const aiName = deciders.find(d => AI_AUTHOR_RE.test(d));
   if (!aiName) return undefined;
@@ -475,9 +490,18 @@ function detectNonstandardQstFormat(tokens: ReturnType<typeof tokenize>): boolea
  * QST/ANS fields from a seed-embedded question the same way an ADR's
  * question is parsed — one field parser, two container kinds. `adrNumber`/
  * `adrPath` are seed-parlance-agnostic in practice (a source number and a
- * source path); seeds pass 0 and their own file path.
+ * source path); seeds pass 0 and their own file path. `warnings` is
+ * optional so existing/seed callers that don't yet thread a warnings array
+ * through aren't forced to (ADR-0016-style: a real gap, not silently
+ * assumed away — see the D9.4 fix note below).
  */
-export function extractQuestion(section: AdrSection, adrNumber: number, adrPath: string, deciders: string[]): Question {
+export function extractQuestion(
+  section: AdrSection,
+  adrNumber: number,
+  adrPath: string,
+  deciders: string[],
+  warnings?: ParseWarning[],
+): Question {
   const lines = section.body.split('\n');
   let statusText = 'unanswered';
   let whyAsking: string | undefined;
@@ -623,8 +647,20 @@ export function extractQuestion(section: AdrSection, adrNumber: number, adrPath:
     }
     const answerText = answerLines.join('\n').trim();
     // ADR-0012: Tolerant placeholder matching — treat "[Fill this in]" variants as no-answer.
-    const isPlaceholder = /^\[\s*fill\s+this\s+in[^\]]*\]$/i.test(answerText);
-    if (answerText && !isPlaceholder) {
+    const isCanonicalPlaceholder = PLACEHOLDER_CANONICAL_RE.test(answerText);
+    // D9.4: a non-canonical stock token ("[unanswered]" etc.) is ALSO not a
+    // real answer, but — unlike the canonical form — it's a deviation worth
+    // surfacing: the model structured the QST correctly, it just reached
+    // for the wrong bracketed word. Never silent (Postel + DMA).
+    const isSynonymPlaceholder = !isCanonicalPlaceholder && PLACEHOLDER_SYNONYM_RE.test(answerText);
+    if (isSynonymPlaceholder && warnings) {
+      warnings.push({
+        code: 'NONSTANDARD_PLACEHOLDER',
+        message: `The QST heading and structure here are correct — the placeholder text just isn't the canonical one. "${answerText}" was recognized as an unanswered placeholder (not a real answer), but the canonical form is "[Fill this in]" on its own line after "**ANS:**". SUGGESTED: **ANS:**\n[Fill this in]`,
+        line: answerLine,
+      });
+    }
+    if (answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder) {
       answer = { text: answerText, author: answerAuthor, line: answerLine! };
     }
   }
@@ -872,7 +908,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   function collectQuestions(sectionList: AdrSection[]): void {
     for (const s of sectionList) {
       if (s.navCode === 'QST') {
-        questions.push({ ...extractQuestion(s, adrNumber, filePath, metadata.deciders), sourceKind: 'adr' });
+        questions.push({ ...extractQuestion(s, adrNumber, filePath, metadata.deciders, warnings), sourceKind: 'adr' });
       }
       collectQuestions(s.children);
     }
