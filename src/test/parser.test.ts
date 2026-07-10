@@ -2196,7 +2196,7 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
     expect(adr.questions[0].answer).toBeUndefined()
   })
 
-  it('flags the deviation with NONSTANDARD_PLACEHOLDER — never silent (Postel + DMA)', () => {
+  it('flags the deviation with NONSTANDARD_FILL_PLACEHOLDER — never silent (Postel + DMA)', () => {
     const content = `# ADR-0011: Test
 
 ## Questions
@@ -2207,7 +2207,7 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
 **ANS:** [unanswered]
 `
     const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
-    const warning = adr.parseWarnings.find(w => w.code === 'NONSTANDARD_PLACEHOLDER')
+    const warning = adr.parseWarnings.find(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')
     expect(warning).toBeDefined()
     expect(warning?.message).toContain('[Fill this in]')
   })
@@ -2226,7 +2226,7 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
 `
       const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
       expect(adr.questions[0].isAnswered).toBe(false)
-      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(true)
+      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
     },
   )
 
@@ -2243,7 +2243,7 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
 `
     const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
     expect(adr.questions[0].isAnswered).toBe(false)
-    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 
   it('guard the guard: a real answer that references something in brackets is NOT misread as a placeholder', () => {
@@ -2263,7 +2263,7 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
     const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
     expect(adr.questions[0].isAnswered).toBe(true)
     expect(adr.questions[0].answer?.text).toBe('[see ADR-0014]')
-    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 
   it('guard the guard: a synonym word embedded in real prose (not the whole answer) is real content', () => {
@@ -2279,6 +2279,6 @@ This is pending final review, but our lean is option A.
 `
     const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
     expect(adr.questions[0].isAnswered).toBe(true)
-    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_PLACEHOLDER')).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 })

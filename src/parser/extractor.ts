@@ -655,7 +655,7 @@ export function extractQuestion(
     const isSynonymPlaceholder = !isCanonicalPlaceholder && PLACEHOLDER_SYNONYM_RE.test(answerText);
     if (isSynonymPlaceholder && warnings) {
       warnings.push({
-        code: 'NONSTANDARD_PLACEHOLDER',
+        code: 'NONSTANDARD_FILL_PLACEHOLDER',
         message: `The QST heading and structure here are correct — the placeholder text just isn't the canonical one. "${answerText}" was recognized as an unanswered placeholder (not a real answer), but the canonical form is "[Fill this in]" on its own line after "**ANS:**". SUGGESTED: **ANS:**\n[Fill this in]`,
         line: answerLine,
       });

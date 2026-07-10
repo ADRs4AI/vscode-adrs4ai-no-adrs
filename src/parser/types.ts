@@ -237,7 +237,7 @@ export type ParseWarningCode =
   | 'DUPLICATE_NUMBER'         // two ADRs resolve to the same zero-padded number
   | 'NONSTANDARD_QST_FORMAT'   // QST blocks use a non-standard format (### QST-N: or **Preference?**)
   | 'NONCANONICAL_NAV_CODE_HEADING' // nav code heading recognized only case-insensitively or with a glued colon
-  | 'NONSTANDARD_PLACEHOLDER'; // ANS placeholder uses a non-canonical stock token (e.g. "[unanswered]" instead of "[Fill this in]")
+  | 'NONSTANDARD_FILL_PLACEHOLDER'; // ANS placeholder uses a non-canonical stock token (e.g. "[unanswered]" instead of "[Fill this in]")
 
 export interface ParseWarning {
   code: ParseWarningCode;
