@@ -66,6 +66,41 @@ const NAV_CODE_HEADING_RE = /^(QST|ANS|COD|API|FIL|DOC|NOT):\s+(.*)$/;
 // (below) keeps the deviation from disappearing silently.
 const NAV_CODE_HEADING_TOLERANT_RE = /^(QST|ANS|COD|API|FIL|DOC|NOT):\s*(.*)$/i;
 
+// HQ ADR-0012 (QST Identifier Grammar — Blessing the Handle, 2026-07-11):
+// explicit, author-chosen question handles — "### QST-<ID>: <title>" —
+// canonical-optional alongside plain "### QST: <title>". Only QST gets this
+// id-suffix grammar (ANS/COD/etc. aren't cited across inbox briefs and deep
+// links the way questions are). Checked BEFORE the generic nav-code regexes
+// above: "QST-A:" matches neither (confirmed independently by concertmaster-5
+// in companion-thinking-stream-etude and by this repo — the motivating
+// incident for the HQ ADR). `id` accepts Unicode letters/digits on input
+// (so "QST-JÉRÉMIE" can be typed) and is NFD-folded to the ratified bounded
+// ASCII charset before use — see foldQstId().
+const QST_HANDLE_RE = /^QST-([\p{L}\p{N}]{1,12}):\s*(.*)$/u;
+// Tolerant fallback (same posture as ADR-0024): a lowercase/mixed-case "QST"
+// keyword ("qst-a: Title") would otherwise fall through this AND the generic
+// nav-code regexes (which need literal "QST:", no hyphen-id support) —
+// shipping this grammar without a case-tolerant fallback would reopen the
+// exact silent-drop hole it exists to close, just spelled differently.
+const QST_HANDLE_TOLERANT_RE = /^qst-([\p{L}\p{N}]{1,12}):\s*(.*)$/iu;
+
+/**
+ * NFD-normalize, strip combining marks (diacritics), uppercase, keep only
+ * [A-Z0-9] — "QST-JÉRÉMIE" → "JEREMIE" (HQ ADR-0012 Iteration 2, "fold,
+ * don't forbid": authoring with accents is accepted input; the substrate
+ * files with its spine, not the author's keyboard). Re-bounded to 12 chars
+ * after folding — combining-mark stripping only shortens in practice, but
+ * this keeps the {1,12} invariant explicit rather than assumed.
+ */
+function foldQstId(raw: string): string {
+  return raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip combining diacritical marks (U+0300-U+036F)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 12);
+}
+
 export function detectFormat(tokens: ReturnType<typeof tokenize>): FormatDetectionResult {
   const headings = tokens
     .filter((t): t is ReturnType<typeof tokenize>[number] & { kind: 'heading' } => t.kind === 'heading')
@@ -252,6 +287,15 @@ export function slugify(text: string): string {
 }
 
 function sectionSlug(heading: string): string {
+  // HQ ADR-0012: an explicit QST handle IS the default anchor — "qst-" +
+  // lowercase(folded id) — checked first since it's a more specific match
+  // than the generic nav-code slug below (and must win: the whole point of
+  // an author-chosen id is a stable, predictable anchor, not one derived
+  // from title wording that can drift).
+  const handleMatch = heading.match(QST_HANDLE_RE) ?? heading.match(QST_HANDLE_TOLERANT_RE);
+  if (handleMatch) {
+    return `qst-${foldQstId(handleMatch[1]).toLowerCase()}`;
+  }
   // Nav code headings: "QST: What is the scope?" → "qst-what-is-the-scope"
   // Falls back to the tolerant match so a glued colon ("QST:What is it") still
   // slugs as "qst-what-is-it" instead of merging into "qstwhat-is-it" — the
@@ -300,11 +344,36 @@ function buildSection(
   slugOccurrences: Map<string, number>,
 ): AdrSection {
   const heading = raw.heading.text;
-  let navMatch = heading.match(NAV_CODE_HEADING_RE);
+
+  // HQ ADR-0012: explicit QST handle — "### QST-<ID>: <title>" — checked
+  // before the generic nav-code regexes, which don't recognize it at all
+  // (the ADR's own motivating incident: "QST-A:" silently dropped). Strict
+  // (uppercase "QST") first; the lowercase/mixed-case fallback still
+  // recovers the id but flags the case deviation, same posture as
+  // NAV_CODE_HEADING_TOLERANT_RE below — never silently drop, never
+  // silently normalize either.
+  let handleMatch = heading.match(QST_HANDLE_RE);
+  if (!handleMatch) {
+    const tolerantHandle = heading.match(QST_HANDLE_TOLERANT_RE);
+    if (tolerantHandle) {
+      handleMatch = tolerantHandle;
+      warnings.push({
+        code: 'NONCANONICAL_NAV_CODE_HEADING',
+        message: `Heading "${heading}" was recognized as a QST handle but "QST" isn't uppercase. Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "QST-${foldQstId(tolerantHandle[1])}: ${tolerantHandle[2].trim()}"`,
+        line: raw.heading.line,
+      })
+    }
+  }
+  const qstId = handleMatch ? foldQstId(handleMatch[1]) : undefined;
+
+  let navMatch: RegExpMatchArray | null = handleMatch
+    ? (['', 'QST', handleMatch[2]] as unknown as RegExpMatchArray)
+    : heading.match(NAV_CODE_HEADING_RE);
 
   // Tolerant fallback (ADR-0024): recover navCode for headings that only
   // deviate in case or colon spacing, so the question doesn't just disappear.
   // The deviation itself is still surfaced — accept liberally, warn always.
+  // Skipped when the QST handle grammar already matched above.
   if (!navMatch) {
     const tolerant = heading.match(NAV_CODE_HEADING_TOLERANT_RE);
     if (tolerant) {
@@ -374,6 +443,7 @@ function buildSection(
     lineEnd,
     slug,
     anchorOverride,
+    qstId,
     children,
   };
 }
@@ -728,6 +798,7 @@ export function extractQuestion(
     adrNumber,
     adrPath,
     lineStart: section.lineStart,
+    qstId: section.qstId,
   };
 }
 

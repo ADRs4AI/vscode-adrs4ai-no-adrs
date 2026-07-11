@@ -2282,3 +2282,195 @@ This is pending final review, but our lean is option A.
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// HQ ADR-0012 — QST Identifier Grammar ("Blessing the Handle"), 2026-07-11.
+// "### QST-<ID>: <title>" is now canonical-optional alongside plain
+// "### QST: <title>". Motivating incident (companion-thinking-stream-etude,
+// escalated by concertmaster-5): five lettered questions "### QST-A:"
+// through "### QST-E:" were silently absent from the Open Questions panel —
+// neither NAV_CODE_HEADING_RE nor NAV_CODE_HEADING_TOLERANT_RE recognize a
+// hyphenated id (both require literal "QST:" immediately). Facet 5 confirmed
+// the identical gap in this repo's own parser the same day.
+// ---------------------------------------------------------------------------
+
+describe('HQ ADR-0012 — QST identifier grammar ("### QST-<ID>: title")', () => {
+  it('the motivating incident, verbatim: five lettered questions all parse (previously all silently dropped)', () => {
+    const content = `# ADR-0046: Export Error Handling
+
+## Questions
+
+### QST-A: Should exports carry errored attempts?
+- Status: unanswered
+
+### QST-B: Should retries be automatic?
+- Status: unanswered
+
+### QST-C: What's the timeout?
+- Status: unanswered
+
+### QST-D: Who gets notified on failure?
+- Status: unanswered
+
+### QST-E: Is this reversible?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0046-export-errors.md')
+    expect(adr.questions).toHaveLength(5)
+    expect(adr.questions.map(q => q.qstId)).toEqual(['A', 'B', 'C', 'D', 'E'])
+  })
+
+  it('the id is separate from the title — text does not include the "QST-A:" prefix', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-A: Should exports carry errored attempts?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].text).toBe('Should exports carry errored attempts?')
+    expect(adr.questions[0].qstId).toBe('A')
+  })
+
+  it('plain "### QST: title" (no id) still parses with qstId undefined — no regression', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].qstId).toBeUndefined()
+  })
+
+  it('digit-only ids are legal ("### QST-2: title")', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-2: Which database?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].qstId).toBe('2')
+  })
+
+  it('the handle IS the default anchor: slug is "qst-" + lowercase(id)', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-B: Should retries be automatic?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].slug).toBe('qst-b')
+    expect(adr.questions[0].id).toBe('adr-0001-qst-b')
+  })
+
+  it('accents fold on input: "QST-JÉRÉMIE" -> id "JEREMIE", not two different ids for two spellings', () => {
+    // HQ ADR-0012 Iteration 2, Cartographer's refinement: "fold, don't
+    // forbid" — É is two different byte sequences (precomposed vs combining)
+    // that render identically; folding to ASCII at parse time is what makes
+    // "QST-JÉRÉMIE" and a dictation-transcribed "QST-JEREMIE" resolve to the
+    // SAME id instead of silently forking into two.
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-JÉRÉMIE: A question with an accented handle
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].qstId).toBe('JEREMIE')
+    expect(adr.questions[0].slug).toBe('qst-jeremie')
+  })
+
+  it('Josette-Violaine\'s specimen from the ADR itself: "QST-ÉDF" folds to "EDF"', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-ÉDF: Utility question
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].qstId).toBe('EDF')
+  })
+
+  it('a lowercase "qst-a:" keyword is still recognized (tolerant fallback) and flagged, never silently dropped', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### qst-a: Should exports carry errored attempts?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].qstId).toBe('A')
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(true)
+  })
+
+  it('does NOT flag the canonical uppercase "QST-A:" form with NONCANONICAL_NAV_CODE_HEADING', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-A: Should exports carry errored attempts?
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(false)
+  })
+
+  it('@adr-anchor still overrides the id-derived slug (highest precedence, per ADR-0012 Decision 5)', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-A: Should exports carry errored attempts?
+<!-- @adr-anchor: custom-stable-anchor -->
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions[0].slug).toBe('custom-stable-anchor')
+  })
+
+  it('duplicate ids in one file: both parse, first keeps the clean slug, second is disambiguated, never silent', () => {
+    // Reuses the existing DUPLICATE_SLUG mechanism (write-adversary CATCH 6
+    // fix) rather than a parallel one — an id collision IS a slug collision,
+    // and that machinery already satisfies ADR-0012's "parse both + never
+    // silent + first-occurrence wins for resolution" requirement.
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST-A: First question with this id
+- Status: unanswered
+
+### QST-A: A different question, same id by mistake
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions).toHaveLength(2)
+    expect(adr.questions[0].slug).toBe('qst-a')
+    expect(adr.questions[1].slug).not.toBe('qst-a')
+    expect(adr.parseWarnings.some(w => w.code === 'DUPLICATE_SLUG')).toBe(true)
+  })
+
+  it('a heading nested under #### (level 4) still recognizes the QST handle grammar', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+#### QST-A: A deeply-nested question
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-test.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].qstId).toBe('A')
+  })
+})

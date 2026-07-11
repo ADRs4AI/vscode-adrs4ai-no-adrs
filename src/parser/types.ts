@@ -107,6 +107,14 @@ export interface AdrSection {
   slug: string;
   /** Value from <!-- @adr-anchor: custom-slug --> comment immediately after heading */
   anchorOverride?: string;
+  /**
+   * HQ ADR-0012 (QST Identifier Grammar): the explicit, author-chosen id
+   * from "### QST-<ID>: text", NFD-folded to the ratified [A-Z0-9]{1,12}
+   * charset (accents stripped — "QST-JÉRÉMIE" → "JEREMIE"). Undefined for
+   * plain "### QST: text" headings (positional, no explicit handle) and for
+   * non-QST nav codes (only questions get this grammar).
+   */
+  qstId?: string;
   children: AdrSection[]; // nested sub-sections
 }
 
@@ -186,6 +194,14 @@ export interface Question {
    * Drives the merged Open Questions panel's icon/grouping per container.
    */
   sourceKind?: 'adr' | 'seed';
+  /**
+   * HQ ADR-0012 (QST Identifier Grammar): the explicit, author-chosen
+   * handle from "### QST-<ID>: text" (NFD-folded, e.g. "JEREMIE"), or
+   * undefined for a plain "### QST: text" heading. Mirrors
+   * AdrSection.qstId — the default anchor is "qst-" + lowercase(qstId),
+   * already reflected in `slug`; `@adr-anchor` still overrides both.
+   */
+  qstId?: string;
 }
 
 export interface QuestionAnswer {
