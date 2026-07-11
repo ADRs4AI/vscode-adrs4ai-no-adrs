@@ -22,7 +22,8 @@
     },
     "peacock.color": "#B45309",
     "vitest.enable": true,
-    "vitest.vitestConfig": "${workspaceFolder}/vite.config.ts",
+    "vitest.rootConfig": "${workspaceFolder}/vite.config.ts",
+    "vitest.configSearchPatternExclude": "{**/node_modules/**,**/vendor/**,**/.*/**,**/*.d.ts,**/docs/research/**}",
     "vitest.nodeExecutable": "/Users/jlumbroso/.asdf/shims/node",
     "vitest.nodeEnv": {
         "PATH": "/opt/homebrew/bin:/Users/jlumbroso/.asdf/shims:/usr/local/bin:/usr/bin:/bin",
