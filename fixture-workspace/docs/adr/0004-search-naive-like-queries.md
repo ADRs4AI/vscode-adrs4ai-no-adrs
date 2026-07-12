@@ -3,6 +3,7 @@
 * Status: Superseded
 * Deciders: Ren Okafor
 * Date: 2026-04-02
+* Superseded by: ADR-0005
 
 ## Context and Problem Statement
 
@@ -30,4 +31,4 @@ Chosen option: Option A. Simplest possible thing that works at MVP scale; revisi
 
 ---
 
-**Superseded 2026-07-02** by the FTS5 migration once the recipe count in real usage passed ~400 and substring search started missing obvious matches (plural/singular mismatches were the most common complaint). See the (forthcoming) ADR-0005 for the FTS5 decision — kept here, unedited, as the record of what shipped first and why it stopped being enough. This file is deliberately left in the older plain-MADR shape it was written in, rather than backfilled into the QST/ANS format — the format drift is itself part of the record.
+**Superseded 2026-07-02** by the FTS5 migration once the recipe count in real usage passed ~400 and substring search started missing obvious matches (plural/singular mismatches were the most common complaint). See [ADR-0005](adr:0005) for the FTS5 decision — kept here, unedited, as the record of what shipped first and why it stopped being enough. This file is deliberately left in the older plain-MADR shape it was written in, rather than backfilled into the QST/ANS format — the format drift is itself part of the record, and this fixture deliberately keeps it as a labeled showcase of the parser's format tolerance (see `fixture-workspace/README.md`) rather than an accident.

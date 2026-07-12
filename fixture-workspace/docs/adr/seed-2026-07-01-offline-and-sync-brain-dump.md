@@ -23,4 +23,38 @@ One more thing, smaller: should the sync conflict behavior be visible to the use
 
 ---
 
-**Model**: Please chunk this into ADRs using `docs/adr/templates/collab-adr-lean.md`. My instinct is this splits into at least: (1) PWA vs. native-wrapper (upstream, probably first), (2) offline storage layer for the grocery list, (3) sync conflict resolution strategy, with the "should conflicts be visible" question folded into (3) rather than its own ADR. Push notifications feels like an after-v1 deferral, not urgent enough for its own ADR yet — but flag if you disagree.
+**Model Response Request:**
+
+- [ ] Chunk this into ADRs (I'm ready to formalize)
+- [x] Iterate with me (keep exploring)
+- [ ] Structure in place (organize but don't split)
+
+---
+
+## Thread
+
+### Sonnet 4.6 (1M) - 2026-07-02
+
+Read the whole dump. Before chunking anything, one thing needs resolving first — you flagged it yourself as "upstream of all of this," and I think it's sharper than that: it's not just upstream, it changes what "the storage layer ADR" is even about.
+
+If Larder ships as a PWA, offline storage is IndexedDB and sync is the Background Sync API (patchy browser support — you'd likely need a foreground-tab fallback). If it's a native-ish wrapper, it's SQLite and a real background task with none of the Background Sync API's reliability problems, but a heavier app to ship. These aren't two implementations of the same ADR — they're two different storage layers with different failure modes, and "sync conflict resolution" (your CRDT-shaped question) depends on which one you're resolving conflicts *in*.
+
+So before I chunk this into the three ADRs you sketched, I think there's a zeroth one:
+
+### QST: Should the offline storage layer decision wait on PWA-vs-native, or be spec'd generically enough to survive either?
+- Status: unanswered
+- Why asking: If storage waits on PWA-vs-native, that decision blocks two others behind it (storage layer, then conflict resolution) — a real sequencing cost if PWA-vs-native takes a while to settle. If storage can be spec'd generically (e.g., "a local-first store with `put`/`get`/`delete` and a change-log," implementation-agnostic), the other two ADRs can proceed in parallel and get narrowed once the platform choice lands.
+- Need: sequencing preference — strict chain, or parallel-with-a-generic-interface
+
+**Recommendation**: (by Sonnet 4.6 (1M), 2026-07-02)
+
+**Spec storage generically now, narrow it once PWA-vs-native lands — don't block the chain.** The conflict-resolution logic you sketched (additions merge as union, checked-off wins) doesn't actually depend on whether the underlying store is IndexedDB or SQLite; it depends on there being *a local store with a change log*, which both platforms can provide behind the same three-method interface. This is the same pattern as ADR-0003's `PhotoStore`: pick the abstraction boundary now, let the platform choice fill in the implementation later instead of gating on it.
+
+**ANS:** (by Ren Okafor)
+[Fill this in]
+
+---
+
+## Derived Into
+
+*(This seed has not yet been chunked into ADRs)*
