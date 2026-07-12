@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import vm from 'node:vm'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { bodyMaxWidthCss } from '../webview/panelSettings'
 import { createWebviewHarness } from './helpers/webviewHarness'
 
@@ -282,6 +282,28 @@ describe('Webview script block syntax', () => {
 
       expect(h.element('ans').value).toBe('typed while on Q2')
     })
+
+    it('harness: skip-then-back restores what was just typed and auto-saved, not stale cached data from the last server push', () => {
+      // The third bug this harness caught independently (per 4e6aff5's commit
+      // message): Back is purely client-side (idx--; render()) — it never
+      // re-fetches from the server. Before the fix, render() read
+      // questions[idx].draftText straight out of the array the last
+      // 'questions' push provided, which predates whatever the human typed
+      // and auto-saved while they were actually on that question. Fixed by
+      // mutating q.draftText in place at input time, so the SAME object
+      // reference sitting in the questions array already reflects the
+      // latest typed text before any server round-trip.
+      const Q1 = { id: 'q1', text: 'Q1 text', adrPath: '/fake/0029.md', adrNumber: 29, lineStart: 10, draftKey: 'key-q1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0029', groupSortKey: '0-0029', sourceKind: 'adr' }
+      const Q2 = { id: 'q2', text: 'Q2 text', adrPath: '/fake/0029.md', adrNumber: 29, lineStart: 20, draftKey: 'key-q2', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0029', groupSortKey: '0-0029', sourceKind: 'adr' }
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1, Q2] })
+      h.typeAnswer('my in-progress answer')
+
+      h.click('btn-skip') // idx -> Q2
+      h.click('btn-back') // idx -> Q1, purely client-side, no server round-trip
+
+      expect(h.element('ans').value).toBe('my in-progress answer')
+    })
   })
 
   it('DEBRIEF-004: draft-save debounce captures the typed text at input time, not at timer-fire time', () => {
@@ -331,6 +353,60 @@ describe('Webview script block syntax', () => {
       expect(html, `#${id} must not contain the raw comment`).not.toContain('adr-anchor')
       expect(html, `#${id} must not contain escaped comment syntax either`).not.toContain('&lt;!--')
     }
+  })
+
+  describe('DEBRIEF-004 residual (Quarry 5, post-4e6aff5 state-machine pass): a transient EMPTY "questions" push still trips isNewQuestion for the SAME unchanged question', () => {
+    // 4e6aff5 fixed the headline symptom (positional idx drift losing text)
+    // by relocating the on-screen question by draftKey, and separately fixed
+    // the local-draftText-cache staleness (this harness's own earlier "smoke
+    // 2" catch). Neither touches render()'s OTHER path to the same gate:
+    // `if (questions.length === 0) { ...; lastShownDraftKey = undefined;
+    // return; }`. A single-file read racing a concurrent writer mid-save (or
+    // any reindex that transiently sees zero open questions before settling)
+    // is exactly the kind of glitch this multi-writer repo produces
+    // routinely — DEBRIEF-003's own lesson #2 ("a busy multi-writer repo is
+    // a stress test the single-user case never exercises") applies here
+    // unchanged. The two live fixes happen to prevent TEXT loss in this
+    // scenario (q.draftText was already kept in sync locally, so the
+    // spurious "restore" repopulates correctly) — but isNewQuestion still
+    // misfires, so the human-visible symptoms below are real and unfixed.
+    const Q1 = { id: 'q1', text: 'Q1 text', adrPath: '/fake/0029.md', adrNumber: 29, lineStart: 10, draftKey: 'key-q1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0029', groupSortKey: 'ns::0-0029', rootNamespace: 'ns', sourceKind: 'adr' }
+
+    it('the card flips to the empty-state screen mid-typing, then back — a visible flicker even though the text itself survives', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.typeAnswer('my in-progress answer')
+
+      h.postToWebview({ type: 'questions', generation: 1, questions: [] })
+      expect(h.element('card').style.display).toBe('none')
+      expect(h.element('empty').style.display).toBe('flex')
+
+      h.postToWebview({ type: 'questions', generation: 2, questions: [Q1] })
+      expect(h.element('ans').value).toBe('my in-progress answer') // survives, thanks to the local-cache fix
+      expect(h.element('card').style.display).toBe('block') // but the human watched it vanish and reappear
+    })
+
+    it('focus is stolen again (the exact DEBRIEF-003 symptom) on a transient-empty-then-return cycle, even though nothing the human did changed', () => {
+      vi.useFakeTimers()
+      try {
+        const h = createWebviewHarness()
+        h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+        h.typeAnswer('my in-progress answer')
+        vi.runAllTimers() // settle the initial (legitimate) focus() from the first real navigation
+
+        let focusCallsAfterInitialLoad = 0
+        const originalFocus = h.element('ans').focus
+        h.element('ans').focus = () => { focusCallsAfterInitialLoad++; originalFocus() }
+
+        h.postToWebview({ type: 'questions', generation: 1, questions: [] })
+        h.postToWebview({ type: 'questions', generation: 2, questions: [Q1] })
+        vi.runAllTimers()
+
+        expect(focusCallsAfterInitialLoad).toBe(0) // FAILS today — isNewQuestion misfires, focus() is scheduled again
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })
 
