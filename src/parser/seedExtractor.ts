@@ -23,9 +23,9 @@
 
 import * as crypto from 'crypto'
 import * as path from 'path'
-import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr, Question, AdrSection } from './types'
+import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr, Question, AdrSection, ParseWarning } from './types'
 import { tokenize, extractRawSections } from './tokenizer'
-import { buildSubsections, extractQuestion } from './extractor'
+import { buildSection, extractQuestion } from './extractor'
 
 // ---------------------------------------------------------------------------
 // Regex patterns
@@ -103,7 +103,7 @@ export function parseSeed(content: string, filePath: string): SeedFile {
   const { derivedAdrs, isProcessed, hasPlaceholder } = parseDerivedInto(derivedSection?.content ?? '')
 
   // --- Questions (ADR-0018 Step 2) ---
-  const questions = extractSeedQuestions(content, filePath)
+  const { questions, warnings: parseWarnings } = extractSeedQuestions(content, filePath)
 
   return {
     path: filePath,
@@ -119,6 +119,7 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     checksum,
     parsedAt,
     questions,
+    parseWarnings,
   }
 }
 
@@ -127,33 +128,42 @@ export function parseSeed(content: string, filePath: string): SeedFile {
 // ---------------------------------------------------------------------------
 
 /**
- * `### QST:` blocks inside a seed's Brain Dump / Thread sections were
- * previously invisible to the Open Questions panel — not a bug, a
- * categorical exclusion (ADR-0018's "Human Context": Jérémie hand-editing
- * markdown because the panel couldn't surface a seed's own questions).
+ * `### QST:` blocks anywhere in a seed file were previously invisible to
+ * the Open Questions panel — not a bug, a categorical exclusion
+ * (ADR-0018's "Human Context": Jérémie hand-editing markdown because the
+ * panel couldn't surface a seed's own questions).
  *
- * Reuses the exact same section-tree builder and field parser the ADR
- * parser uses (`buildSubsections`/`extractQuestion`, both exported from
- * `extractor.ts` for this purpose) rather than reimplementing QST detection
- * — one substrate, two container kinds, per ADR-0018's decomposition.
+ * DEBRIEF (Lapidary 5, 2026-07-12, item 2): this used to only descend into
+ * top-level sections literally named "Thread" or containing "Brain Dump" —
+ * a fixed allowlist the seed-template format implied but that increasingly
+ * freeform, dictated seeds (custom section names like "## Lineage",
+ * "## Threads") don't follow, so a correctly-formatted QST under any other
+ * heading silently never reached the panel. parseAdr() never had this
+ * restriction — it scans every top-level section via buildSection(). Now
+ * this does too: same rule, not a narrower one, per ADR-0018's "one
+ * substrate, two container kinds." This also incidentally covers item 1
+ * (a "## QST:" heading, one level too shallow, becomes its own top-level
+ * section under extractRawSections' ##-only split) — buildSection()
+ * recognizes navCode from heading TEXT regardless of level, and now warns
+ * (NONCANONICAL_NAV_CODE_LEVEL) rather than silently either dropping or
+ * silently accepting it.
  */
-function extractSeedQuestions(content: string, filePath: string): Question[] {
+function extractSeedQuestions(content: string, filePath: string): { questions: Question[]; warnings: ParseWarning[] } {
   const tokens = tokenize(content)
   const { sections: rawSections } = extractRawSections(tokens)
 
   const questions: Question[] = []
+  const warnings: ParseWarning[] = []
   const allSlugs = new Set<string>()
+  const slugOccurrences = new Map<string, number>()
   const seedSlug = path.basename(filePath, '.md')
 
   for (const raw of rawSections) {
-    const headingLower = raw.heading.text.toLowerCase()
-    if (headingLower !== 'thread' && !headingLower.includes('brain dump')) continue
-
-    const children = buildSubsections(raw.body, allSlugs, [])
-    collectQstSections(children, filePath, seedSlug, questions)
+    const section = buildSection(raw, allSlugs, warnings, slugOccurrences)
+    collectQstSections([section], filePath, seedSlug, questions, warnings)
   }
 
-  return questions
+  return { questions, warnings }
 }
 
 function collectQstSections(
@@ -161,17 +171,18 @@ function collectQstSections(
   filePath: string,
   seedSlug: string,
   out: Question[],
+  warnings: ParseWarning[],
 ): void {
   for (const s of sections) {
     if (s.navCode === 'QST') {
-      const base = extractQuestion(s, 0, filePath, [])
+      const base = extractQuestion(s, 0, filePath, [], warnings)
       out.push({
         ...base,
         id: `${seedSlug}-${s.slug}`,
         sourceKind: 'seed',
       })
     }
-    collectQstSections(s.children, filePath, seedSlug, out)
+    collectQstSections(s.children, filePath, seedSlug, out, warnings)
   }
 }
 

@@ -337,7 +337,17 @@ export function hasNonstandardNumbering(filePath: string): boolean {
 /** Look for <!-- @adr-anchor: slug --> on the line immediately after a heading */
 const ANCHOR_COMMENT_RE = /^@adr-anchor:\s+(.+)$/;
 
-function buildSection(
+/**
+ * ADR-0018 (QST/ANS Substrate): exported so seedExtractor.ts can build a
+ * section — including its navCode/heading-level checks — for a seed's
+ * top-level (##) sections the same way parseAdr() does, not a narrower
+ * reimplementation. See DEBRIEF (Lapidary 5, 2026-07-12): a seed extractor
+ * that only descended into a fixed allowlist of top-level section names
+ * (Thread/Brain Dump) silently dropped a correctly-formatted QST living
+ * under any other heading (e.g. "## Lineage") — the same "one substrate,
+ * two container kinds" principle this function already embodies for ADRs.
+ */
+export function buildSection(
   raw: RawSection,
   allSlugs: Set<string>,
   warnings: ParseWarning[],
@@ -384,6 +394,25 @@ function buildSection(
         line: raw.heading.line,
       });
     }
+  }
+
+  // Jérémie's ruling, dictated 2026-07-12 (Lapidary's dispatch, item 1):
+  // a nav-code heading written at the wrong LEVEL ("## QST: ..." or
+  // "#### QST: ...") should still parse — extractRawSections/buildSubsections
+  // don't gate navCode matching on level, only on text — but the deviation
+  // needs a LOUDER diagnostic than NONCANONICAL_NAV_CODE_HEADING's (that one
+  // covers heading FORM: case/colon spacing; this is a different axis,
+  // heading LEVEL) because a wrong-level QST is structurally riskier: at
+  // level 2 it silently becomes its own top-level section boundary instead
+  // of a child of whatever it was meant to nest under, which can reshape
+  // the document's section tree, not just this one heading's recognition.
+  // Mapped to DiagnosticSeverity.Warning (not Information) in extension.ts.
+  if (navMatch && raw.heading.level !== 3) {
+    warnings.push({
+      code: 'NONCANONICAL_NAV_CODE_LEVEL',
+      message: `Heading "${heading}" was recognized as ${navMatch[1].toUpperCase()} but is a level-${raw.heading.level} heading (${'#'.repeat(raw.heading.level)}) instead of the canonical level-3 (###). Recognized anyway — no data lost — but a wrong-level heading can silently reshape the surrounding section structure. SUGGESTED: "### ${heading}"`,
+      line: raw.heading.line,
+    });
   }
 
   let slug = sectionSlug(heading);

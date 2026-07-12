@@ -253,6 +253,7 @@ export type ParseWarningCode =
   | 'DUPLICATE_NUMBER'         // two ADRs resolve to the same zero-padded number
   | 'NONSTANDARD_QST_FORMAT'   // QST blocks use a non-standard format (### QST-N: or **Preference?**)
   | 'NONCANONICAL_NAV_CODE_HEADING' // nav code heading recognized only case-insensitively or with a glued colon
+  | 'NONCANONICAL_NAV_CODE_LEVEL'  // nav code heading recognized, but at the wrong heading level (## or #### instead of ###)
   | 'NONSTANDARD_FILL_PLACEHOLDER'; // ANS placeholder uses a non-canonical stock token (e.g. "[unanswered]" instead of "[Fill this in]")
 
 export interface ParseWarning {
@@ -343,9 +344,14 @@ export interface SeedFile {
   checksum: string;
   parsedAt: number;
   /**
-   * ADR-0018 (QST/ANS Substrate, Step 2): `### QST:` blocks found inside
-   * this seed's Brain Dump / Thread sections. Empty when the seed has none —
-   * previously these were invisible to the Open Questions panel entirely.
+   * ADR-0018 (QST/ANS Substrate, Step 2): `### QST:` blocks found anywhere
+   * in this seed's top-level sections (not restricted to Brain Dump/Thread —
+   * see DEBRIEF, Lapidary 5, 2026-07-12: a fixed section-name allowlist
+   * silently dropped a QST living under an arbitrary heading like
+   * "## Lineage"). Empty when the seed has none — previously these were
+   * invisible to the Open Questions panel entirely.
    */
   questions: Question[];
+  /** Parse-time diagnostics (heading-level/form deviations, etc.) — same shape as AdrFile.parseWarnings. */
+  parseWarnings: ParseWarning[];
 }

@@ -127,6 +127,7 @@ function makeSeed(overrides: Partial<SeedFile> = {}): SeedFile {
     checksum: 'cafef00d',
     parsedAt: 1751500000000,
     questions: [],
+    parseWarnings: [],
     ...overrides,
   }
 }

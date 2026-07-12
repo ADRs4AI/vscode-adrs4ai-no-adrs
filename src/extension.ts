@@ -224,6 +224,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
     ),
 
+    // ── Quick Fix: fix a nav-code heading's level to canonical ### ─────────
+    // Jérémie's ruling, 2026-07-12 (item 1 of Lapidary's h2-QST dispatch):
+    // NONCANONICAL_NAV_CODE_LEVEL fires for "## QST: ..." / "#### QST: ..."
+    // — recognized and parsed already (extractor.ts), just at the wrong
+    // heading level. Works for both ADR and seed files (language:markdown,
+    // not container-specific).
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file', language: 'markdown' },
+      {
+        provideCodeActions(document, _range, context) {
+          const actions: vscode.CodeAction[] = [];
+          for (const diag of context.diagnostics) {
+            if (diag.source !== 'ADR Manager' || diag.code !== 'NONCANONICAL_NAV_CODE_LEVEL') continue;
+            const line = diag.range.start.line;
+            const lineText = document.lineAt(line).text;
+            const headingMatch = lineText.match(/^#{1,6}\s+(.*)$/);
+            if (!headingMatch) continue;
+            const fix = new vscode.CodeAction(
+              'Fix heading level to ### (canonical)',
+              vscode.CodeActionKind.QuickFix,
+            );
+            fix.diagnostics = [diag];
+            fix.isPreferred = true;
+            fix.edit = new vscode.WorkspaceEdit();
+            fix.edit.replace(document.uri, document.lineAt(line).range, `### ${headingMatch[1]}`);
+            actions.push(fix);
+          }
+          return actions;
+        },
+      },
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
+    ),
+
     // ── Quick Fix: apply normalizer patches (ADR-0013 Stage 2) ─────────────
     vscode.languages.registerCodeActionsProvider(
       { scheme: 'file', language: 'markdown' },
@@ -775,6 +808,31 @@ async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeIt
   index?.indexFile(item.adr.path);
 }
 
+/**
+ * Shared by both ADR and seed diagnostics (updateDiagnostics/
+ * updateSeedDiagnostics) so the two container kinds surface the same
+ * warning at the same volume — per ADR-0018's "one substrate, two
+ * container kinds," a diagnostic's loudness shouldn't depend on which
+ * kind of file it was found in. NONCANONICAL_NAV_CODE_LEVEL (Jérémie's
+ * ruling, 2026-07-12): louder than the default Information because a
+ * wrong-level nav-code heading can silently reshape the surrounding
+ * section structure, not just misrecognize one heading.
+ */
+function parseWarningSeverity(code: import('./parser/types').ParseWarningCode): vscode.DiagnosticSeverity {
+  return code === 'MISSING_SCOPE_REMAINING' || code === 'MISSING_STATUS' || code === 'NONCANONICAL_NAV_CODE_LEVEL'
+    ? vscode.DiagnosticSeverity.Warning
+    : vscode.DiagnosticSeverity.Information;
+}
+
+function parseWarningToDiagnostic(w: import('./parser/types').ParseWarning): vscode.Diagnostic {
+  const line = Math.max(0, (w.line ?? 1) - 1);
+  const range = new vscode.Range(line, 0, line, 999);
+  const diag = new vscode.Diagnostic(range, w.message, parseWarningSeverity(w.code));
+  diag.source = 'ADR Manager';
+  diag.code = w.code;
+  return diag;
+}
+
 function updateDiagnostics(
   collection: vscode.DiagnosticCollection,
   adr: import('./parser/types').AdrFile,
@@ -782,18 +840,7 @@ function updateDiagnostics(
   const uri = vscode.Uri.file(adr.path);
 
   // Parser warnings (existing)
-  const diags: vscode.Diagnostic[] = adr.parseWarnings.map(w => {
-    const line = Math.max(0, (w.line ?? 1) - 1);
-    const range = new vscode.Range(line, 0, line, 999);
-    const severity =
-      w.code === 'MISSING_SCOPE_REMAINING' || w.code === 'MISSING_STATUS'
-        ? vscode.DiagnosticSeverity.Warning
-        : vscode.DiagnosticSeverity.Information;
-    const diag = new vscode.Diagnostic(range, w.message, severity);
-    diag.source = 'ADR Manager';
-    diag.code = w.code;
-    return diag;
-  });
+  const diags: vscode.Diagnostic[] = adr.parseWarnings.map(parseWarningToDiagnostic);
 
   // Normalizer dry-run (ADR-0013 Stage 2) — INFO diagnostics for format deviations
   try {
@@ -835,8 +882,15 @@ function updateSeedDiagnostics(
 ): void {
   const uri = vscode.Uri.file(seed.path);
 
+  // Parser warnings — same treatment as ADRs (parseWarningToDiagnostic),
+  // now that SeedFile carries them (previously extractSeedQuestions()
+  // discarded them entirely; see the DEBRIEF item 1/2 fix in
+  // seedExtractor.ts). Accumulated alongside SEED_INCOMPLETE below rather
+  // than each early-returning/overwriting the other's diagnostics.
+  const diags: vscode.Diagnostic[] = seed.parseWarnings.map(parseWarningToDiagnostic);
+
   if (!seed.derivedIntoHasPlaceholder) {
-    collection.delete(uri);
+    collection.set(uri, diags);
     return;
   }
 
@@ -848,7 +902,7 @@ function updateSeedDiagnostics(
   const detected = findReferencingAdrs(seed.path, adrEntries);
 
   if (detected.length === 0) {
-    collection.delete(uri);
+    collection.set(uri, diags);
     return;
   }
 
@@ -870,7 +924,8 @@ function updateSeedDiagnostics(
   const diag = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Information);
   diag.source = 'ADR Manager';
   diag.code = 'SEED_INCOMPLETE';
-  collection.set(uri, [diag]);
+  diags.push(diag);
+  collection.set(uri, diags);
 }
 
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {

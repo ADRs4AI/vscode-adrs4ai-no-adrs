@@ -1357,17 +1357,106 @@ Just prose, no structured questions.
     expect(parsed.questions).toEqual([])
   })
 
-  it('does NOT extract QST blocks from sections other than Brain Dump / Thread', () => {
+  // Was: "does NOT extract QST blocks from sections other than Brain Dump /
+  // Thread" (asserted toEqual([])). Flipped 2026-07-12 per Lapidary's
+  // dispatch item 2 / Jérémie's ruling: a correctly-formatted seed QST
+  // under "## Lineage" was silently invisible to the panel because
+  // extractSeedQuestions() only ever descended into a fixed allowlist of
+  // top-level section names. parseAdr() has never had that restriction —
+  // it scans every top-level section uniformly — so the seed extractor now
+  // matches it ("one substrate, two container kinds," ADR-0018). A QST
+  // under an arbitrary heading (Derived Into, Lineage, or otherwise) is now
+  // extracted the same way an ADR's would be.
+  it('extracts QST blocks from ANY top-level section, not just Brain Dump / Thread', () => {
     const seed = `# SEED: Storage Thoughts
 
 ## Derived Into
 
-### QST: This should not be extracted
+### QST: Should this be extracted?
 
 - Status: unanswered
 `
     const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
-    expect(parsed.questions).toEqual([])
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Should this be extracted?')
+  })
+
+  // Ground-truth benchmark: the actual committed file Jérémie reported the
+  // question invisible in (Lapidary's dispatch item 2, 2026-07-12) —
+  // docs/adr/seed-2026-07-12-epistemic-programming-lane-doctrine.md. Its
+  // QST lives under "## Lineage", several sections deep into a dictation-
+  // shaped seed with no "## Thread"/"## Brain Dump" section at all.
+  it('ground truth: extracts the QST from the real epistemic-programming-lane-doctrine seed', () => {
+    const content = readAdr('seed-2026-07-12-epistemic-programming-lane-doctrine.md')
+    const parsed = parseSeed(content, resolve(ADR_ROOT, 'seed-2026-07-12-epistemic-programming-lane-doctrine.md'))
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Does "epistemic programming" become the project\'s public term of art?')
+    expect(parsed.questions[0].isAnswered).toBe(false)
+  })
+
+  // Real specimen (Lapidary's dispatch item 2, 2026-07-12): a seed with
+  // custom, dictation-shaped top-level section names ("## Lineage" among
+  // others) whose QST was reported invisible in the panel on v0.7.3.
+  it('specimen: a QST under "## Lineage" (the reported-invisible seed shape) is extracted', () => {
+    const seed = `# Seed: "Epistemic programming"
+
+- **Date**: 2026-07-12
+
+## The raw material (verbatim, from ADR-0029 QST-C ANS)
+
+> Some quoted material.
+
+## Lineage (fished 2026-07-12 at Jérémie's request)
+
+Some prose about lineage.
+
+### QST: Does "epistemic programming" become the project's public term of art?
+
+- Status: unanswered
+- Why asking: The term appeared in an ANS block, not a decision.
+
+**Recommendation**: Ratify it.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-12-epistemic-programming-lane-doctrine.md')
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Does "epistemic programming" become the project\'s public term of art?')
+    expect(parsed.questions[0].isAnswered).toBe(false)
+  })
+
+  // Item 1 of the same dispatch: a QST heading at the wrong LEVEL (h2/h4
+  // instead of h3) should still parse — silently dropping it is the same
+  // nemesis class NONCANONICAL_NAV_CODE_HEADING already covers for heading
+  // FORM (case/colon spacing); this is the LEVEL axis. Louder than the
+  // form-deviation warning: mapped to DiagnosticSeverity.Warning in
+  // extension.ts (parseWarningSeverity), not Information.
+  it('tolerates a QST heading at the wrong level (## instead of ###) with a louder warning', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## QST: Which database engine?
+
+- Status: unanswered
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.questions[0].text).toBe('Which database engine?')
+    expect(parsed.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_LEVEL')).toBe(true)
+  })
+
+  it('tolerates a QST heading nested one level too deep (#### instead of ###)', () => {
+    const seed = `# SEED: Storage Thoughts
+
+## Brain Dump
+
+#### QST: Which database engine?
+
+- Status: unanswered
+`
+    const parsed = parseSeed(seed, '/fake/docs/adr/seed-2026-07-07-storage.md')
+    expect(parsed.questions).toHaveLength(1)
+    expect(parsed.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_LEVEL')).toBe(true)
   })
 })
 
@@ -2028,6 +2117,59 @@ describe('Regression tests', () => {
 `
     const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
     expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_HEADING')).toBe(false)
+  })
+
+  // Jérémie's ruling, 2026-07-12 (Lapidary's dispatch item 1, same session
+  // as the seed specimen above): a nav-code heading at the wrong LEVEL is a
+  // different axis than wrong FORM (case/colon) — NONCANONICAL_NAV_CODE_HEADING
+  // covers form; NONCANONICAL_NAV_CODE_LEVEL covers level. Both tolerate
+  // (never silently drop) and both warn (never silently accept).
+  it('tolerates a QST heading one level too shallow ("## QST:") with NONCANONICAL_NAV_CODE_LEVEL', () => {
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## QST: Which database?
+
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.questions[0].text).toBe('Which database?')
+    const warning = adr.parseWarnings.find(w => w.code === 'NONCANONICAL_NAV_CODE_LEVEL')
+    expect(warning).toBeDefined()
+    expect(warning?.message).toContain('### QST: Which database?')
+  })
+
+  it('tolerates a QST heading one level too deep ("#### QST:") with NONCANONICAL_NAV_CODE_LEVEL', () => {
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## Questions
+
+#### QST: Which database?
+
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    expect(adr.questions).toHaveLength(1)
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_LEVEL')).toBe(true)
+  })
+
+  it('should NOT flag a canonical level-3 "### QST:" heading with NONCANONICAL_NAV_CODE_LEVEL', () => {
+    const content = `# ADR-0001: Storage choice
+
+---
+
+## Questions
+
+### QST: Which database?
+
+- Status: unanswered
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0001-storage.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_NAV_CODE_LEVEL')).toBe(false)
   })
 })
 
