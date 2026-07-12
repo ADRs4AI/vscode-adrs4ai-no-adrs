@@ -27,6 +27,7 @@ import { D96NoncanonicalNavCodeHeadingHandler } from './normalizer/handlers/d9-6
 import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-missing-recommendation'
 import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { buildAdrCommitMessage } from './commit/commitMessage'
+import { resolveWorkspaceRepository } from './commit/repositoryResolution'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -623,7 +624,12 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
 
   const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
   const api = git.getAPI(1);
-  const repo = api.repositories[0];
+  // DEBRIEF-002: api.repositories[0] is a positional first-approximation —
+  // there is no defined relationship between repository-discovery order and
+  // workspace-folder order, so in a real multi-repo workspace (HQ + several
+  // submodules) it can silently resolve to the wrong repo. Ask for the
+  // repository that owns THIS workspace folder's URI instead of guessing.
+  const repo = resolveWorkspaceRepository<any>(api, workspaceFolder.uri); // eslint-disable-line @typescript-eslint/no-explicit-any -- api/repo come from the untyped vscode.git extension API, same dynamic typing as before this fix
   if (!repo) {
     vscode.window.showErrorMessage('ADR Manager: No git repository found.');
     return;
