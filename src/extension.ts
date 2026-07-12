@@ -253,6 +253,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ── File watchers ─────────────────────────────────────────────────────────
   setupFileWatcher(context, index, adrDir);
   setupSeedFileWatcher(context, seedIndex, adrDir);
+  setupBufferChangeTrigger(context, index, seedIndex);
 
   // ── Initial index population ──────────────────────────────────────────────
   // Trigger when the sidebar is first revealed (lazy) OR immediately if already visible
@@ -360,6 +361,52 @@ function setupSeedFileWatcher(
   }, null, context.subscriptions);
 
   context.subscriptions.push(seedFileWatcher);
+}
+
+/**
+ * "Question doesn't advance" residual (Lapidary 5, reported 2026-07-12,
+ * recurring since pre-v0.6): the refresh pipeline was disk-watcher-only —
+ * nothing subscribed to onDidChangeTextDocument or onDidSaveTextDocument —
+ * so Cmd+Enter's correctness depended on the answer-write path persisting
+ * to disk every single time. Any path where the buffer edit landed but the
+ * save silently failed or raced left the index (and the panel) stale until
+ * an unrelated manual save nudged the FileSystemWatcher. Each prior fix
+ * patched one save path; the class survived because there was no
+ * buffer-level trigger at all.
+ *
+ * Debounced (500ms, matching the draft auto-save interval elsewhere in this
+ * codebase) so a fast typist doesn't trigger a reparse per keystroke.
+ * Reindexes from document.getText() — buffer truth, not disk truth — so an
+ * edit is reflected even before (or if) the save round-trip completes. The
+ * disk watchers stay in place for changes made outside the editor.
+ */
+function setupBufferChangeTrigger(
+  context: vscode.ExtensionContext,
+  idx: AdrIndex,
+  sidx: SeedIndex,
+): void {
+  const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const disposable = vscode.workspace.onDidChangeTextDocument(event => {
+    const filePath = event.document.uri.fsPath;
+    const isAdr = isAdrFile(filePath);
+    const isSeed = !isAdr && isSeedFile(filePath);
+    if (!isAdr && !isSeed) return;
+
+    const existing = debounceTimers.get(filePath);
+    if (existing) clearTimeout(existing);
+
+    debounceTimers.set(filePath, setTimeout(() => {
+      debounceTimers.delete(filePath);
+      const content = event.document.getText();
+      if (isAdr) idx.indexContent(filePath, content);
+      else sidx.indexContent(filePath, content);
+    }, 500));
+  }, null, context.subscriptions);
+
+  context.subscriptions.push(disposable, {
+    dispose: () => { for (const t of debounceTimers.values()) clearTimeout(t); },
+  });
 }
 
 // ---------------------------------------------------------------------------

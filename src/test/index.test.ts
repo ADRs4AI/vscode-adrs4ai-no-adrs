@@ -302,3 +302,87 @@ describe('AdrIndex.indexDirectory: duplicate ADR number detection (ADR-0012)', (
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// AdrIndex.indexContent / SeedIndex.indexContent — "question doesn't
+// advance" residual (Lapidary 5, 2026-07-12). Root cause: the refresh
+// pipeline was disk-watcher-only, so a write path where the buffer edit
+// landed but the disk save silently failed or raced left the panel stale.
+// indexContent() lets a caller that already has the text (a live editor
+// buffer, or the panel's own post-write reindex) index without a disk
+// round-trip — this is what both halves of the fix (extension.ts's new
+// onDidChangeTextDocument trigger, and the panel's writeAnswer hardening)
+// are built on.
+// ---------------------------------------------------------------------------
+
+describe('AdrIndex.indexContent (no disk read, buffer-truth reindex)', () => {
+  it('indexes content directly without touching the filesystem', () => {
+    const index = new AdrIndex()
+    // A path that does not exist on disk — if this touched fs, it would throw.
+    const adr = index.indexContent('/fake/does-not-exist/0001-storage.md', '# ADR-0001: Storage\n\n- **Status**: Draft\n')
+    expect(adr.number).toBe(1)
+    expect(adr.status).toBe('Draft')
+  })
+
+  it('fires the same onChange event shape as indexFile (added, then updated)', () => {
+    const index = new AdrIndex()
+    const events: string[] = []
+    index.onChange(e => events.push(e.type))
+
+    index.indexContent('/fake/0001-storage.md', '# ADR-0001: Storage\n\n- **Status**: Draft\n')
+    index.indexContent('/fake/0001-storage.md', '# ADR-0001: Storage\n\n- **Status**: Accepted\n')
+
+    expect(events).toEqual(['added', 'updated'])
+  })
+
+  it('indexFile() and indexContent() produce the same result for the same text (indexFile is now a thin wrapper)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-index-content-test-'))
+    try {
+      const filePath = path.join(dir, '0001-storage.md')
+      const text = '# ADR-0001: Storage\n\n- **Status**: Draft\n'
+      fs.writeFileSync(filePath, text)
+
+      const viaFile = new AdrIndex().indexFile(filePath)
+      const viaContent = new AdrIndex().indexContent(filePath, text)
+
+      expect(viaContent.checksum).toBe(viaFile.checksum)
+      expect(viaContent.status).toBe(viaFile.status)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reflects unsaved buffer content even when disk has stale (or no) content — the actual fix', () => {
+    // Simulates the failure mode directly: a write reached the "buffer"
+    // (represented here as a content string never written to disk) — the
+    // reindex must reflect it regardless of what's on disk.
+    const index = new AdrIndex()
+    const bufferContent = '# ADR-0001: Storage\n\n- **Status**: Accepted\n'
+    const adr = index.indexContent('/fake/0001-storage.md', bufferContent)
+    expect(adr.status).toBe('Accepted')
+  })
+})
+
+describe('SeedIndex.indexContent (no disk read, buffer-truth reindex)', () => {
+  it('indexes content directly without touching the filesystem', () => {
+    const index = new SeedIndex()
+    const seed = index.indexContent('/fake/does-not-exist/seed-2026-07-12-test.md', '# SEED: Test\n\n- **Date**: 2026-07-12\n')
+    expect(seed.topic).toBe('Test')
+  })
+
+  it('indexFile() and indexContent() produce the same result for the same text', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-index-content-test-'))
+    try {
+      const filePath = path.join(dir, 'seed-2026-07-12-test.md')
+      const text = '# SEED: Test\n\n- **Date**: 2026-07-12\n'
+      fs.writeFileSync(filePath, text)
+
+      const viaFile = new SeedIndex().indexFile(filePath)
+      const viaContent = new SeedIndex().indexContent(filePath, text)
+
+      expect(viaContent.checksum).toBe(viaFile.checksum)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

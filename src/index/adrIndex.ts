@@ -41,6 +41,24 @@ export class AdrIndex {
   /** Parse and index a single ADR file. Returns the parsed ADR. */
   indexFile(filePath: string): AdrFile {
     const content = fs.readFileSync(filePath, 'utf-8');
+    return this.indexContent(filePath, content);
+  }
+
+  /**
+   * Parse already-known content and index it — no disk read. Lets a caller
+   * that already has the text (a live editor buffer, notably) reindex
+   * without waiting on a disk round-trip.
+   *
+   * "Question doesn't advance" residual (Lapidary 5, 2026-07-12): the
+   * refresh pipeline was disk-watcher-only — nothing in this codebase
+   * subscribed to onDidChangeTextDocument/onDidSaveTextDocument — so any
+   * write path where the buffer edit landed but the disk save silently
+   * failed or raced left the index (and therefore the panel) stale until
+   * an unrelated manual save nudged the FileSystemWatcher. This method is
+   * what extension.ts's new onDidChangeTextDocument trigger calls with
+   * document.getText(), reflecting buffer truth instead of only disk truth.
+   */
+  indexContent(filePath: string, content: string): AdrFile {
     const adr = parseAdr(content, filePath, { namespace: this.namespace });
 
     const previous = this.adrs.get(filePath);

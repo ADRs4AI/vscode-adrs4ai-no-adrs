@@ -162,7 +162,38 @@ describe('Webview script block syntax', () => {
   })
 
   it('ADR-0018 Step 3: reindexes the seed index (not the ADR index) after a seed write', () => {
-    expect(PANEL_SRC).toContain('this.seedIndex.indexFile(msg.adrPath)')
+    // Updated 2026-07-12: reindexes from buffer content (indexContent), not
+    // disk (indexFile) — see the "question doesn't advance" fix below.
+    expect(PANEL_SRC).toContain('this.seedIndex.indexContent(msg.adrPath, freshContent)')
+  })
+
+  // "Question doesn't advance" residual (Lapidary 5, 2026-07-12): no file in
+  // src/ subscribed to onDidChangeTextDocument/onDidSaveTextDocument, so the
+  // refresh pipeline was disk-watcher-only. Any write path where the buffer
+  // edit landed but the disk save silently failed or raced left the panel
+  // stale until an unrelated manual save nudged the watcher.
+  it('writeAnswer checks applyEdit\'s return value and refuses to proceed on failure', () => {
+    expect(PANEL_SRC).toContain('const applied = await vscode.workspace.applyEdit(edit)')
+    expect(PANEL_SRC).toContain('if (!applied)')
+  })
+
+  it('writeAnswer checks save()\'s return value and retries once before warning', () => {
+    expect(PANEL_SRC).toContain('let saved = await vscode.workspace.save(uri)')
+    expect(PANEL_SRC).toContain('if (!saved) {')
+    // Two save() call sites: the retry, and the (now-decoupled) reindex
+    // that no longer depends on it.
+    expect((PANEL_SRC.match(/vscode\.workspace\.save\(uri\)/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('reindexes from the live buffer (doc.getText()), not disk, so the panel advances even if the save failed', () => {
+    expect(PANEL_SRC).toContain('const freshContent = doc.getText()')
+    expect(PANEL_SRC).toContain('this.index.indexContent(msg.adrPath, freshContent)')
+  })
+
+  it('surfaces a visible warning when the answer was applied but not saved — never a silent partial success', () => {
+    expect(PANEL_SRC).toContain('Answer applied but not yet saved to disk')
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    expect(match![1]).toContain('if (msg.warning)')
   })
 })
 

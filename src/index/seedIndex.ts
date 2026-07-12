@@ -84,6 +84,15 @@ export class SeedIndex {
   /** Parse and index a single seed file. Returns the parsed SeedFile. */
   indexFile(filePath: string): SeedFile {
     const content = fs.readFileSync(filePath, 'utf-8')
+    return this.indexContent(filePath, content)
+  }
+
+  /**
+   * Parse already-known content and index it — no disk read. See
+   * AdrIndex.indexContent's doc comment for why this exists ("question
+   * doesn't advance" residual, disk-watcher-only root cause).
+   */
+  indexContent(filePath: string, content: string): SeedFile {
     const seed = parseSeed(content, filePath)
     this.seeds.set(filePath, seed)
     this.emit()

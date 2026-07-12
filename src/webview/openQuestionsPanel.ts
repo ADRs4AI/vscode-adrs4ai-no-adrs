@@ -457,29 +457,56 @@ export class OpenQuestionsPanel {
         return
       }
 
-      await vscode.workspace.applyEdit(edit)
-      await vscode.workspace.save(uri)
+      // "Question doesn't advance" residual (Lapidary 5, 2026-07-12): prior
+      // fixes here checked neither applyEdit's nor save()'s return value —
+      // Cmd+Enter's correctness silently depended on the disk write landing
+      // every single time. Harden the instance, on top of killing the class
+      // (extension.ts's new onDidChangeTextDocument trigger):
+      const applied = await vscode.workspace.applyEdit(edit)
+      if (!applied) {
+        this.panel.webview.postMessage({
+          type: 'error',
+          message: `The edit could not be applied to ${msg.adrPath} — nothing was written. Please try again or answer manually.`,
+        })
+        return
+      }
 
-      // Bug fix (seed-2026-07-06-panel-submit-no-refresh-bug.md): don't rely
-      // solely on the FileSystemWatcher round-trip for a write we just made
-      // ourselves. The panel previously depended entirely on the async
-      // watcher → indexFile → onChange → sendQuestions chain to notice its
-      // own write; when that round-trip was slow or missed, the question
-      // stayed visible ("brief blink then nothing") until an unrelated
-      // manual editor save nudged the watcher. Reindexing synchronously here
-      // makes the refresh immediate and deterministic; the watcher remains a
-      // (now redundant, harmless) backup path for externally-made changes.
+      let saved = await vscode.workspace.save(uri)
+      if (!saved) {
+        // A single retry clears the common transient case (a momentary fs
+        // hiccup, a race with another writer); only warn if it fails twice.
+        saved = await vscode.workspace.save(uri)
+      }
+
+      // Reindex from the BUFFER (doc.getText()), not disk (indexFile()) —
+      // applyEdit already succeeded, so the buffer reflects the answer
+      // regardless of whether the disk save did. This is what actually kills
+      // this instance of the bug class: the panel's advance no longer
+      // depends on the save round-trip completing at all.
       // ADR-0018 Step 3: reindex the container this write actually belongs
       // to — indexing a seed path via AdrIndex would misfile it there.
+      const freshContent = doc.getText()
       if (msg.sourceKind === 'seed') {
-        this.seedIndex.indexFile(msg.adrPath)
+        this.seedIndex.indexContent(msg.adrPath, freshContent)
       } else {
-        this.index.indexFile(msg.adrPath)
+        this.index.indexContent(msg.adrPath, freshContent)
       }
 
       // ADR-0023: answer submitted is one atomic event — the draft is
       // promoted (archived, never deleted), not left dangling in the active set.
       this.draftStore.promote(msg.draftKey, new Date().toISOString())
+
+      if (!saved) {
+        // Silent partial success is the D9.4 shape again (the UI lying by
+        // omission) — the panel DID advance (buffer truth), but the answer
+        // isn't actually on disk yet. Say so.
+        this.panel.webview.postMessage({
+          type: 'answered',
+          questionId: msg.questionId,
+          warning: `Answer applied but not yet saved to disk (${msg.adrPath}) — save the file manually to make sure it isn't lost.`,
+        })
+        return
+      }
 
       this.panel.webview.postMessage({ type: 'answered', questionId: msg.questionId })
     } catch (err) {
@@ -1402,6 +1429,14 @@ window.addEventListener('message', e => {
     $id('flash').style.display = 'flex';
     $id('btn-ans').disabled = false;
     setTimeout(() => { $id('flash').style.display = 'none'; }, 900);
+    // "Question doesn't advance" hardening (2026-07-12): the panel now
+    // advances even when the disk save itself failed (reindex uses buffer
+    // truth) — but the human still needs to know the answer isn't
+    // persisted yet, or a crash before the next successful save loses it.
+    if (msg.warning) {
+      $id('err').style.display = 'block';
+      $id('err').textContent = msg.warning;
+    }
   }
   if (msg.type === 'navigate') {
     const i = questions.findIndex(q => q.id === msg.questionId);
