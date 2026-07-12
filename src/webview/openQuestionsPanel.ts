@@ -1149,6 +1149,27 @@ function renderMarkdown(md) {
   if (!md) return '';
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+  // Strip HTML comments (e.g. <!-- @adr-anchor: some-slug -->) BEFORE
+  // anything else touches the string. Returning bug (dispatched 2026-07-10,
+  // apparently never actually landed a fix — this is its third report):
+  // the extractor reads @adr-anchor for slug-override purposes but leaves
+  // the literal comment text in rawBody/rawBodyPost, and esc() below turns
+  // '<' into '&lt;' before any comment syntax could be recognized as a
+  // real HTML comment — so it rendered as visible escaped text instead of
+  // vanishing. Stripping first, unconditionally, is the fix that can't be
+  // bypassed by whichever field (body/bodyPost/adrContext) the comment
+  // happens to land in, since all of them funnel through this function.
+  // Uses '.' + the 's' (dotAll) flag rather than a [\s\S] character class —
+  // a backslash-escape sequence here would need doubling to survive being
+  // embedded in this file's own outer template literal, and the webview
+  // test harness (src/test/helpers/webviewHarness.ts) executes this raw
+  // .ts source text directly via node:vm without ever evaluating that
+  // outer template literal — so a doubled backslash reaches the harness
+  // literally (matching backslash/s/S characters, not "any character") even
+  // though the real extension host's template-literal evaluation would
+  // have collapsed it correctly. '.'  has no such escaping trap.
+  md = md.replace(/<!--.*?-->/gs, '');
+
   // Process fenced code blocks first (protect from inline transforms)
   const codeBlocks = [];
   md = md.replace(/\`\`\`[\\s\\S]*?\`\`\`/g, m => {

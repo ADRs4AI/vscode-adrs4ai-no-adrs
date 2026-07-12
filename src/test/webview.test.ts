@@ -303,6 +303,35 @@ describe('Webview script block syntax', () => {
     expect(valIdx).toBeGreaterThan(inputHandlerIdx)
     expect(timerIdx).toBeGreaterThan(valIdx)
   })
+
+  // Returning bug (dispatched once before, 2026-07-10 dogfooding batch —
+  // "one bug, two reports" — apparently never actually landed a fix; this
+  // is its third report). Root cause: the extractor reads an @adr-anchor
+  // comment for slug-override purposes but leaves the literal comment text
+  // in rawBody/rawBodyPost, and renderMarkdown's esc() turned '<' into
+  // '&lt;' before any comment syntax could be recognized as a real HTML
+  // comment — so it rendered as visible escaped text instead of vanishing.
+  // Harness-based (runs the ACTUAL shipped renderMarkdown, not a
+  // reimplementation of the regex) precisely because the prior fix, if any,
+  // lacked a test that actually executes the panel's markdown path.
+  it('DEBRIEF (returning, 3rd report): a raw <!-- @adr-anchor: ... --> comment never renders as visible text in the panel', () => {
+    const Q1 = {
+      id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1,
+      draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1,
+      groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr',
+      adrContext: '## Human Context\n\n<!-- @adr-anchor: horizontal-scaling-from-day-one -->\n\nSome real context.',
+      body: 'Body text.\n\n<!-- @adr-anchor: another-slug -->\n\nMore body.',
+      bodyPost: 'Post text <!-- @adr-anchor: inline-comment --> continues.',
+    }
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+
+    for (const id of ['ctx-body', 'body', 'body-post']) {
+      const html = h.element(id).innerHTML
+      expect(html, `#${id} must not contain the raw comment`).not.toContain('adr-anchor')
+      expect(html, `#${id} must not contain escaped comment syntax either`).not.toContain('&lt;!--')
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
