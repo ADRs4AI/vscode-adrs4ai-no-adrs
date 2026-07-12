@@ -191,6 +191,30 @@ describe('appendIteration', () => {
     expect(result).toContain('Appended Iteration 3 to adr:0001')
     expect(files.get(ADR_PATH)).toContain('### Iteration 3 (2026-07-08)')
   })
+
+  it('regression: the trailing --- separator stays the terminator before ## Links, not shoved mid-log (Quarry 5\'s bonus artifact, 2026-07-09)', async () => {
+    // AdrSection.lineEnd for the last section in a file includes its
+    // trailing --- separator as part of the body; the original insertion
+    // logic spliced there naively, moving that --- into the middle of the
+    // Iterations log (between the old last entry and the new one) instead
+    // of leaving it as the terminator before the next section. This
+    // reproduced on every single call, not just under concurrency -- caught
+    // while investigating Quarry's report, but never given its own
+    // regression test at the time. Fixing that gap now.
+    const { ctx, files } = makeContext(FIXTURE)
+    await appendIteration(ctx, '1', { outcome: 'second', date: '2026-07-08' })
+    const content = files.get(ADR_PATH)!
+
+    const iterEndIdx = content.indexOf('- Outcome: second')
+    const separatorIdx = content.indexOf('---', iterEndIdx)
+    const linksIdx = content.indexOf('## Links')
+
+    expect(separatorIdx).toBeGreaterThan(-1)
+    expect(separatorIdx).toBeLessThan(linksIdx)
+    // Exactly one --- between the new entry and ## Links, not the entry
+    // wedged between two --- lines.
+    expect(content.slice(iterEndIdx, linksIdx).match(/^---$/gm)?.length).toBe(1)
+  })
 })
 
 describe('updateResolution', () => {
