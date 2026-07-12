@@ -1501,9 +1501,22 @@ $id('btn-drift-hold').addEventListener('click', () => {
 
 function render() {
   if (questions.length === 0) {
+    // DEBRIEF-004 row 4 (Quarry 5): do NOT reset lastShownDraftKey here.
+    // An empty array is a CONTENT-SHAPED signal ("nothing to show right
+    // now"), not a real navigation event -- a transient empty push (a
+    // single-file read racing a concurrent writer mid-save, or any reindex
+    // that momentarily sees zero open questions before settling, routine
+    // in this multi-writer repo) would otherwise wipe the identity gate,
+    // so the SAME question reappearing on the next push gets misjudged as
+    // new by isNewQuestion -- reintroducing DEBRIEF-003's exact symptom
+    // (textarea reset, focus stolen) even though nothing the human did
+    // changed. Showing the empty-state screen doesn't require forgetting
+    // what was last displayed; the gate should only move on real
+    // navigation/terminal transitions (click-to-panel's focus event is
+    // exactly that shape), never as a side effect of "the array is empty
+    // right now."
     $id('empty').style.display = 'flex';
     $id('card').style.display = 'none';
-    lastShownDraftKey = undefined;
     return;
   }
   $id('empty').style.display = 'none';
