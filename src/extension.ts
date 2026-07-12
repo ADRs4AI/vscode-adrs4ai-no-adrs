@@ -30,6 +30,7 @@ import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-miss
 import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { buildAdrCommitMessage } from './commit/commitMessage'
 import { resolveWorkspaceRepository } from './commit/repositoryResolution'
+import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -676,9 +677,11 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
     // Commit
     await repo.commit(message);
 
-    vscode.window.showInformationMessage(
-      `ADR Manager: Committed ${changes.length} ADR file${changes.length === 1 ? '' : 's'}.`
-    );
+    // Jérémie's report (2026-07-12): every staged path used to get called
+    // an "ADR" in this confirmation, including docs/adr/.working/* draft
+    // state — not a decision record. Classify instead of counting blind.
+    const summary = summarizeCommittedArtifacts(changes.map(c => c.uri.fsPath));
+    vscode.window.showInformationMessage(`ADR Manager: Committed ${summary}.`);
   } catch (err) {
     vscode.window.showErrorMessage(`ADR Manager: Commit failed — ${err}`);
   }
