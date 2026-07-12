@@ -31,6 +31,7 @@ import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4
 import { buildAdrCommitMessage } from './commit/commitMessage'
 import { resolveWorkspaceRepository } from './commit/repositoryResolution'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
+import { generateSeedTemplate } from './creation/seedTemplate'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -718,46 +719,6 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
   } catch (err) {
     vscode.window.showErrorMessage(`ADR Manager: Commit failed — ${err}`);
   }
-}
-
-function generateSeedTemplate(title: string, date: string, humanName: string): string {
-  return `# SEED: ${title}
-
-- **Date**: ${date}
-- **From**: ${humanName}
-
----
-
-## Brain Dump
-
-[Everything here — no structure needed. Dump your thoughts, ideas, questions, code snippets, frustrations, inspirations, whatever is on your mind about this topic.]
-
----
-
-**Model Response Request:**
-
-- [ ] Chunk this into ADRs (I'm ready to formalize)
-- [ ] Iterate with me (keep exploring)
-- [ ] Structure in place (organize but don't split)
-
----
-
-## Thread
-
-*(No thread entries yet — paste the model's response below as ### Model Name - Date)*
-
----
-
-## Derived Into
-
-*(This seed has not yet been chunked into ADRs)*
-
-<!-- When this seed is processed, the AI should update this section with:
-- ADR-NNNN: Brief title
-
-If anything in the seed remains unprocessed, make a note at the end of this section.
--->
-`
 }
 
 async function filterQuestions(treeProvider: import('./views/adrTreeProvider').AdrTreeProvider): Promise<void> {
