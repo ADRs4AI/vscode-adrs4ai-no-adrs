@@ -15,6 +15,30 @@ These are the primary regression test fodder for `src/normalizer/`.
 | [zoo-001-bold-fields-open-questions.md](zoo-001-bold-fields-open-questions.md) | D1, D2, D3, D4 | Most common cluster — all from `## Open Questions` + bold field names |
 | [zoo-002-decision-style-no-qsts.md](zoo-002-decision-style-no-qsts.md) | D5 | No Questions section; uses `### Decision N:` structure |
 | [zoo-003-status-with-parenthetical.md](zoo-003-status-with-parenthetical.md) | D2b | `- **Status**: unanswered (see ADR 0004)` — extra text after status value |
+| [zoo-004-wrapped-placeholder-inline-attribution.md](zoo-004-wrapped-placeholder-inline-attribution.md) | D9.4 morphology #4 | `_(pending)_` italic/paren-wrapped placeholder + `**Recommendation** (by X):` inline-attribution form. Real specimen — an "Athanor 5" seat, `temp/0021-crew-architecture-and-staffing.md`, 2026-07-12. Fixed same-day, v0.7.5. |
+
+---
+
+## Wild-format corpus recall (ADR-0031)
+
+This directory doubles as the standing corpus ADR-0031 (Recall-First Question
+Detection) charters Quarry 5 to build and grow. `recall.test.ts` runs
+`parseAdr` against every specimen here and prints a tracked number —
+`detection: N/M corpus specimens` — on every test run. Two counts per
+specimen: **ground truth** (what a human reading the file would recognize as
+open questions) and **today's baseline** (what bare `parseAdr` actually
+detects, no normalizer pass — the panel shows raw parse output; normalizing
+is a manual Quick-Fix, not automatic). The hard assertion is regression
+protection against the baseline, not an idealized 100% — closing the
+ground-truth gap for zoo-001/003-shaped specimens is ADR-0031's own
+outstanding Action Items (`placeholder.ts`, `qst-census`, multi-signal
+candidacy), not something this corpus can force green by itself.
+
+**Growing the corpus**: per ADR-0031's specimen protocol, every new
+wild-format specimen gets a corpus entry here (whether or not it's already
+fixed elsewhere) — add `zoo-NNN-<slug>.md` (minimized, not a raw dump — see
+Provenance below) and a `CORPUS` entry in `recall.test.ts` the day it's
+found.
 
 ---
 
