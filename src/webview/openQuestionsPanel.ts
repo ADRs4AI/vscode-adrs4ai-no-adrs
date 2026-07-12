@@ -1040,6 +1040,19 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 const vscode = acquireVsCodeApi();
 let questions = [], idx = 0;
 let recCollapseThreshold = 0;
+// Bug report (2026-07-12, Jérémie, temp/0048 dogfooding session): in a repo
+// with concurrent writers, ANY unrelated docs/adr/*.md save elsewhere
+// triggers index.onChange -> sendQuestions() -> a 'questions' push here,
+// which used to call render() unconditionally every time — resetting the
+// textarea to the last-saved draftText and stealing focus even while the
+// human was mid-keystroke on the SAME question. That's both "the draft
+// mechanism clobbers me" (a background push can carry an older draftText
+// than what's currently typed but not yet past the 500ms debounce) and
+// "cursor jumps to the end incessantly" (setting .value always collapses
+// the selection). Track which question's draftKey is currently shown so
+// render() can tell "new question, restore is correct" apart from "same
+// question, a page repaint, leave the live textarea alone."
+let lastShownDraftKey;
 // Discards stale/out-of-order 'questions' pushes (Problem 2, panel-submit-
 // no-refresh-bug seed): with multiple sessions writing docs/adr/*.md
 // concurrently, an unrelated reindex triggered elsewhere can race with this
@@ -1343,6 +1356,7 @@ function render() {
   if (questions.length === 0) {
     $id('empty').style.display = 'flex';
     $id('card').style.display = 'none';
+    lastShownDraftKey = undefined;
     return;
   }
   $id('empty').style.display = 'none';
@@ -1376,22 +1390,32 @@ function render() {
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
   else { $id('body-post').style.display = 'none'; }
 
-  // ADR-0023: restore an in-progress draft, if one exists for this question's key.
-  if (q.draftText) {
-    $id('ans').value = q.draftText;
-    const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
-    $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
-    $id('draft-restored').style.display = 'block';
-  } else {
-    $id('ans').value = '';
-    $id('draft-restored').style.display = 'none';
+  // ADR-0023: restore an in-progress draft, if one exists for this question's
+  // key — but ONLY when this is actually a different question than what's
+  // already on screen. render() re-runs on every background 'questions'
+  // push (e.g. an unrelated ADR saved elsewhere), and re-populating the
+  // textarea + stealing focus on every one of those repaints is what was
+  // clobbering in-progress typing and yanking the cursor to the end
+  // "incessantly" — see the note by lastShownDraftKey's declaration.
+  const isNewQuestion = q.draftKey !== lastShownDraftKey;
+  if (isNewQuestion) {
+    if (q.draftText) {
+      $id('ans').value = q.draftText;
+      const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
+      $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
+      $id('draft-restored').style.display = 'block';
+    } else {
+      $id('ans').value = '';
+      $id('draft-restored').style.display = 'none';
+    }
+    lastShownDraftKey = q.draftKey;
   }
   $id('flash').style.display = 'none';
   $id('drift-bar').style.display = 'none';
   $id('btn-ans').disabled = false;
   $id('btn-back').disabled = idx === 0;
   $id('err').style.display = 'none';
-  setTimeout(() => $id('ans').focus(), 50);
+  if (isNewQuestion) setTimeout(() => $id('ans').focus(), 50);
 }
 
 window.addEventListener('message', e => {

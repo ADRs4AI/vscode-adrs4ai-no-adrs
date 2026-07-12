@@ -524,6 +524,16 @@ const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i;
 // brackets — "[see ADR-0014]" — is never misread as a placeholder; only a
 // body that IS one of these stock tokens, and nothing else, counts.
 const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|tbd|pending|todo)[^\]]*\]$/i;
+// Bug report (2026-07-12, Jérémie, temp/0048-mcp-support-rfc-connecting-
+// external-tool-servers.md): a bare "[ ]" (or "[]") is a placeholder too —
+// no stock word, just an empty box, and apparently a common one. A separate,
+// tightly-scoped regex rather than widening PLACEHOLDER_SYNONYM_RE's group
+// to match empty: that regex's trailing `[^\]]*` exists to tolerate extra
+// words after the stock token, and letting the group itself match nothing
+// would make `[^\]]*` swallow ANY bracketed text ("[see ADR-0014]") as a
+// placeholder — exactly the false positive the whole-content-only anchoring
+// on both regexes is designed to prevent.
+const PLACEHOLDER_EMPTY_RE = /^\[\s*\]$/;
 
 function inferAuthorFromDeciders(deciders: string[]): string | undefined {
   const aiName = deciders.find(d => AI_AUTHOR_RE.test(d));
@@ -722,7 +732,8 @@ export function extractQuestion(
     // real answer, but — unlike the canonical form — it's a deviation worth
     // surfacing: the model structured the QST correctly, it just reached
     // for the wrong bracketed word. Never silent (Postel + DMA).
-    const isSynonymPlaceholder = !isCanonicalPlaceholder && PLACEHOLDER_SYNONYM_RE.test(answerText);
+    const isSynonymPlaceholder = !isCanonicalPlaceholder &&
+      (PLACEHOLDER_SYNONYM_RE.test(answerText) || PLACEHOLDER_EMPTY_RE.test(answerText));
     if (isSynonymPlaceholder && warnings) {
       warnings.push({
         code: 'NONSTANDARD_FILL_PLACEHOLDER',

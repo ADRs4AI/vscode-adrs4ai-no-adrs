@@ -109,6 +109,27 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toMatch(/id="draft-restored"/)
   })
 
+  // Regression (fixes bug reported 2026-07-12 by Jérémie): render() re-runs
+  // on every background 'questions' push — including ones triggered by an
+  // unrelated ADR saved elsewhere in the workspace, which is constant in a
+  // repo with concurrent writers. It used to unconditionally reset the
+  // textarea to the last-saved draftText and steal focus on every single one
+  // of those repaints, which both clobbered in-progress typing (a background
+  // push can carry an older draftText than what's currently typed but not
+  // yet past the 500ms debounce) and yanked the cursor to the end of the box
+  // "incessantly" (setting .value always collapses the selection). The fix
+  // tracks which question was last shown and only touches the textarea/focus
+  // when the question actually changed.
+  it('render() only restores the textarea/focus when the question actually changed, not on every background refresh', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(script).toContain('lastShownDraftKey')
+    // The draft-restore block and the focus() call must both be gated on the
+    // same-question check — not run unconditionally on every render().
+    expect(script).toMatch(/isNewQuestion\s*=\s*q\.draftKey\s*!==\s*lastShownDraftKey/)
+    expect(script).toMatch(/if \(isNewQuestion\)[\s\S]{0,20}\$id\('ans'\)\.focus\(\)/)
+  })
+
   it('ADR-0023: submit() includes draftKey + fileChecksum for the drift fence', () => {
     const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
     const script = match![1]

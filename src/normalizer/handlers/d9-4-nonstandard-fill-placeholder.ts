@@ -40,6 +40,13 @@ import { contentChecksum } from '../patch-applicator'
  */
 const INLINE_ANS_PLACEHOLDER_RE =
   /^(\s*)\*\*ANS:\*\*\s*(\((?:by|from)\s+[^)]+\)\s*)?\[\s*(?:unanswered|to be answered|tbd|pending|todo)[^\]]*\]\s*$/i
+// Bug report (2026-07-12, Jérémie, temp/0048): a bare "[ ]"/"[]" is the same
+// deviation class as the named synonyms above, but a separate regex on
+// purpose — folding it into the group above (matching on empty) would let
+// its trailing `[^\]]*` swallow ANY bracketed text ("[see ADR-0014]") as a
+// false-positive placeholder, same hazard noted in extractor.ts's sibling fix.
+const INLINE_ANS_EMPTY_PLACEHOLDER_RE =
+  /^(\s*)\*\*ANS:\*\*\s*(\((?:by|from)\s+[^)]+\)\s*)?\[\s*\]\s*$/i
 
 export class D94NonstandardFillPlaceholderHandler implements ViolationHandler {
   readonly id = 'd9-4-nonstandard-fill-placeholder'
@@ -53,7 +60,7 @@ export class D94NonstandardFillPlaceholderHandler implements ViolationHandler {
     const records: ViolationRecord[] = []
 
     for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(INLINE_ANS_PLACEHOLDER_RE)
+      const m = lines[i].match(INLINE_ANS_PLACEHOLDER_RE) ?? lines[i].match(INLINE_ANS_EMPTY_PLACEHOLDER_RE)
       if (!m) continue
       records.push({
         handlerId: this.id,
@@ -69,7 +76,7 @@ export class D94NonstandardFillPlaceholderHandler implements ViolationHandler {
   }
 
   fix(_content: string, record: ViolationRecord): Patch {
-    const m = record.originalText.match(INLINE_ANS_PLACEHOLDER_RE)!
+    const m = record.originalText.match(INLINE_ANS_PLACEHOLDER_RE) ?? record.originalText.match(INLINE_ANS_EMPTY_PLACEHOLDER_RE)!
     const indent = m[1]
     const attribution = m[2]?.trim()
     const marker = attribution ? `**ANS:** ${attribution}` : '**ANS:**'

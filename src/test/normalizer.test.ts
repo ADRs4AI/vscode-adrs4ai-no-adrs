@@ -988,6 +988,18 @@ const ZOO_0094_WITH_ATTRIBUTION = `# ADR-0011: Test
 **ANS:** (by Jérémie) [pending]
 `
 
+// Regression specimen (2026-07-12, Jérémie): a bare "[ ]" is the same
+// deviation class as "[unanswered]" — no stock word, just an empty box.
+const ZOO_0094_EMPTY_BRACKET_SPECIMEN = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Jérémie) [ ]
+`
+
 describe('D94NonstandardFillPlaceholderHandler', () => {
   const handler = new D94NonstandardFillPlaceholderHandler()
   const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
@@ -1028,6 +1040,33 @@ describe('D94NonstandardFillPlaceholderHandler', () => {
     expect(records).toHaveLength(1)
     const patch = handler.fix(ZOO_0094_WITH_ATTRIBUTION, records[0])
     expect(patch.replacement).toBe('**ANS:** (by Jérémie)\n[Fill this in]')
+  })
+
+  // Regression (fixes bug reported 2026-07-12 by Jérémie, live specimen
+  // temp/0048-mcp-support-rfc-connecting-external-tool-servers.md — a bare
+  // "[ ]" answer, on its own line after "**ANS:** (by Jérémie)"). Covers the
+  // inline shape here; the two-line shape from the actual live specimen is
+  // covered by the parser-level regression in parser.test.ts (isAnswered),
+  // which is the part of the bug that actually made the question vanish.
+  it('detects and fixes the bare empty-bracket placeholder "[ ]"', () => {
+    const records = handler.detect(ZOO_0094_EMPTY_BRACKET_SPECIMEN, parseResult)
+    expect(records).toHaveLength(1)
+    const patch = handler.fix(ZOO_0094_EMPTY_BRACKET_SPECIMEN, records[0])
+    expect(patch.replacement).toBe('**ANS:** (by Jérémie)\n[Fill this in]')
+  })
+
+  it('guard the guard: does NOT flag a real inline answer that happens to end in a bracket', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+
+**ANS:** (by Human) See the discussion [above].
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
   })
 
   it('DMA: message validates the structure was correct before naming the deviation', () => {

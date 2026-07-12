@@ -2281,6 +2281,35 @@ This is pending final review, but our lean is option A.
     expect(adr.questions[0].isAnswered).toBe(true)
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
+
+  // Regression (fixes bug reported 2026-07-12 by Jérémie, live specimen
+  // temp/0048-mcp-support-rfc-connecting-external-tool-servers.md): a bare
+  // "[ ]" on its own line after "**ANS:** (by Jérémie)" was not recognized
+  // by PLACEHOLDER_SYNONYM_RE (which only matched named stock tokens like
+  // "[unanswered]"), so it became a real `answer` of literally "[ ]" ->
+  // isAnswered: true -> the question silently vanished from the Open
+  // Questions panel as done, even though nobody had answered it. Same bug
+  // class as D9.4 (a live specimen it didn't cover), fixed by adding
+  // PLACEHOLDER_EMPTY_RE alongside the synonym regex.
+  it.each(['[ ]', '[]', '[   ]'])(
+    'regression: bare empty-bracket placeholder %s is recognized as unanswered, not a real answer',
+    (placeholder) => {
+      const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+${placeholder}
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+      expect(adr.questions[0].isAnswered).toBe(false)
+      expect(adr.questions[0].answer).toBeUndefined()
+      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
+    },
+  )
 })
 
 // ---------------------------------------------------------------------------
