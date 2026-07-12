@@ -17,9 +17,8 @@ import { execSync } from 'child_process'
 import * as crypto from 'crypto'
 import * as path from 'path'
 import * as os from 'os'
-import type { AdrIndex } from '../index/adrIndex'
-import type { SeedIndex } from '../index/seedIndex'
-import type { Recommendation, Question } from '../parser/types'
+import type { CompositeIndex } from '../index/compositeIndex'
+import type { AdrFile, Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
@@ -64,6 +63,15 @@ interface WebviewQuestion {
    */
   groupSortKey: string
   groupLabel: string
+  /**
+   * ADR-0025 panel-aggregation (QST `panel-aggregation`, Option A): which
+   * root this question's container belongs to. Feeds the root-filter chip
+   * and, for ADR-sourced questions, `draftKey`'s containerId — two roots
+   * can each have their own numbered ADR-0001, so a bare adrNumber isn't a
+   * safe containerId across roots (same shape of collision Flint's ADR-0018
+   * Step 3 fixed for ADR-vs-seed containers, one level up).
+   */
+  rootNamespace: string
   /** ADR-0023 CATCH 3 guard: sibling count sharing this question's text-hash in the ADR right now. */
   totalOccurrences: number
   /** ADR-0023 drift fence: the ADR file's content checksum at render time. */
@@ -126,12 +134,12 @@ export class OpenQuestionsPanel {
 
   // ---------------------------------------------------------------------------
 
-  static createOrShow(index: AdrIndex, seedIndex: SeedIndex): void {
+  static createOrShow(composite: CompositeIndex): void {
     if (OpenQuestionsPanel.instance) {
       OpenQuestionsPanel.instance.panel.reveal(vscode.ViewColumn.One)
       return
     }
-    new OpenQuestionsPanel(index, seedIndex)
+    new OpenQuestionsPanel(composite)
   }
 
   /** Jump the open panel to a specific question by ID. Call after createOrShow. */
@@ -142,7 +150,7 @@ export class OpenQuestionsPanel {
     }, 150)
   }
 
-  private constructor(private readonly index: AdrIndex, private readonly seedIndex: SeedIndex) {
+  private constructor(private readonly composite: CompositeIndex) {
     OpenQuestionsPanel.instance = this
 
     // ADR-0023: docs/adr/.working/ — committed substrate, not a gitignored
@@ -181,11 +189,10 @@ export class OpenQuestionsPanel {
       this.disposables,
     )
 
-    // Refresh when index changes (file edits, saves, etc.)
-    const unsubscribe = index.onChange(() => this.sendQuestions())
+    // Refresh when anything in the composite changes (file edits, saves,
+    // etc.) — any root, not just the one that happened to be active first.
+    const unsubscribe = composite.onChange(() => this.sendQuestions())
     this.disposables.push({ dispose: unsubscribe })
-    const unsubscribeSeeds = seedIndex.onChange(() => this.sendQuestions())
-    this.disposables.push({ dispose: unsubscribeSeeds })
 
     this.sendQuestions()
   }
@@ -208,6 +215,7 @@ export class OpenQuestionsPanel {
       adrContext: string | undefined
       groupSortKey: string
       groupLabel: string
+      rootNamespace: string
     },
   ): WebviewQuestion[] {
     // ADR-0023: occurrence ordinals/counts computed over ALL questions in
@@ -248,56 +256,74 @@ export class OpenQuestionsPanel {
           sourceKind: opts.sourceKind,
           groupSortKey: opts.groupSortKey,
           groupLabel: opts.groupLabel,
+          rootNamespace: opts.rootNamespace,
         }
       })
   }
 
   private sendQuestions(): void {
-    const adrRows: WebviewQuestion[] = this.index.allAdrs().flatMap(adr => {
-      const cleanTitle = adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || adr.title
-      // ADR-0010: Collect context from sections before ## Questions for the collapsible context box.
-      // Include: Human Context, AI Interpretation (and any other ## sections before Questions).
-      const contextSections = adr.sections.filter(s => {
-        const h = s.heading.toLowerCase()
-        return h !== 'questions' && h !== 'quick reference' && h !== 'decision'
-          && h !== 'action items' && h !== 'iterations' && h !== 'links'
-          && h !== 'validation' && h !== 'supporting materials'
-          && s.lineStart < (adr.sections.find(qs => qs.heading === 'Questions')?.lineStart ?? Infinity)
-      })
-      const adrContext = contextSections.length > 0
-        ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
-        : undefined
+    // ADR-0025 panel-aggregation (Option A): walk every root in the
+    // composite, not just a single AdrIndex/SeedIndex pair. groupSortKey is
+    // prefixed by root namespace FIRST so the TOC clusters by project (per
+    // Lapidary's "per-root labels" lean) before falling back to the
+    // existing ADR-before-seed, then numeric/path ordering within a root.
+    // N=1 case: exactly one namespace, so the prefix is a no-op on display
+    // order — zero conditionals needed to keep the single-root case trivial.
+    const questions: WebviewQuestion[] = []
+    for (const node of this.composite.walk()) {
+      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => {
+        const cleanTitle = adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || adr.title
+        // ADR-0010: Collect context from sections before ## Questions for the collapsible context box.
+        // Include: Human Context, AI Interpretation (and any other ## sections before Questions).
+        const contextSections = adr.sections.filter(s => {
+          const h = s.heading.toLowerCase()
+          return h !== 'questions' && h !== 'quick reference' && h !== 'decision'
+            && h !== 'action items' && h !== 'iterations' && h !== 'links'
+            && h !== 'validation' && h !== 'supporting materials'
+            && s.lineStart < (adr.sections.find(qs => qs.heading === 'Questions')?.lineStart ?? Infinity)
+        })
+        const adrContext = contextSections.length > 0
+          ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
+          : undefined
 
-      const num = String(adr.number).padStart(4, '0')
-      return this.buildRows(adr.questions, {
-        containerId: String(adr.number),
-        adrPath: adr.path,
-        checksum: adr.checksum,
-        sourceKind: 'adr',
-        adrNumber: adr.number,
-        adrContext,
-        // '0-' prefix sorts all ADRs before all seeds ('1-' below); zero-padded
-        // number keeps ADRs in numeric order among themselves.
-        groupSortKey: `0-${num}`,
-        groupLabel: `ADR-${num}: ${cleanTitle}`,
+        const num = String(adr.number).padStart(4, '0')
+        return this.buildRows(adr.questions, {
+          // Root-qualified: a bare adrNumber isn't a safe containerId once
+          // more than one root exists — two roots can each have their own
+          // ADR-0001. Same collision shape Flint's ADR-0018 Step 3 fixed
+          // for ADR-vs-seed containers, one level up (roots vs. containers).
+          containerId: `${node.namespace}:${adr.number}`,
+          adrPath: adr.path,
+          checksum: adr.checksum,
+          sourceKind: 'adr',
+          adrNumber: adr.number,
+          adrContext,
+          // Root namespace first (clusters the TOC by project), then '0-'
+          // before seeds' '1-' within a root, then zero-padded number.
+          groupSortKey: `${node.namespace}::0-${num}`,
+          groupLabel: `ADR-${num}: ${cleanTitle}`,
+          rootNamespace: node.namespace,
+        })
       })
-    })
 
-    const seedRows: WebviewQuestion[] = this.seedIndex.allSeeds().flatMap(seed => {
-      const dateStr = seed.date ? ` (${seed.date})` : ''
-      return this.buildRows(seed.questions, {
-        containerId: seed.path,
-        adrPath: seed.path,
-        checksum: seed.checksum,
-        sourceKind: 'seed',
-        adrNumber: 0,
-        adrContext: undefined,
-        groupSortKey: `1-${seed.path}`,
-        groupLabel: `SEED${dateStr}: ${seed.topic}`,
+      const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed => {
+        const dateStr = seed.date ? ` (${seed.date})` : ''
+        return this.buildRows(seed.questions, {
+          // Already globally unique (an absolute path) — no root-qualification needed.
+          containerId: seed.path,
+          adrPath: seed.path,
+          checksum: seed.checksum,
+          sourceKind: 'seed',
+          adrNumber: 0,
+          adrContext: undefined,
+          groupSortKey: `${node.namespace}::1-${seed.path}`,
+          groupLabel: `SEED${dateStr}: ${seed.topic}`,
+          rootNamespace: node.namespace,
+        })
       })
-    })
 
-    const questions = [...adrRows, ...seedRows]
+      questions.push(...adrRows, ...seedRows)
+    }
 
     const cfg = vscode.workspace.getConfiguration('adrManager')
     const settingsName = cfg.get<string>('humanName', '')
@@ -306,7 +332,7 @@ export class OpenQuestionsPanel {
       type: 'questions',
       questions,
       // Priority: settings > git config > top name from ADR index
-      gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.index)[0],
+      gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
       recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
       generation: this.questionsGeneration,
     })
@@ -352,6 +378,21 @@ export class OpenQuestionsPanel {
       const doc = await vscode.workspace.openTextDocument(uri)
       const currentContent = doc.getText()
 
+      // ADR-0025 panel-aggregation (Option A): resolve which root owns this
+      // write BEFORE anything else — the clobber-adjacent stake this QST
+      // exists for is a write landing in (or being attributed to) the wrong
+      // project when two roots share an ADR number. Refuse rather than
+      // guess if the file isn't under any known root (same "never write
+      // blind" discipline as the drift fence below).
+      const owningRoot = this.composite.findRoot(msg.adrPath)
+      if (!owningRoot) {
+        this.panel.webview.postMessage({
+          type: 'error',
+          message: `Could not determine which project owns ${msg.adrPath} — it may be outside every discovered root. Please answer it manually.`,
+        })
+        return
+      }
+
       // ADR-0023 drift fence: never write blind. If the file changed under
       // this in-flight answer, stop and let the human choose — the draft
       // (already auto-saved) is safe in all three consent paths.
@@ -392,9 +433,12 @@ export class OpenQuestionsPanel {
         freshQuestions = parseSeed(currentContent, msg.adrPath).questions
         freshContainerId = msg.adrPath
       } else {
-        const freshAdr = parseAdr(currentContent, msg.adrPath)
+        const freshAdr = parseAdr(currentContent, msg.adrPath, { namespace: owningRoot.namespace })
         freshQuestions = freshAdr.questions
-        freshContainerId = String(freshAdr.number)
+        // Root-qualified to match sendQuestions()'s containerId — see the
+        // rootNamespace doc comment on WebviewQuestion for why a bare
+        // adrNumber isn't safe once more than one root exists.
+        freshContainerId = `${owningRoot.namespace}:${freshAdr.number}`
       }
       const freshOrdinals = computeOccurrenceOrdinals(freshQuestions.map(q => q.text))
       const currentQuestion = freshQuestions.find((q, i) =>
@@ -483,13 +527,18 @@ export class OpenQuestionsPanel {
       // regardless of whether the disk save did. This is what actually kills
       // this instance of the bug class: the panel's advance no longer
       // depends on the save round-trip completing at all.
-      // ADR-0018 Step 3: reindex the container this write actually belongs
-      // to — indexing a seed path via AdrIndex would misfile it there.
+      // ADR-0018 Step 3 + ADR-0025 panel-aggregation: reindex the container
+      // this write actually belongs to — indexing a seed path via AdrIndex
+      // would misfile it there, and reindexing through the WRONG root's
+      // AdrIndex would leave the correct root's copy stale (the write lands
+      // correctly on disk either way, since msg.adrPath is already an
+      // absolute path, but the in-memory index driving the panel needs to
+      // be the owning root's, not a global singleton that only knows one root).
       const freshContent = doc.getText()
       if (msg.sourceKind === 'seed') {
-        this.seedIndex.indexContent(msg.adrPath, freshContent)
+        owningRoot.seeds.indexContent(msg.adrPath, freshContent)
       } else {
-        this.index.indexContent(msg.adrPath, freshContent)
+        owningRoot.adrs.indexContent(msg.adrPath, freshContent)
       }
 
       // ADR-0023: answer submitted is one atomic event — the draft is
@@ -563,13 +612,13 @@ function getGitUserName(): string | undefined {
  * Filters out AI model names (Sonnet, Opus, Haiku, Claude, GPT, Gemini, etc.)
  * so only human names appear in the suggestion list.
  */
-function extractHumanNames(index: AdrIndex): string[] {
+function extractHumanNames(adrs: AdrFile[]): string[] {
   const freq = new Map<string, number>()
   const bump = (name: string) => freq.set(name, (freq.get(name) ?? 0) + 1)
 
   const AI_NAME_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral/i
 
-  for (const adr of index.allAdrs()) {
+  for (const adr of adrs) {
     for (const d of adr.deciders) {
       if (!AI_NAME_RE.test(d)) bump(d)
     }
@@ -659,6 +708,32 @@ body{
   font-family:var(--vscode-font-family);
 }
 .adr-link:hover{opacity:.8}
+/* ADR-0025 panel-aggregation: root-filter chip bar, TOC overlay only.
+   Hidden entirely when the question set spans a single root (N=1 stays
+   the trivial case — no chip bar clutters the common single-project view). */
+#q-root-filter{
+  display:none;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:0 20px 10px;
+}
+.root-chip{
+  display:inline-flex;align-items:center;
+  background:var(--vscode-badge-background);
+  color:var(--vscode-badge-foreground);
+  border-radius:12px;
+  padding:2px 10px;
+  font-size:11px;font-weight:600;
+  cursor:pointer;
+  border:1px solid transparent;
+  font-family:var(--vscode-font-family);
+  opacity:.65;
+}
+.root-chip:hover{opacity:.85}
+.root-chip.active{
+  opacity:1;
+  border-color:var(--vscode-focusBorder);
+}
 .qtext{
   font-size:20px;font-weight:600;
   line-height:1.4;
@@ -1032,6 +1107,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
       <span class="q-panel-title" id="q-panel-title">Open Questions</span>
       <button class="q-close" id="q-close" title="Close (Esc)">✕</button>
     </div>
+    <div id="q-root-filter"></div>
     <div id="q-panel-body"></div>
   </div>
 </div>
@@ -1264,15 +1340,40 @@ function showOverlay() {
   if (cur) cur.scrollIntoView({ block: 'center' });
 }
 function hideOverlay() { $id('q-overlay').classList.remove('open'); }
+// ADR-0025 panel-aggregation: null = "All roots". Scoped to the TOC overlay
+// only — the main single-question Cmd+Enter flow always advances through
+// every root's questions; the filter narrows what's browsable in the list,
+// it doesn't remove anything from the underlying to-do list.
+let rootFilter = null;
+
+function renderRootFilterChips() {
+  const namespaces = [...new Set(questions.map(q => q.rootNamespace))];
+  const bar = $id('q-root-filter');
+  // N=1 case: exactly one namespace, so the chip bar stays hidden — no
+  // clutter for the common single-project view.
+  if (namespaces.length < 2) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  if (rootFilter && !namespaces.includes(rootFilter)) rootFilter = null;
+  bar.style.display = 'flex';
+  let html = '<button class="root-chip' + (rootFilter === null ? ' active' : '') + '" data-root="">All roots</button>';
+  for (const ns of namespaces.sort()) {
+    html += '<button class="root-chip' + (ns === rootFilter ? ' active' : '') + '" data-root="' + ns + '">' + ns + '</button>';
+  }
+  bar.innerHTML = html;
+}
+
 function renderOverlay() {
-  $id('q-panel-title').textContent = 'Open Questions (' + questions.length + ')';
+  renderRootFilterChips();
+  const visible = rootFilter === null ? questions : questions.filter(q => q.rootNamespace === rootFilter);
+  $id('q-panel-title').textContent = 'Open Questions (' + visible.length + (rootFilter ? ' of ' + questions.length : '') + ')';
   // ADR-0018 Step 3: group by server-computed groupSortKey/groupLabel, not
   // adrNumber directly — seeds have no number, so grouping by adrNumber
   // alone would merge every seed's questions into one bogus "ADR-0000"
-  // group. A plain string sort on groupSortKey keeps ADRs before seeds
-  // (the '0-'/'1-' prefixes) without any container-kind-aware JS here.
+  // group. A plain string sort on groupSortKey keeps roots clustered
+  // together (ADR-0025), ADRs before seeds within a root, without any
+  // container-kind-aware JS here.
   const byGroup = {};
-  questions.forEach((q, i) => {
+  visible.forEach(q => {
+    const i = questions.indexOf(q);
     if (!byGroup[q.groupSortKey]) byGroup[q.groupSortKey] = { label: q.groupLabel, items: [] };
     byGroup[q.groupSortKey].items.push({ q, i });
   });
@@ -1289,6 +1390,12 @@ function renderOverlay() {
 
 $id('q-list-link').addEventListener('click', e => { e.preventDefault(); showOverlay(); });
 $id('q-close').addEventListener('click', hideOverlay);
+$id('q-root-filter').addEventListener('click', e => {
+  const btn = e.target.closest('[data-root]');
+  if (!btn) return;
+  rootFilter = btn.dataset.root || null;
+  renderOverlay();
+});
 $id('q-overlay').addEventListener('click', e => { if (e.target === $id('q-overlay')) hideOverlay(); });
 $id('q-panel-body').addEventListener('click', e => {
   const btn = e.target.closest('[data-qi]');
@@ -1326,11 +1433,30 @@ let draftSaveTimer = null;
 $id('ans').addEventListener('input', () => {
   if (!questions[idx]) return;
   const q = questions[idx];
+  // DEBRIEF-004: capture the typed text NOW, at input time — not by
+  // re-reading $id('ans').value when the timer fires 500ms later. In that
+  // window a background 'questions' push or a skip/back navigation can
+  // repaint the textarea with a DIFFERENT question's content; reading the
+  // DOM at fire time would then save that other question's text under
+  // this question's draftKey. Freezing the value at input time ties the
+  // save to what was actually typed for this question.
+  const val = $id('ans').value;
+  // DEBRIEF-004 (Quarry 5, adversarial harness "smoke 2"): keep the LOCAL
+  // cache in sync too, not just the server's drafts.json copy. render()
+  // reads q.draftText straight out of the questions array, and nothing
+  // refreshes that array on skip/back — only a fresh 'questions' push does.
+  // Without this, typing -> skip -> back restores whatever draftText was
+  // present at the LAST server push (often empty, on a freshly opened
+  // question), discarding what was just typed and already auto-saved
+  // server-side. Mutating q.draftText in place updates the same object
+  // reference sitting in questions[idx], so it survives skip/back even
+  // before any new push arrives.
+  q.draftText = val;
   clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(() => {
     vscode.postMessage({
       type: 'draft', draftKey: q.draftKey, adrPath: q.adrPath, adrNumber: q.adrNumber,
-      questionText: q.text, draftText: $id('ans').value, totalOccurrences: q.totalOccurrences,
+      questionText: q.text, draftText: val, totalOccurrences: q.totalOccurrences,
     });
     $id('draft-flash').style.display = 'inline-flex';
     setTimeout(() => { $id('draft-flash').style.display = 'none'; }, 900);
@@ -1425,13 +1551,38 @@ window.addEventListener('message', e => {
       return; // stale push, superseded by data we already applied — ignore it
     }
     if (typeof msg.generation === 'number') lastQuestionsGeneration = msg.generation;
+    // DEBRIEF-004 root cause: idx is a bare POSITION in a rebuilt array.
+    // sendQuestions() reflattens every root's every ADR/seed on EVERY push,
+    // and AdrIndex.allAdrs() re-sorts fresh each call — so in this
+    // multi-writer repo, ANY unrelated docs/adr/*.md save anywhere
+    // (not just the file currently open) can add/remove/reorder entries in
+    // this list before idx's next use. Blindly keeping the same idx after
+    // such a push can silently land it on a COMPLETELY DIFFERENT question;
+    // the isNewQuestion gate then (correctly, given that wrong premise)
+    // wipes the live textarea. That's the "field vanished mid-typing"
+    // incident, and the same drift explains skip-and-return not restoring
+    // (the "back" step lands on whatever now occupies that position, not
+    // the question that used to be there). Re-locate the question that was
+    // actually on screen by its stable draftKey before falling back to the
+    // old positional clamp.
+    const currentKey = questions[idx] ? questions[idx].draftKey : undefined;
     questions = msg.questions;
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
-    // Clamp idx: if the list shrank (answered question removed), idx may now
-    // point past the end. Clamp to last item rather than wrapping to 0 —
-    // this keeps the user on the question they just skipped past, not the first.
-    if (questions.length === 0) { idx = 0; }
-    else if (idx >= questions.length) { idx = questions.length - 1; }
+    if (questions.length === 0) {
+      idx = 0;
+    } else {
+      const relocated = currentKey !== undefined ? questions.findIndex(q => q.draftKey === currentKey) : -1;
+      if (relocated >= 0) {
+        // Same question, just at a new position — idx corrected, nothing
+        // else changes, isNewQuestion will correctly read false in render().
+        idx = relocated;
+      } else if (idx >= questions.length) {
+        // Genuinely gone (answered/removed elsewhere) and no fallback
+        // position: clamp to last item rather than wrapping to 0 — keeps
+        // the user near where they were, not back at the first question.
+        idx = questions.length - 1;
+      }
+    }
 
     // Pre-fill author: saved state > git config > top name from ADR index
     if (!saved.author && (msg.gitAuthor || (msg.authorSuggestions && msg.authorSuggestions[0]))) {

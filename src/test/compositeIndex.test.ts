@@ -115,6 +115,49 @@ describe('CompositeIndex.fromWorkspace', () => {
   })
 })
 
+describe('CompositeIndex.onChange', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composite-index-onchange-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('fires when a change happens on a NESTED root, not just the top-level one', async () => {
+    writeAdr(path.join(dir, 'docs', 'adr'), '0001-parent.md', 1, 'Parent')
+    const nestedRoot = path.join(dir, 'nested')
+    const nestedAdrDir = path.join(nestedRoot, 'docs', 'adr')
+    writeAdr(nestedAdrDir, '0001-child.md', 1, 'Child')
+
+    const composite = await CompositeIndex.fromWorkspace(dir, { adrDirRel: 'docs/adr' })
+    let fired = 0
+    composite.onChange(() => { fired++ })
+
+    // Change something in the nested root's own index, not the top root's.
+    composite.root.children[0].adrs.indexFile(path.join(nestedAdrDir, '0001-child.md'))
+
+    expect(fired).toBe(1)
+  })
+
+  it('the returned unsubscribe silences ALL roots, not just the one last subscribed', async () => {
+    writeAdr(path.join(dir, 'docs', 'adr'), '0001-parent.md', 1, 'Parent')
+    writeAdr(path.join(dir, 'nested', 'docs', 'adr'), '0001-child.md', 1, 'Child')
+
+    const composite = await CompositeIndex.fromWorkspace(dir, { adrDirRel: 'docs/adr' })
+    let fired = 0
+    const unsubscribe = composite.onChange(() => { fired++ })
+    unsubscribe()
+
+    composite.root.adrs.indexFile(path.join(dir, 'docs', 'adr', '0001-parent.md'))
+    composite.root.children[0].adrs.indexFile(path.join(dir, 'nested', 'docs', 'adr', '0001-child.md'))
+
+    expect(fired).toBe(0)
+  })
+})
+
 describe('CompositeIndex.wrapSingle', () => {
   it('wraps an already-populated AdrIndex/SeedIndex pair with zero scanning', () => {
     const adrs = new AdrIndex()

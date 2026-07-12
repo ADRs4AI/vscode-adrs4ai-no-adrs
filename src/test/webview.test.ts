@@ -17,6 +17,7 @@ import { resolve } from 'node:path'
 import vm from 'node:vm'
 import { describe, it, expect } from 'vitest'
 import { bodyMaxWidthCss } from '../webview/panelSettings'
+import { createWebviewHarness } from './helpers/webviewHarness'
 
 const PANEL_SRC = readFileSync(
   resolve(__dirname, '../webview/openQuestionsPanel.ts'),
@@ -172,9 +173,9 @@ describe('Webview script block syntax', () => {
     expect(script).toContain('sourceKind: q.sourceKind')
   })
 
-  it('ADR-0018 Step 3: createOrShow and the constructor both take a SeedIndex', () => {
-    expect(PANEL_SRC).toContain('createOrShow(index: AdrIndex, seedIndex: SeedIndex)')
-    expect(PANEL_SRC).toContain('constructor(private readonly index: AdrIndex, private readonly seedIndex: SeedIndex)')
+  it('ADR-0025 panel-aggregation: createOrShow and the constructor both take a CompositeIndex', () => {
+    expect(PANEL_SRC).toContain('createOrShow(composite: CompositeIndex)')
+    expect(PANEL_SRC).toContain('constructor(private readonly composite: CompositeIndex)')
   })
 
   it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
@@ -182,10 +183,14 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('parseSeed(currentContent, msg.adrPath)')
   })
 
-  it('ADR-0018 Step 3: reindexes the seed index (not the ADR index) after a seed write', () => {
+  it('ADR-0018 Step 3 + ADR-0025: reindexes the OWNING ROOT\'s seed index (not the ADR index) after a seed write', () => {
     // Updated 2026-07-12: reindexes from buffer content (indexContent), not
     // disk (indexFile) — see the "question doesn't advance" fix below.
-    expect(PANEL_SRC).toContain('this.seedIndex.indexContent(msg.adrPath, freshContent)')
+    // Updated again same day (ADR-0025 panel-aggregation): reindexes through
+    // the CompositeIndex.findRoot()-resolved owning root, not a single
+    // global seedIndex singleton — a write in one root must never be
+    // reindexed against a different root's index.
+    expect(PANEL_SRC).toContain('owningRoot.seeds.indexContent(msg.adrPath, freshContent)')
   })
 
   // "Question doesn't advance" residual (Lapidary 5, 2026-07-12): no file in
@@ -208,13 +213,95 @@ describe('Webview script block syntax', () => {
 
   it('reindexes from the live buffer (doc.getText()), not disk, so the panel advances even if the save failed', () => {
     expect(PANEL_SRC).toContain('const freshContent = doc.getText()')
-    expect(PANEL_SRC).toContain('this.index.indexContent(msg.adrPath, freshContent)')
+    expect(PANEL_SRC).toContain('owningRoot.adrs.indexContent(msg.adrPath, freshContent)')
+  })
+
+  it('ADR-0025 panel-aggregation: writeAnswer resolves the owning root via findRoot() and refuses (not guesses) when the file is outside every known root', () => {
+    expect(PANEL_SRC).toContain('const owningRoot = this.composite.findRoot(msg.adrPath)')
+    expect(PANEL_SRC).toContain('if (!owningRoot) {')
+  })
+
+  it('ADR-0025 panel-aggregation: ADR-sourced draftKey containerId is root-qualified, seed containerId is unchanged', () => {
+    expect(PANEL_SRC).toContain('containerId: `${node.namespace}:${adr.number}`')
+    expect(PANEL_SRC).toContain('freshContainerId = `${owningRoot.namespace}:${freshAdr.number}`')
+    // Seed containerId stays the seed's own absolute path — already globally unique.
+    expect(PANEL_SRC).toContain("freshContainerId = msg.adrPath")
   })
 
   it('surfaces a visible warning when the answer was applied but not saved — never a silent partial success', () => {
     expect(PANEL_SRC).toContain('Answer applied but not yet saved to disk')
     const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
     expect(match![1]).toContain('if (msg.warning)')
+  })
+
+  // DEBRIEF-004 (Jérémie, 2026-07-12, ADR-0025 QST-1): live answer vanished
+  // mid-typing, and skip-then-return-to-question failed to restore the
+  // draft. Root cause: idx is a bare POSITION in the flattened `questions`
+  // array, which sendQuestions() rebuilds from scratch on EVERY push — in
+  // this multi-writer repo, any unrelated docs/adr/*.md save anywhere can
+  // reorder or resize that array between pushes. Keeping the same idx after
+  // such a push can silently repoint it at a different question; the
+  // isNewQuestion gate then (correctly, given the wrong premise) wipes the
+  // live textarea — that's the vanish, and the same drift explains why
+  // "back" after a skip doesn't land on the question that was actually
+  // skipped. Fix: re-locate the on-screen question by its stable draftKey
+  // before falling back to positional clamping.
+  describe('DEBRIEF-004: idx re-anchoring across background "questions" pushes', () => {
+    it('captures the on-screen question\'s draftKey before the array is replaced, and relocates by it', () => {
+      const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+      const script = match![1]
+      expect(script).toContain('const currentKey = questions[idx] ? questions[idx].draftKey : undefined')
+      expect(script).toContain('questions.findIndex(q => q.draftKey === currentKey)')
+    })
+
+    it('only falls back to positional clamping when the on-screen question cannot be found by key', () => {
+      const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+      const script = match![1]
+      expect(script).toMatch(/relocated >= 0/)
+      expect(script).toMatch(/idx = relocated/)
+    })
+
+    it('harness: mid-typing vanish — a background push that reorders the array does not clobber the live-typed answer', () => {
+      // Runs the ACTUAL shipped script (Quarry 5's node:vm harness), not a
+      // reimplementation. This is the incident shape: user is on the second
+      // question in the list; an unrelated docs/adr/*.md save elsewhere
+      // (constant in this multi-writer repo) triggers a 'questions' push
+      // whose flattened array now lists that same question FIRST (e.g. a
+      // new, earlier-sorting ADR/root was indexed in between) — before the
+      // fix, idx stayed put and silently pointed at a different question,
+      // whose empty draftText wiped the live textarea.
+      const Q1 = { id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' }
+      const Q2 = { id: 'q2', text: 'Q2', adrPath: '/fake/b.md', adrNumber: 2, lineStart: 1, draftKey: 'key-2', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0002', groupSortKey: '0-0002', sourceKind: 'adr' }
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1, Q2] })
+      h.click('btn-skip') // idx now 1 (Q2)
+      h.typeAnswer('typed while on Q2')
+
+      // Background push: same two questions, Q2 now sorts first.
+      h.postToWebview({ type: 'questions', generation: 1, questions: [Q2, Q1] })
+
+      expect(h.element('ans').value).toBe('typed while on Q2')
+    })
+  })
+
+  it('DEBRIEF-004: draft-save debounce captures the typed text at input time, not at timer-fire time', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    // Regression: previously read $id('ans').value inside the setTimeout
+    // callback — a navigation during the 500ms window (a background push
+    // repainting the box, or skip/back) would then save whatever the box
+    // happened to contain at fire time under the ORIGINAL question's
+    // draftKey, potentially a different question's text entirely.
+    expect(script).toContain("const val = $id('ans').value")
+    expect(script).toContain('draftText: val')
+    expect(script).not.toMatch(/draftText:\s*\$id\('ans'\)\.value/)
+    // The capture must happen before the debounce timer is armed, not inside it.
+    const inputHandlerIdx = script.indexOf("addEventListener('input', () => {\n  if (!questions[idx]) return;")
+    const valIdx = script.indexOf("const val = $id('ans').value")
+    const timerIdx = script.indexOf('draftSaveTimer = setTimeout')
+    expect(inputHandlerIdx).toBeGreaterThan(-1)
+    expect(valIdx).toBeGreaterThan(inputHandlerIdx)
+    expect(timerIdx).toBeGreaterThan(valIdx)
   })
 })
 

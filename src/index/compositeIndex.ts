@@ -121,6 +121,23 @@ export class CompositeIndex {
   }
 
   /**
+   * Fire `listener` on a change to ANY root's ADRs or seeds, anywhere in the
+   * tree. Consumers that need "refresh when anything in the composite
+   * changes" (the Open Questions panel, notably) subscribe once here rather
+   * than walking the tree and subscribing per-node themselves — same
+   * "tree-walking is a CompositeIndex concern" boundary the rest of this
+   * class already draws.
+   */
+  onChange(listener: () => void): () => void {
+    const unsubscribers: Array<() => void> = []
+    for (const node of this.walk()) {
+      unsubscribers.push(node.adrs.onChange(() => listener()))
+      unsubscribers.push(node.seeds.onChange(() => listener()))
+    }
+    return () => { for (const unsub of unsubscribers) unsub() }
+  }
+
+  /**
    * ADR-0025 Decision 2: root-local first, error on ambiguity. Accepts a
    * bare number, "adr:NNNN", or a "@namespace/NNNN" qualified reference.
    * Returns null on no match, the AdrFile on an unambiguous match, or an

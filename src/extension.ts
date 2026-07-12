@@ -13,6 +13,8 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { AdrIndex } from './index/adrIndex'
 import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
+import { CompositeIndex } from './index/compositeIndex'
+import { computeNamespace } from './index/rootNode'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
@@ -51,6 +53,18 @@ const normalizerCoordinator = new Coordinator([
 
 let index: AdrIndex | undefined;
 let seedIndex: SeedIndex | undefined;
+/**
+ * ADR-0025 panel-aggregation (Option A): a trivial (N=1, no filesystem
+ * scan) wrap of the SAME `index`/`seedIndex` singletons above — NOT a
+ * replacement for them, and NOT the "full activation rewiring" (module
+ * singletons → CompositeIndex, per-root watchers) that Lapidary's work
+ * order scoped out pending Cairn's three shaped QSTs (watcher lifecycle,
+ * creation-target root, deep-link copy format). This just gives the panel
+ * a CompositeIndex-shaped seam to build against now, ready for the moment
+ * a real multi-root scan replaces `wrapSingle` with `fromWorkspace` —
+ * without the panel itself needing to change again when that lands.
+ */
+let compositeIndex: CompositeIndex | undefined;
 let treeProvider: AdrTreeProvider | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
@@ -78,6 +92,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Create the indices (no files parsed yet — lazy init)
   index = new AdrIndex();
   seedIndex = new SeedIndex();
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const namespace = workspaceRoot ? computeNamespace(workspaceRoot) : 'project';
+  compositeIndex = CompositeIndex.wrapSingle(workspaceRoot ?? '', index, seedIndex, namespace);
   treeProvider = new AdrTreeProvider(index, seedIndex);
 
   // ── Diagnostics collection ────────────────────────────────────────────────
@@ -158,7 +175,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.openQuestionsPanel', () => {
-      if (index && seedIndex) OpenQuestionsPanel.createOrShow(index, seedIndex);
+      if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex);
     }),
 
     vscode.commands.registerCommand('adrManager.filterQuestions', () => {
@@ -170,8 +187,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.goToQuestionInPanel', (item) => {
-      if (item?.question && index && seedIndex) {
-        OpenQuestionsPanel.createOrShow(index, seedIndex);
+      if (item?.question && compositeIndex) {
+        OpenQuestionsPanel.createOrShow(compositeIndex);
         OpenQuestionsPanel.navigateTo(item.question.id);
       }
     }),
