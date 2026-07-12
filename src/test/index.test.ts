@@ -175,3 +175,130 @@ describe('SeedIndex.allOpenQuestions (ADR-0018 Step 3)', () => {
     })
   })
 })
+
+describe('AdrIndex.removeFile', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-remove-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('drops the ADR from the index and emits a removed event', () => {
+    const filePath = path.join(dir, '0001-storage-backend.md')
+    fs.writeFileSync(filePath, '# ADR-0001: Storage Backend\n\n- **Status**: Draft\n')
+
+    const index = new AdrIndex()
+    index.indexFile(filePath)
+    expect(index.size).toBe(1)
+
+    let event: import('../index/adrIndex').IndexChangeEvent | undefined
+    index.onChange((e) => { event = e })
+
+    index.removeFile(filePath)
+
+    expect(index.size).toBe(0)
+    expect(index.getByPath(filePath)).toBeUndefined()
+    expect(index.getByNumber(1)).toBeUndefined()
+    expect(event?.type).toBe('removed')
+    if (event?.type === 'removed') {
+      expect(event.adrPath).toBe(filePath)
+      expect(event.adrNumber).toBe(1)
+    }
+  })
+
+  it('is a no-op (no event, no throw) when the path was never indexed', () => {
+    const index = new AdrIndex()
+    let fired = false
+    index.onChange(() => { fired = true })
+
+    expect(() => index.removeFile('/never/indexed.md')).not.toThrow()
+    expect(fired).toBe(false)
+  })
+})
+
+describe('AdrIndex.onChange unsubscribe', () => {
+  it('the returned disposer stops delivering events to that listener only', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-unsub-test-'))
+    try {
+      const filePath = path.join(dir, '0001-storage-backend.md')
+      fs.writeFileSync(filePath, '# ADR-0001: Storage Backend\n\n- **Status**: Draft\n')
+
+      const index = new AdrIndex()
+      let callsToA = 0
+      let callsToB = 0
+      const unsubscribeA = index.onChange(() => { callsToA += 1 })
+      index.onChange(() => { callsToB += 1 })
+
+      index.indexFile(filePath) // both listeners fire (added)
+      unsubscribeA()
+      fs.writeFileSync(filePath, '# ADR-0001: Storage Backend\n\n- **Status**: Accepted\n')
+      index.indexFile(filePath) // only B should fire now (updated)
+
+      expect(callsToA).toBe(1)
+      expect(callsToB).toBe(2)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('a throwing listener does not prevent other listeners from being called', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-badlistener-test-'))
+    try {
+      const filePath = path.join(dir, '0001-storage-backend.md')
+      fs.writeFileSync(filePath, '# ADR-0001: Storage Backend\n\n- **Status**: Draft\n')
+
+      const index = new AdrIndex()
+      let goodListenerCalled = false
+      index.onChange(() => { throw new Error('a badly-behaved listener') })
+      index.onChange(() => { goodListenerCalled = true })
+
+      expect(() => index.indexFile(filePath)).not.toThrow()
+      expect(goodListenerCalled).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('AdrIndex.indexDirectory: duplicate ADR number detection (ADR-0012)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr-dup-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('flags two files that resolve to the same number (3-digit vs 4-digit prefix) with DUPLICATE_NUMBER on both', async () => {
+    // A real, observed collision shape: 001-foo.md and 0001-bar.md both
+    // extract to ADR number 1 (ADR-0012's variable-digit-count tolerance).
+    fs.writeFileSync(path.join(dir, '001-foo.md'), '# ADR-0001: Foo\n\n- **Status**: Draft\n')
+    fs.writeFileSync(path.join(dir, '0001-bar.md'), '# ADR-0001: Bar\n\n- **Status**: Draft\n')
+
+    const index = new AdrIndex()
+    const results = await index.indexDirectory(dir)
+
+    expect(results).toHaveLength(2)
+    for (const adr of results) {
+      expect(adr.parseWarnings.some((w) => w.code === 'DUPLICATE_NUMBER')).toBe(true)
+    }
+  })
+
+  it('does not flag distinct ADR numbers', async () => {
+    fs.writeFileSync(path.join(dir, '0001-foo.md'), '# ADR-0001: Foo\n\n- **Status**: Draft\n')
+    fs.writeFileSync(path.join(dir, '0002-bar.md'), '# ADR-0002: Bar\n\n- **Status**: Draft\n')
+
+    const index = new AdrIndex()
+    const results = await index.indexDirectory(dir)
+
+    for (const adr of results) {
+      expect(adr.parseWarnings.some((w) => w.code === 'DUPLICATE_NUMBER')).toBe(false)
+    }
+  })
+})
