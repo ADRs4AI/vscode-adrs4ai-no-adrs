@@ -183,25 +183,4 @@ export class AdrIndex {
       try { listener(event); } catch { /* don't let a bad listener crash the index */ }
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Deep link resolution
-  // -------------------------------------------------------------------------
-
-  /**
-   * Resolve a deep link reference like "0001#qst-scope" or "adr:0001#decision".
-   * Returns { adr, slug } or undefined if not found.
-   */
-  resolveDeepLink(ref: string): { adr: AdrFile; slug: string } | undefined {
-    // Normalize: strip "adr:" prefix, namespace prefix (e.g., "my-project.0001#slug")
-    const cleaned = ref.replace(/^adr:/, '').replace(/^[^.]+\./, '');
-    const [numPart, slugPart] = cleaned.split('#');
-    const num = parseInt(numPart, 10);
-    if (isNaN(num)) return undefined;
-
-    const adr = this.getByNumber(num);
-    if (!adr) return undefined;
-
-    return { adr, slug: slugPart ?? '' };
-  }
 }
