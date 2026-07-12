@@ -1087,4 +1087,78 @@ describe('D94NonstandardFillPlaceholderHandler', () => {
     expect(adr.questions[0].isAnswered).toBe(false)
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
+
+  // D9.4 morphology #4 (Lapidary's charter, 2026-07-12, live specimen
+  // temp/0021-crew-architecture-and-staffing.md — Athanor 5, Fable 5): a
+  // bracket-free, italic/paren-wrapped stock word on its OWN line after the
+  // ANS marker — "**ANS:** (by Jérémie Lumbroso)" then "_(pending)_". Every
+  // prior D9.4 case was bracket-anchored; this one isn't. "- Status:
+  // unanswered" was declared correctly right there in the real file, and
+  // the parser overrode it with the misread ANS content — the exact
+  // declared-vs-derived conflict the posture charter is about.
+  const ATHANOR_WRAPPED_SPECIMEN = `# ADR-0021: Test
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **B — milestone-triggered.**
+
+**ANS:** (by Jérémie Lumbroso)
+_(pending)_
+`
+
+  it('detects the two-line wrapped-placeholder specimen: "**ANS:** (by ...)" + "_(pending)_"', () => {
+    const records = handler.detect(ATHANOR_WRAPPED_SPECIMEN, parseResult)
+    expect(records).toHaveLength(1)
+    expect(records[0].lineStart).toBeLessThan(records[0].lineEnd)
+  })
+
+  it('fix() rewrites the two-line wrapped form to canonical, preserving the attribution', () => {
+    const records = handler.detect(ATHANOR_WRAPPED_SPECIMEN, parseResult)
+    const patch = handler.fix(ATHANOR_WRAPPED_SPECIMEN, records[0])
+    expect(patch.replacement).toBe('**ANS:** (by Jérémie Lumbroso)\n[Fill this in]')
+  })
+
+  it.each(['(pending)', '*(TBD)*', '_todo_', '(TBD)'])(
+    'detects other wrapped-placeholder morphologies: %s',
+    (token) => {
+      const content = `# ADR-0001: Test
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+
+**ANS:**
+${token}
+`
+      const records = handler.detect(content, parseResult)
+      expect(records).toHaveLength(1)
+    },
+  )
+
+  it('guard the guard: does NOT flag a real two-line answer that happens to be parenthesized', () => {
+    const content = `# ADR-0001: Test
+
+## Questions
+
+### QST: Which database?
+- Status: unanswered
+
+**ANS:**
+(see the discussion above)
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('applying process() on the Athanor specimen makes the ANS block canonical and re-parses as unanswered', () => {
+    const patches = handler.process(ATHANOR_WRAPPED_SPECIMEN, parseResult)
+    const normalized = applyPatches(ATHANOR_WRAPPED_SPECIMEN, patches)
+    expect(normalized).toContain('**ANS:** (by Jérémie Lumbroso)\n[Fill this in]')
+    const adr = parseAdr(normalized, '/fake/0021-crew.md')
+    expect(adr.questions[0].isAnswered).toBe(false)
+  })
 })

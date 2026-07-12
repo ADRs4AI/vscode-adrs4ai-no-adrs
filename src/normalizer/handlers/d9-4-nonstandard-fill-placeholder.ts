@@ -30,6 +30,7 @@
 import type { AdrFile } from '../../parser/types'
 import type { ViolationHandler, ViolationRecord, Patch } from '../types'
 import { contentChecksum } from '../patch-applicator'
+import { stripPlaceholderWrapper, PLACEHOLDER_LEXICON_RE } from '../../parser/extractor'
 
 /**
  * Matches "**ANS:** [synonym]" on one line, with an optional attribution
@@ -48,6 +49,16 @@ const INLINE_ANS_PLACEHOLDER_RE =
 const INLINE_ANS_EMPTY_PLACEHOLDER_RE =
   /^(\s*)\*\*ANS:\*\*\s*(\((?:by|from)\s+[^)]+\)\s*)?\[\s*\]\s*$/i
 
+// D9.4 morphology #4 (Lapidary's charter, 2026-07-12, temp/0021-crew-
+// architecture-and-staffing.md — Athanor 5 specimen): the same deviation,
+// split across two lines instead of inline — "**ANS:** (by Author)" on its
+// own line, then "_(pending)_" (or "(pending)", "*(TBD)*", "_todo_") on the
+// next. extractor.ts's stripPlaceholderWrapper()/PLACEHOLDER_LEXICON_RE are
+// the single source of truth for "is this a wrapped placeholder word" —
+// reused here rather than a parallel regex, so the normalizer's Quick Fix
+// never drifts from what the parser already tolerates.
+const ANS_MARKER_ONLY_LINE_RE = /^(\s*)\*\*ANS:\*\*\s*(\((?:by|from)\s+[^)]+\)\s*)?$/i
+
 export class D94NonstandardFillPlaceholderHandler implements ViolationHandler {
   readonly id = 'd9-4-nonstandard-fill-placeholder'
   readonly dependsOn: readonly string[] | undefined = undefined
@@ -61,22 +72,46 @@ export class D94NonstandardFillPlaceholderHandler implements ViolationHandler {
 
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(INLINE_ANS_PLACEHOLDER_RE) ?? lines[i].match(INLINE_ANS_EMPTY_PLACEHOLDER_RE)
-      if (!m) continue
-      records.push({
-        handlerId: this.id,
-        description: this.buildMessage(lines[i].trim()),
-        lineStart: i + 1,
-        lineEnd: i + 1,
-        originalText: lines[i],
-        contentChecksum: checksum,
-      })
+      if (m) {
+        records.push({
+          handlerId: this.id,
+          description: this.buildMessage(lines[i].trim()),
+          lineStart: i + 1,
+          lineEnd: i + 1,
+          originalText: lines[i],
+          contentChecksum: checksum,
+        })
+        continue
+      }
+
+      // Two-line wrapped-placeholder form: bare "**ANS:**" marker line,
+      // then a next line that IS (whole-content) an italic/paren-wrapped
+      // stock word.
+      const markerMatch = lines[i].match(ANS_MARKER_ONLY_LINE_RE)
+      if (markerMatch && i + 1 < lines.length) {
+        const { inner, wrapped } = stripPlaceholderWrapper(lines[i + 1].trim())
+        if (wrapped && PLACEHOLDER_LEXICON_RE.test(inner)) {
+          records.push({
+            handlerId: this.id,
+            description: this.buildMessage(lines[i + 1].trim()),
+            lineStart: i + 1,
+            lineEnd: i + 2,
+            originalText: `${lines[i]}\n${lines[i + 1]}`,
+            contentChecksum: checksum,
+          })
+        }
+      }
     }
 
     return records
   }
 
   fix(_content: string, record: ViolationRecord): Patch {
-    const m = record.originalText.match(INLINE_ANS_PLACEHOLDER_RE) ?? record.originalText.match(INLINE_ANS_EMPTY_PLACEHOLDER_RE)!
+    const recordLines = record.originalText.split('\n')
+    const markerLine = recordLines[0]
+    const m = markerLine.match(INLINE_ANS_PLACEHOLDER_RE)
+      ?? markerLine.match(INLINE_ANS_EMPTY_PLACEHOLDER_RE)
+      ?? markerLine.match(ANS_MARKER_ONLY_LINE_RE)!
     const indent = m[1]
     const attribution = m[2]?.trim()
     const marker = attribution ? `**ANS:** ${attribution}` : '**ANS:**'

@@ -528,9 +528,18 @@ const STATUS_LINE_RE = /^-\s+Status:\s+(.+)$/;
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
 // Matches: - Need: value
 const NEED_RE = /^-\s+Need:\s+(.+)$/;
-// Matches the legacy form (**My recommendation**: text, ADR-0002 Iteration 3)
-// and the protocol form (**Recommendation**: (by Author, date), ADR-0019).
-const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*:\s*(.*)/;
+// Matches the legacy form (**My recommendation**: text, ADR-0002 Iteration 3),
+// the protocol form (**Recommendation**: (by Author, date), ADR-0019), and
+// the inline-attribution form (**Recommendation** (by Author): text —
+// Lapidary's charter, 2026-07-12, temp/0021 Athanor specimen: attribution
+// lands BETWEEN the bold marker and the colon, not after it. The strict
+// "colon right after **Recommendation**" form silently dropped this —
+// no field matched, the whole line and everything after it until ANS fell
+// through to rawBody as plain prose, and the recommendation vanished as a
+// structured field (not a visible-loss bug, a silent-misclassification one:
+// same nemesis, different shape). Group 1 (optional): the inline
+// attribution text, used as an explicit `author` — see recMatch handling.
+const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*(?:\s*\((?:by|from)\s+([^)]+)\))?:\s*(.*)/;
 // Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)"
 // or "(from Sonnet 4.6)". Captures author + optional date. Their body spans
 // blank lines (paragraphs), unlike legacy single-paragraph prose.
@@ -563,6 +572,39 @@ const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|tbd|pending|tod
 // placeholder — exactly the false positive the whole-content-only anchoring
 // on both regexes is designed to prevent.
 const PLACEHOLDER_EMPTY_RE = /^\[\s*\]$/;
+
+// D9.4 morphology #4 (Lapidary's charter, 2026-07-12, temp/0021-crew-
+// architecture-and-staffing.md — Athanor 5 specimen): "_(pending)_" — no
+// brackets at all, just italics wrapping a parenthesized stock word. Every
+// prior D9.4 regex is bracket-anchored (PLACEHOLDER_CANONICAL_RE/_SYNONYM_RE/
+// _EMPTY_RE all start `^\[`), so a bracket-free wrapped placeholder matched
+// none of them, became a real `answer`, and the QST silently vanished as
+// answered — even though "- Status: unanswered" was declared correctly
+// right there in the same block (the declared-vs-derived conflict Lapidary's
+// posture charter names directly). stripPlaceholderWrapper() peels ONE
+// layer of italic (_..._ / *...*) and ONE layer of parens, in either
+// combination, then the lexicon check runs ONLY on text that actually HAD
+// at least one wrapper — never on bare unwrapped prose, so a real short
+// answer like "Pending on budget approval" is never misread (no wrapper to
+// strip → not eligible). Whole-content-only, same discipline as the
+// bracket forms.
+export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending)\b.*$/i;
+
+/**
+ * Exported so the D9.4 normalizer handler (d9-4-nonstandard-fill-
+ * placeholder.ts) can detect the SAME wrapped-placeholder morphology on its
+ * own two-line "**ANS:**\n_(pending)_" form and offer a matching Quick Fix
+ * — one placeholder-recognition rule, not two regexes drifting apart.
+ */
+export function stripPlaceholderWrapper(text: string): { inner: string; wrapped: boolean } {
+  let s = text.trim();
+  let wrapped = false;
+  const italic = s.match(/^([*_])(.+)\1$/);
+  if (italic) { s = italic[2].trim(); wrapped = true; }
+  const paren = s.match(/^\((.+)\)$/);
+  if (paren) { s = paren[1].trim(); wrapped = true; }
+  return { inner: s, wrapped };
+}
 
 function inferAuthorFromDeciders(deciders: string[]): string | undefined {
   const aiName = deciders.find(d => AI_AUTHOR_RE.test(d));
@@ -639,8 +681,10 @@ export function extractQuestion(
   // array can be re-split into per-block Recommendation objects.
   const recommendationBlockStarts: number[] = [];
   // Parallel to recommendationBlockStarts: whether that block used the
-  // protocol form (attribution-only first line) and the marker's source line.
-  const recommendationBlockMeta: { protocolForm: boolean; line: number }[] = [];
+  // protocol form (attribution-only first line), the marker's source line,
+  // and an inline attribution captured directly off the marker line itself
+  // (see inlineAttribution note at RECOMMENDATION_RE).
+  const recommendationBlockMeta: { protocolForm: boolean; line: number; inlineAttribution?: string }[] = [];
   const rawBodyLinesPre: string[] = [];
   const rawBodyLinesPost: string[] = [];
   let answerAuthor: string | undefined;
@@ -688,9 +732,10 @@ export function extractQuestion(
       // Each marker also opens a new block boundary (see recommendations[] below).
       inRecommendation = true;
       recommendationBlockStarts.push(recommendationLines.length);
-      const firstLine = recMatch[1].trim();
+      const inlineAttribution = recMatch[1]?.trim();
+      const firstLine = recMatch[2].trim();
       recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
-      recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine });
+      recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine, inlineAttribution });
       if (firstLine) recommendationLines.push(firstLine);
       continue;
     }
@@ -763,14 +808,20 @@ export function extractQuestion(
     // for the wrong bracketed word. Never silent (Postel + DMA).
     const isSynonymPlaceholder = !isCanonicalPlaceholder &&
       (PLACEHOLDER_SYNONYM_RE.test(answerText) || PLACEHOLDER_EMPTY_RE.test(answerText));
-    if (isSynonymPlaceholder && warnings) {
+    // D9.4 morphology #4: bracket-free, italic/paren-wrapped stock words
+    // ("_(pending)_", "(pending)", "*(TBD)*", "_todo_") — see
+    // PLACEHOLDER_LEXICON_RE/stripPlaceholderWrapper() above.
+    const strippedAnswer = stripPlaceholderWrapper(answerText);
+    const isWrappedPlaceholder = !isCanonicalPlaceholder && !isSynonymPlaceholder &&
+      strippedAnswer.wrapped && PLACEHOLDER_LEXICON_RE.test(strippedAnswer.inner);
+    if ((isSynonymPlaceholder || isWrappedPlaceholder) && warnings) {
       warnings.push({
         code: 'NONSTANDARD_FILL_PLACEHOLDER',
         message: `The QST heading and structure here are correct — the placeholder text just isn't the canonical one. "${answerText}" was recognized as an unanswered placeholder (not a real answer), but the canonical form is "[Fill this in]" on its own line after "**ANS:**". SUGGESTED: **ANS:**\n[Fill this in]`,
         line: answerLine,
       });
     }
-    if (answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder) {
+    if (answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder) {
       answer = { text: answerText, author: answerAuthor, line: answerLine! };
     }
   }
@@ -802,6 +853,13 @@ export function extractQuestion(
           date = attrMatch[2]?.trim();
         }
         bodyLines = rawLines.slice(1);
+      } else if (meta.inlineAttribution) {
+        // Inline-attribution form: "**Recommendation** (by Athanor 5, Claude
+        // Fable 5): text" — the parenthetical is "seat, model", not
+        // "author, date" (REC_ATTRIBUTION_RE's split assumption), so it's
+        // used whole as the author string rather than re-split. Explicit,
+        // not inferred — authorInferred stays unset, same as protocolForm.
+        author = meta.inlineAttribution;
       } else {
         author = inferAuthorFromDeciders(deciders);
         if (author !== undefined) authorInferred = true;

@@ -2452,6 +2452,153 @@ ${placeholder}
       expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
     },
   )
+
+  // D9.4 morphology #4 (Lapidary's charter, 2026-07-12, live specimen
+  // temp/0021-crew-architecture-and-staffing.md, Athanor 5 / Claude Fable
+  // 5): a bracket-free, italic/paren-wrapped stock word — "_(pending)_" —
+  // matched none of the bracket-anchored regexes above, became a real
+  // `answer`, and the QST silently vanished as answered even though
+  // "- Status: unanswered" was declared correctly right there. The
+  // declared-vs-derived conflict Lapidary's posture charter names directly.
+  it.each(['_(pending)_', '(pending)', '*(TBD)*', '_todo_', '(TBD)', '_(unanswered)_'])(
+    'wrapped-placeholder morphology %s is recognized as unanswered, not a real answer',
+    (placeholder) => {
+      const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+
+**ANS:** (by Jérémie Lumbroso)
+${placeholder}
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+      expect(adr.questions[0].isAnswered).toBe(false)
+      expect(adr.questions[0].answer).toBeUndefined()
+      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
+    },
+  )
+
+  it('guard the guard: a real short answer that happens to be wrapped in parens/italics for emphasis is NOT a placeholder', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Which vendor?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+_yes, definitely_
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    expect(adr.questions[0].isAnswered).toBe(true)
+    expect(adr.questions[0].answer?.text).toBe('_yes, definitely_')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
+  })
+
+  it('guard the guard: a real answer wrapped only in parens, not a stock word, is NOT a placeholder', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Which vendor?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+(see ADR-0014 for the full argument)
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    expect(adr.questions[0].isAnswered).toBe(true)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
+  })
+
+  it('guard the guard: bare unwrapped prose starting with a lexicon word is NOT a placeholder (no wrapper to strip)', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Which vendor?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+Pending final budget approval, but we lean toward option A.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    expect(adr.questions[0].isAnswered).toBe(true)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
+  })
+
+  // Recommendation-attribution tolerance (same charter, same specimen):
+  // "**Recommendation** (by Athanor 5, Claude Fable 5): text" — attribution
+  // lands BETWEEN the bold marker and the colon. RECOMMENDATION_RE required
+  // the colon immediately after "**Recommendation**", so this form matched
+  // nothing at all: the recommendation fell through to rawBody as plain
+  // prose, silently losing its structured (attributed) recommendation shape.
+  it('recognizes inline-attribution recommendations: "**Recommendation** (by Author): text"', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **B — milestone-triggered.**
+Same argument as the Tablée two-wave decision.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    expect(adr.questions[0].recommendations).toHaveLength(1)
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.author).toBe('Athanor 5, Claude Fable 5')
+    expect(rec.authorInferred).toBeFalsy()
+    expect(rec.text).toContain('B — milestone-triggered')
+    expect(rec.text).toContain('Same argument as the Tablée two-wave decision')
+  })
+
+  // Ground truth: the actual reported specimen, verbatim from temp/0021-
+  // crew-architecture-and-staffing.md (gitignored scratch content, inlined
+  // here since it can't be a committed fixture) — both fixes together,
+  // exactly as Jérémie hit them.
+  it('ground truth: the real Athanor specimen (wrapped placeholder + inline-attribution recommendation together)', () => {
+    const content = `# ADR-0021: Crew Architecture, Staffing, and the Athanor Mission
+
+- **Date**: 2026-07-12
+- **Iteration**: 1
+- **Status**: Accepted
+- **Deciders**: Jérémie Lumbroso, Athanor 5 (Claude Fable 5)
+
+---
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+- Why asking: MCP/Relay and Assayer seats should land on substrate, not idle.
+- Need: criterion confirmation
+
+- **A — Calendar**: fixed date.
+- **B — Milestone**: when the pipeline round-trips a real email end-to-end.
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **B — milestone-triggered.**
+Same argument as the Tablée two-wave decision: stable intermediate forms.
+
+**ANS:** (by Jérémie Lumbroso)
+_(pending)_
+
+---
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-crew-architecture-and-staffing.md')
+    expect(adr.questions).toHaveLength(1)
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+    expect(q.recommendations).toHaveLength(1)
+    expect(q.recommendations![0].author).toBe('Athanor 5, Claude Fable 5')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
+  })
 })
 
 // ---------------------------------------------------------------------------
