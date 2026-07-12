@@ -22,6 +22,7 @@ import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { AdrIndex } from '../index/adrIndex'
 import type { SeedIndex } from '../index/seedIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
+import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 
 // ---------------------------------------------------------------------------
 // Tree item types
@@ -112,13 +113,14 @@ export class AdrTreeItem extends vscode.TreeItem {
     }
 
     if (opts.kind === 'question' && opts.question) {
-      this.command = {
-        command: 'adrManager.openAdr',
-        title: 'Jump to Question',
-        // question.adrPath is correct for both container kinds (an ADR's
-        // path, or a seed's) — no need for the adr object here.
-        arguments: [opts.question.adrPath, opts.question.lineStart],
-      }
+      // adrManager.clickOpensIn: resource-scoped so a multi-root workspace
+      // can set it per-folder. question.adrPath is correct for both
+      // container kinds (an ADR's path, or a seed's) as the scope resource.
+      const clickOpensIn = vscode.workspace
+        .getConfiguration('adrManager', vscode.Uri.file(opts.question.adrPath))
+        .get<ClickOpensIn>('clickOpensIn', 'panel')
+      const resolved = resolveQuestionClickCommand(clickOpensIn, opts.question, this)
+      this.command = { command: resolved.command, title: resolved.title, arguments: resolved.arguments }
     }
 
     if (opts.kind === 'open-questions-header') {

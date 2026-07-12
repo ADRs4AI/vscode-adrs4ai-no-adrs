@@ -220,6 +220,20 @@
           ],
           "description": "When clicking a question in the tree or navigating from the panel, where to scroll in the file."
         },
+        "adrManager.clickOpensIn": {
+          "type": "string",
+          "scope": "resource",
+          "enum": [
+            "panel",
+            "file"
+          ],
+          "default": "panel",
+          "enumDescriptions": [
+            "Click a question in the sidebar to open it in the Open Questions panel, focused and ready to answer.",
+            "Click a question in the sidebar to jump straight to it in the ADR/seed file."
+          ],
+          "description": "Where clicking a question in the sidebar tree takes you. The panel is answerable in place; file access stays one right-click away either way (\"Go to Answer Field in File\")."
+        },
         "adrManager.mcpWriteMode": {
           "type": "string",
           "enum": [
