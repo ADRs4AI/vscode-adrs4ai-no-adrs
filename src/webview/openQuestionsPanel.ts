@@ -1179,6 +1179,34 @@ function renderMarkdown(md) {
     return '\\x00CODE' + (codeBlocks.length - 1) + '\\x00';
   });
 
+  // Lazy-continuation join for hard-wrapped list items — mirrors
+  // scripts/unwrap-adrs/unwrap-adrs.mjs's joinSoftWrappedLines exactly
+  // (same rule, not reinvented, per Lapidary's 0450 framing): join with a
+  // space, except a hyphenated line-break (line ends '-', next starts with
+  // a letter/digit/backtick) joins with no space, so "cross-" + "platform"
+  // becomes "cross-platform" rather than "cross- platform".
+  function joinSoftWrappedLines(parts) {
+    return parts.reduce((joined, part) => {
+      if (joined === '') return part;
+      if (/-$/.test(joined) && /^[A-Za-z0-9\`]/.test(part)) return joined + part;
+      return joined + ' ' + part;
+    }, '');
+  }
+
+  // Guards the lazy-continuation join above: a line immediately following a
+  // list item with no blank line between them is normally just wrapped
+  // overflow text, but if it's ITSELF the start of some other block
+  // construct (heading, HR, blockquote, table, a new ordered-list item),
+  // it must not be swallowed into the previous <li>.
+  function looksLikeNewBlock(line) {
+    return /^\\x00CODE\\d+\\x00$/.test(line.trim())
+      || /^\\|/.test(line)
+      || /^---+$/.test(line.trim())
+      || /^#{1,4}\\s+/.test(line)
+      || line.startsWith('> ')
+      || /^\\d+\\.\\s+/.test(line);
+  }
+
   // Tables
   function renderTable(block) {
     const rows = block.trim().split('\\n');
@@ -1236,24 +1264,54 @@ function renderMarkdown(md) {
     // Blockquote
     if (line.startsWith('> ')) { out.push('<blockquote>'+renderInline(line.slice(2))+'</blockquote>'); i++; continue; }
 
-    // Unordered list
+    // Unordered list — CommonMark lazy continuation: a non-blank line right
+    // after a list item, that isn't itself a new bullet or some other block
+    // construct, belongs to that item's content, not a bare new paragraph.
+    // Without this, a hard-wrapped bullet's overflow lines "escape" the
+    // <li> and render as sibling <p> text below the list (2026-07-13
+    // screenshot: inbox-alchemy's wrapped ADR-0021, Option B's continuation
+    // bleeding out of its bullet). Join logic mirrors
+    // scripts/unwrap-adrs/unwrap-adrs.mjs's joinSoftWrappedLines exactly —
+    // lifted, not reinvented, per Lapidary's 0450 framing.
     if (/^[\\-\\*]\\s+/.test(line)) {
       const items = [];
-      while (i < lines.length && /^[\\-\\*]\\s+/.test(lines[i])) {
-        items.push('<li>'+renderInline(lines[i].replace(/^[\\-\\*]\\s+/,''))+'</li>');
-        i++;
+      let current = [];
+      const flush = () => { if (current.length) items.push('<li>'+renderInline(joinSoftWrappedLines(current))+'</li>'); current = []; };
+      while (i < lines.length) {
+        if (/^[\\-\\*]\\s+/.test(lines[i])) {
+          flush();
+          current.push(lines[i].replace(/^[\\-\\*]\\s+/,'').trim());
+          i++;
+        } else if (current.length > 0 && lines[i].trim() !== '' && !looksLikeNewBlock(lines[i])) {
+          current.push(lines[i].trim());
+          i++;
+        } else {
+          break;
+        }
       }
+      flush();
       out.push('<ul>'+items.join('')+'</ul>');
       continue;
     }
 
-    // Ordered list
+    // Ordered list — same lazy-continuation treatment as the unordered case.
     if (/^\\d+\\.\\s+/.test(line)) {
       const items = [];
-      while (i < lines.length && /^\\d+\\.\\s+/.test(lines[i])) {
-        items.push('<li>'+renderInline(lines[i].replace(/^\\d+\\.\\s+/,''))+'</li>');
-        i++;
+      let current = [];
+      const flush = () => { if (current.length) items.push('<li>'+renderInline(joinSoftWrappedLines(current))+'</li>'); current = []; };
+      while (i < lines.length) {
+        if (/^\\d+\\.\\s+/.test(lines[i])) {
+          flush();
+          current.push(lines[i].replace(/^\\d+\\.\\s+/,'').trim());
+          i++;
+        } else if (current.length > 0 && lines[i].trim() !== '' && !looksLikeNewBlock(lines[i])) {
+          current.push(lines[i].trim());
+          i++;
+        } else {
+          break;
+        }
       }
+      flush();
       out.push('<ol>'+items.join('')+'</ol>');
       continue;
     }

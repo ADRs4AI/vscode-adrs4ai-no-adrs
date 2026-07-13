@@ -22,6 +22,26 @@
  * `acquireVsCodeApi()`. Real `setTimeout`/`clearTimeout`/`Date` are passed
  * through so `vi.useFakeTimers()` in the calling test controls the panel's
  * debounce (500ms draft autosave) and focus-delay (50ms) deterministically.
+ *
+ * Escaping gotcha (found 2026-07-13, Fitter 5, while writing a hard-wrap
+ * rendering test): the extracted `<script>` text is read from the RAW `.ts`
+ * SOURCE FILE — it is never evaluated as the template literal it actually
+ * is inside `getHtml()`. Every regex in the script that needs a backslash
+ * escape (`\s`, `\d`, `\-`, `` \` ``, etc.) is written DOUBLED in the source
+ * (`\\s`, `\\d`, ...) so that it survives being embedded in `getHtml()`'s
+ * own outer template literal — real evaluation collapses `\\x` to `\x`,
+ * which is what the browser's JS engine needs to see. Extracting the raw
+ * text and handing it straight to `vm.Script` skips that collapse: `\\s`
+ * reaches the vm as two literal backslash characters followed by `s`, not
+ * the whitespace character class — silently changing what several regexes
+ * in the script actually match (discovered via a list-detection regex,
+ * `[\\-\\*]`, which stopped matching a literal hyphen entirely under this
+ * harness while working correctly in the real extension). Fixed by letting
+ * the JS engine itself perform the same unescaping a template literal would
+ * (wrap the extracted text in backticks and evaluate it) rather than
+ * hand-rolling the escape rules — guaranteed fidelity with whatever `getHtml()`
+ * actually produces, no risk of the harness's rules drifting from the
+ * language's.
  */
 
 import { readFileSync } from 'node:fs'
@@ -29,6 +49,20 @@ import { resolve } from 'node:path'
 import vm from 'node:vm'
 
 const PANEL_SRC = readFileSync(resolve(__dirname, '../../webview/openQuestionsPanel.ts'), 'utf8')
+
+/**
+ * Collapses the doubled-backslash escapes in the raw-extracted script text
+ * exactly as evaluating it inside its real template literal would, by
+ * asking the JS engine to do it: wrap the text in backticks and evaluate.
+ * Safe only because the script block itself contains no `${...}` interpolation
+ * and every literal backtick inside it is already escaped as `` \` `` (both
+ * verified — see this file's header comment) — those are exactly the two
+ * things that would make this trick unsafe, and neither is true here.
+ */
+function unescapeAsTemplateLiteral(rawScriptText: string): string {
+  const templateSource = '`' + rawScriptText + '`'
+  return vm.runInNewContext(templateSource, {})
+}
 
 export interface FakeElement {
   value: string
@@ -90,7 +124,7 @@ export interface WebviewHarness {
 export function createWebviewHarness(): WebviewHarness {
   const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
   if (!match) throw new Error('webviewHarness: could not extract <script> block from openQuestionsPanel.ts')
-  const scriptContent = match[1]
+  const scriptContent = unescapeAsTemplateLiteral(match[1])
 
   const elements = new Map<string, FakeElement>()
   const getElementById = (id: string): FakeElement => {

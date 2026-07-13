@@ -355,6 +355,46 @@ describe('Webview script block syntax', () => {
     }
   })
 
+  // Hard-wrap reframe (Lapidary 5, 0450): "the extension must be robust to
+  // hard-wrapped input at render time." Screenshot evidence
+  // (docs/screenshots/evidence/2026-07-13-hardwrap-question-ui-impact.png):
+  // inbox-alchemy's real, hard-wrapped ADR-0021 rendered Option B's
+  // continuation lines as bare paragraphs BELOW the bullet list instead of
+  // inside Option B's own <li> — a hard-wrapped bullet's lazy-continuation
+  // lines "escaping" their construct. Acceptance per that brief: the
+  // screenshot's case renders correctly FROM THE WRAPPED SOURCE, no
+  // unwrap-adrs preprocessing required.
+  //
+  // Fixture note: kept inline here (not added to src/test/fixtures/zoo/)
+  // deliberately -- that corpus's own recall.test.ts requires a CORPUS
+  // ground-truth entry for every file added there (Quarry 5's recall-
+  // detection domain, ADR-0031), and this is a rendering concern, not a
+  // detection-recall one. This inline specimen (reproducing the
+  // screenshot's exact wrapped Option A/B shape) is the permanent,
+  // checkable-forever record for THIS consumer.
+  it('DEBRIEF (hard-wrap reframe, 0450): a hard-wrapped bullet\'s continuation lines stay inside their <li>, not as sibling paragraphs', () => {
+    const Q1 = {
+      id: 'q1', text: 'When does wave 2 trigger?', adrPath: '/fake/0021.md', adrNumber: 21, lineStart: 1,
+      draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1,
+      groupLabel: 'ADR-0021', groupSortKey: '0-0021', sourceKind: 'adr',
+      body:
+        '- A — Calendar: fixed date.\n' +
+        '- B — Milestone: when the pipeline round-trips a real email end-to-end\n' +
+        '(intake → match → extract → draft → validation surface), so the MCP server\n' +
+        'exposes something true and the Assayer has a working loop to mine.',
+    }
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+
+    const html = h.element('body').innerHTML
+    // The continuation text must be INSIDE Option B's <li>...
+    expect(html).toMatch(/<li>B — Milestone:[^<]*working loop to mine\.<\/li>/)
+    // ...and must NOT appear as sibling paragraph text after the </ul>.
+    const afterList = html.slice(html.indexOf('</ul>'))
+    expect(afterList).not.toContain('validation surface')
+    expect(afterList).not.toContain('working loop to mine')
+  })
+
   describe('DEBRIEF-004 residual (Quarry 5, post-4e6aff5 state-machine pass): a transient EMPTY "questions" push still trips isNewQuestion for the SAME unchanged question', () => {
     // 4e6aff5 fixed the headline symptom (positional idx drift losing text)
     // by relocating the on-screen question by draftKey, and separately fixed
