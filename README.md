@@ -73,3 +73,4 @@ All settings and commands are also browsable via the Command Palette (`ADR Manag
 
 - [`human-ai-collaboration-template-A`](https://github.com/jlumbroso/human-ai-collaboration-template-A) — the ADR framework and starter files this extension is built for
 - [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) — the fuller reasoning behind the format, for anyone who wants the "why," not just the "how"
+- [`CHANGELOG.md`](CHANGELOG.md) — what shipped, when, including the incidents that shaped a fix
