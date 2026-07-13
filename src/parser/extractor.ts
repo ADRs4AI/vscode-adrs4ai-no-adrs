@@ -484,6 +484,21 @@ export function buildSection(
  * a seed's Brain Dump / Thread body tokens — container-agnostic reuse
  * rather than a parallel reimplementation.
  */
+// Block-extent tail-swallow (Lapidary 5, 2026-07-13, grammar-seed +
+// temp/0011 specimens): a subsection's body previously ran until the NEXT
+// level>=3 heading — fine when one exists, but the LAST subsection in an
+// enclosing section has no such heading to stop it, so its body ran all
+// the way to the enclosing section's own end. For a seed's last QST, that
+// swallowed the trailing "---" divider, the "**Model Response Request:**"
+// checkbox block, and everything after — Jérémie: "the last question then
+// parsed the dash-dash-dash that separates, with the checkbox... I think
+// none of my questions were parsed accurately." Same conservative-clamp
+// discipline as the h2-tolerance guard: block extent should stop at ANY
+// structural boundary, heading or not. A bare thematic break ("---",
+// "***", "___" — the template's own between-questions divider, never
+// legitimately part of a question's own content) is exactly that boundary.
+const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+
 export function buildSubsections(
   bodyTokens: Token[],
   allSlugs: Set<string>,
@@ -504,6 +519,16 @@ export function buildSubsections(
         ));
       }
       current = { heading: token, body: [] };
+      continue;
+    }
+    if (current && token.kind === 'body' && THEMATIC_BREAK_RE.test(token.text)) {
+      subsections.push(buildSection(
+        { heading: current.heading, body: current.body },
+        allSlugs,
+        warnings,
+        slugOccurrences,
+      ));
+      current = null;
       continue;
     }
     if (current) {

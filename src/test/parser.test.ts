@@ -2072,6 +2072,107 @@ cheap; un-seating is awkward.
 })
 
 // ---------------------------------------------------------------------------
+// Block-extent tail-swallow (Lapidary 5, 2026-07-13, grammar-seed +
+// temp/0011-consent-ui-modes.md specimens). A subsection's body used to run
+// until the next level>=3 heading, with no boundary at all for the LAST
+// subsection in an enclosing section — so its body ran to the enclosing
+// section's own end, swallowing a trailing "---" divider and whatever
+// non-heading structural content followed it (a seed's "**Model Response
+// Request:**" checkbox block; an ADR's own trailing "---" before the next
+// top-level "##" section). Fixed in buildSubsections() by treating a bare
+// thematic break as also closing the current subsection.
+// ---------------------------------------------------------------------------
+
+describe('Block-extent tail-swallow: the LAST question in a section', () => {
+  it('does not swallow a trailing thematic break + seed-template checkbox block into rawBody', () => {
+    const content = `# SEED: Test
+
+## Brain Dump
+
+### Open QSTs
+
+### QST: First question?
+- Status: unanswered
+- Why asking: Reason one.
+
+---
+
+### QST: Last question?
+- Status: unanswered
+- Why asking: Reason two.
+
+---
+
+**Model Response Request:**
+
+- [ ] Chunk this into ADRs
+- [X] Iterate with me
+- [ ] Structure in place
+
+---
+
+## Thread
+
+### Someone — 2026-07-13
+Some thread content.
+`
+    const seed = parseSeed(content, '/fake/docs/adr/seed-2026-07-13-test.md')
+    expect(seed.questions).toHaveLength(2)
+    const last = seed.questions[1]
+    expect(last.rawBody ?? '').not.toContain('Model Response Request')
+    expect(last.rawBody ?? '').not.toContain('Chunk this into ADRs')
+    expect(last.whyAsking).toBe('Reason two.')
+  })
+
+  it('does not leave a trailing "---" divider in the last question\'s rawBody (ADR container)', () => {
+    const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Only question?
+- Status: unanswered
+- Options:
+  - A — first option.
+  - B — second option.
+- Recommendation (from Someone): **A**.
+
+---
+
+## Action Items
+
+- [ ] Do the thing
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+    expect(adr.questions).toHaveLength(1)
+    const q = adr.questions[0]
+    expect((q.rawBody ?? '').trim()).not.toMatch(/^-{3,}$/m)
+    expect(q.rawBody ?? '').not.toContain('---')
+    expect(q.rawBody ?? '').toContain('Recommendation (from Someone)')
+  })
+
+  it('a mid-document QST (not the last) is unaffected — same behavior as before', () => {
+    const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: First?
+- Status: unanswered
+
+---
+
+### QST: Second?
+- Status: unanswered
+
+---
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+    expect(adr.questions).toHaveLength(2)
+    expect(adr.questions[0].text).toBe('First?')
+    expect(adr.questions[1].text).toBe('Second?')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Regression tests: rawBody capture (ADR-0003 / ADR-0008 parsing failures)
 // ---------------------------------------------------------------------------
 

@@ -234,6 +234,26 @@ describe('Webview script block syntax', () => {
     expect(match![1]).toContain('if (msg.warning)')
   })
 
+  // Missing-ANS fallback (Lapidary 5, 2026-07-13, specimen 1 — Jérémie hit
+  // this hand-answering a grammar seed: three QSTs shipped with
+  // "- Status: unanswered" but no "**ANS:**" marker and no placeholder at
+  // all, and the panel just refused: "no ANS or placeholder and it wasn't
+  // able to insert one, which I thought was already a feature"). writeAnswer
+  // now appends a brand-new ANS block when neither an ANS header nor a
+  // placeholder line is found, using Status as the reliable anchor.
+  it('writeAnswer appends a fresh ANS block when the question has Status but no ANS marker at all', () => {
+    expect(PANEL_SRC).toContain("} else if (statusLineIdx >= 0) {")
+    expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}\\n`)')
+  })
+
+  it('writeAnswer\'s block-extent scan stops at a thematic break, not just the next QST heading — the append fallback must never land past a "---" divider', () => {
+    expect(PANEL_SRC).toContain('let blockEndLineIdx = end')
+    expect(PANEL_SRC).toMatch(/blockEndLineIdx = i/)
+    // Same boundary regex as extractor.ts's THEMATIC_BREAK_RE — kept in
+    // sync by hand until there's a single shared module for both.
+    expect(PANEL_SRC).toContain('/^ {0,3}([-*_])(?:\\s*\\1){2,}\\s*$/')
+  })
+
   // DEBRIEF-004 (Jérémie, 2026-07-12, ADR-0025 QST-1): live answer vanished
   // mid-typing, and skip-then-return-to-question failed to restore the
   // draft. Root cause: idx is a bare POSITION in the flattened `questions`

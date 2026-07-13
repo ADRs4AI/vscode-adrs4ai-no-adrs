@@ -462,6 +462,14 @@ export class OpenQuestionsPanel {
       let statusLineIdx = -1
       let ansHeaderLineIdx = -1
       let fillLineIdx = -1
+      // Block-extent tail-swallow discipline (Lapidary 5, 2026-07-13, same
+      // fix shape as buildSubsections'): the scan window used to only stop
+      // at the next "### QST:" heading, so with nothing after it (the
+      // question was the LAST one) blockEndLineIdx defaulted to the raw
+      // +40-line window — meaning the append fallback below could land
+      // past a "---" divider, inside whatever followed. A thematic break
+      // is also a hard stop.
+      let blockEndLineIdx = end
 
       for (let i = start; i < end; i++) {
         const trimmed = lines[i].trim()
@@ -470,8 +478,13 @@ export class OpenQuestionsPanel {
         // ADR-0012: Tolerant matching — handle extra spaces and case variations like
         // "[ Fill this in ]", "[ Fill this in please ]", "[fill this in]".
         if (/^\[\s*fill\s+this\s+in[^\]]*\]$/i.test(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
-        // Stop searching at the next QST heading
-        if (i > start && trimmed.startsWith('### QST:')) break
+        // Stop searching at the next QST heading or a thematic break
+        // ("---"/"***"/"___") — same boundary set as extractor.ts's
+        // THEMATIC_BREAK_RE.
+        if (i > start && (trimmed.startsWith('### QST:') || /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(trimmed))) {
+          blockEndLineIdx = i
+          break
+        }
       }
 
       // 1. Update status → answered
@@ -485,13 +498,31 @@ export class OpenQuestionsPanel {
         edit.replace(uri, lineRange(doc, ansHeaderLineIdx), `**ANS:** (by ${author})`)
       }
 
-      // 3. Replace [Fill this in] with the answer (or insert after ANS header)
+      // 3. Replace [Fill this in] with the answer (or insert after ANS header,
+      // or append a brand-new ANS block if this question has neither an ANS
+      // marker nor a placeholder at all)
       if (fillLineIdx >= 0) {
         edit.replace(uri, lineRange(doc, fillLineIdx), msg.answerText)
       } else if (ansHeaderLineIdx >= 0) {
         // No placeholder — insert after the ANS header line
         const pos = new vscode.Position(ansHeaderLineIdx + 1, 0)
         edit.insert(uri, pos, msg.answerText + '\n')
+      } else if (statusLineIdx >= 0) {
+        // Missing-ANS fallback (Lapidary 5, 2026-07-13, specimen 1 — Jérémie
+        // hit this hand-answering a grammar seed tonight): a QST block can
+        // have a reliable "- Status:" field and no ANS marker or placeholder
+        // whatsoever — the panel used to just refuse ("Please answer it
+        // manually"), even though Status is exactly the reliable anchor
+        // that already lets step 1 above flip it to answered. Append a
+        // fresh ANS block at the end of this question's extent (just
+        // before the next heading/thematic break), trimming back over any
+        // trailing blank lines so it lands directly after the last real
+        // content line, not floating in whitespace.
+        const author = msg.authorName.trim() || 'Human'
+        let insertLineIdx = blockEndLineIdx
+        while (insertLineIdx > start && lines[insertLineIdx - 1].trim() === '') insertLineIdx--
+        const pos = new vscode.Position(insertLineIdx, 0)
+        edit.insert(uri, pos, `\n**ANS:** (by ${author})\n${msg.answerText}\n`)
       } else {
         // Fallback: can't find where to insert — report error
         this.panel.webview.postMessage({
