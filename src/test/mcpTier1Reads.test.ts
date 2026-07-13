@@ -212,6 +212,24 @@ describe('lookup', () => {
     expect(result).toContain('hint: specify the full slug')
   })
 
+  it('returns a structured ambiguous error, not a silent first-match, when two sections share an exact effective anchor (Cairn\'s RFC-Q1 edge case, 2026-07-13)', () => {
+    // A copy-pasted @adr-anchor override colliding with another section's
+    // heading-derived slug. Before this fix, .find() would silently return
+    // the first section in document order — surfacing here so it's a
+    // named regression, not just a passing assertion.
+    const adrWithDuplicateAnchor = makeAdr({
+      sections: [
+        HUMAN_CONTEXT_SECTION,
+        QUESTIONS_SECTION,
+        { level: 2, heading: 'Decision', body: 'First.', lineStart: 42, lineEnd: 44, slug: 'other-slug', anchorOverride: 'decision', children: [] },
+        DECISION_SECTION, // slug: 'decision' — same effective anchor as the section above
+      ],
+    })
+    const result = lookup(makeContext([adrWithDuplicateAnchor]), 'adr:0001#decision')
+    expect(result).toContain('error: ambiguous')
+    expect(result).toContain('duplicate @adr-anchor')
+  })
+
   it('returns a structured not_found error for an unknown ADR number', () => {
     const result = lookup(ctx, 'adr:9999')
     expect(result).toContain('error: not_found')

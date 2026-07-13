@@ -98,7 +98,24 @@ function resolveAnchorInAdr(adr: AdrFile, anchor: string): ResolvedSection | Res
   // heading with `<!-- @adr-anchor: stable-name -->` should resolve to the
   // question when looked up by "stable-name", not fall through to generic
   // section text missing status/answer/recommendation.
-  const sectionMatch = allSections.find((s) => sectionAnchor(s) === anchor)
+  //
+  // Filter, not find (Cairn's RFC-Q1 edge case, 2026-07-13): two sections
+  // can share the same effective anchor — a copy-pasted `@adr-anchor`
+  // override, or an override that happens to collide with another
+  // section's heading-derived slug. `.find()` would silently pick the
+  // first and never surface the collision; that's exactly the silent
+  // default-picking this module exists to avoid everywhere else.
+  const exactSectionMatches = allSections.filter((s) => sectionAnchor(s) === anchor)
+  if (exactSectionMatches.length > 1) {
+    return {
+      kind: 'error',
+      error: 'ambiguous',
+      message: `"${anchor}" is the effective anchor of ${exactSectionMatches.length} sections in ${adrRefString(adr)} — duplicate @adr-anchor override or an override colliding with another heading's slug`,
+      candidates: exactSectionMatches.map((s) => `${adrRefString(adr)}#${sectionAnchor(s)} (${s.heading})`),
+      hint: 'fix the duplicate @adr-anchor comment, or specify by line number',
+    }
+  }
+  const sectionMatch = exactSectionMatches[0]
   const questionViaOverride =
     sectionMatch?.navCode === 'QST' ? adr.questions.find((q) => q.slug === sectionMatch.slug) : undefined
 
