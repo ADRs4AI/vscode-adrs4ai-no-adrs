@@ -63,6 +63,61 @@ const CORPUS: Record<string, SpecimenTruth> = {
   // both. Ground truth and baseline agree: this one the corpus already
   // protects against regressing.
   'zoo-004-wrapped-placeholder-inline-attribution.md': { groundTruth: 2, baselineToday: 2 },
+  // Ecosystem sweep (2026-07-12, llm-orchestration-mcp/lyrical-mcp): a
+  // FIFTH placeholder token, `[Awaiting answer]`, not yet in the lexicon.
+  // Both questions read as genuinely answered content to the parser today —
+  // silent false-answered, the exact asymmetry ADR-0031 names as the costly
+  // direction. Ground truth 2 open, baseline 0.
+  'zoo-005-nonstandard-placeholder-token.md': { groundTruth: 2, baselineToday: 0 },
+  // Ecosystem sweep (penn__hugo-canvas-sync): a real answer with the
+  // "(by [name])" attribution dropped entirely — answer text starts
+  // immediately after "**ANS:**". Parser correctly reads this as answered
+  // (attribution is cosmetic to the isAnswered signal) — ground truth and
+  // baseline agree at 0 open; corpus entry protects this against regressing.
+  'zoo-006-ans-block-missing-attribution.md': { groundTruth: 0, baselineToday: 0 },
+  // Ecosystem sweep (bluesky-mcp-oauth-server, warm-call, caring-form — this
+  // exact form recurs across 3+ independent files): "**ANS**: (from X)" —
+  // colon OUTSIDE the bold span, "from" instead of "by". Parser correctly
+  // reads both as answered — ground truth and baseline agree at 0; corpus
+  // entry protects a morphology common enough to appear repeatedly in the wild.
+  'zoo-007-ans-attribution-from-outside-bold.md': { groundTruth: 0, baselineToday: 0 },
+  // Ecosystem sweep (warm-call): no "Status:" field anywhere in the QST
+  // block at all (not even bold — just absent), plus "**Recommended**:"
+  // instead of "**Recommendation**:". Parser correctly falls back to
+  // ANS-content evidence and reads both as answered — ground truth and
+  // baseline agree at 0; corpus entry protects the no-Status-field case.
+  'zoo-008-missing-status-field-recommended-typo.md': { groundTruth: 2, baselineToday: 0 },
+  // Ecosystem sweep (spotify-mcp-server): real QST headings, genuinely
+  // still open, but NO Status field and NO ANS block anywhere — pure
+  // heading-only signal. Parser correctly recalls both via heading presence
+  // alone — ground truth and baseline agree at 2; corpus entry protects the
+  // "question with no scaffold at all yet" case, which multi-signal
+  // candidacy (ADR-0031 element 1) exists partly to generalize.
+  'zoo-009-heading-only-no-status-no-ans.md': { groundTruth: 2, baselineToday: 2 },
+  // Ecosystem sweep (flightaware/overfly-report): a section title reuses the
+  // QST token as a generic label ("## QST: Open Questions" — not an actual
+  // question), and the THREE real open questions below are bullet items
+  // ("- QST: ...") instead of "### QST:" headings, with no Status/ANS
+  // scaffold. Ground truth 3. baselineToday is 1 — but that "1" is the
+  // MISREAD SECTION LABEL itself (a false positive), not any of the three
+  // real questions, which are all invisible. Kept at 1 for honest regression
+  // protection (if this ever drops to 0, that's still worth catching), not
+  // because 1/3 partial credit is actually happening.
+  'zoo-010-bulleted-questions-no-headings.md': { groundTruth: 3, baselineToday: 1 },
+  // Ecosystem sweep (warm-call): the entire QST/ANS vocabulary abandoned —
+  // "### Q1:"/"### Q2:" headings (no QST token), "**ANSWER: <text>**"
+  // inline instead of the two-line ANS pattern. One question left
+  // genuinely open in this specimen. Parser recognizes NOTHING in this file
+  // as belonging to the Questions structure at all — ground truth 1, baseline 0.
+  'zoo-011-alternate-vocabulary-no-qst-ans-tokens.md': { groundTruth: 1, baselineToday: 0 },
+  // Ecosystem sweep (batch-renderer): the question is bold inline body text
+  // ("**QST: ...**"), not a heading of any level, so a heading-node-based
+  // parser never sees it — and the "answer" is delivered via "**NOT**:",
+  // this project's OWN navigation code for a note/observation, not an
+  // answer marker, so even finding the bold text wouldn't pair it with a
+  // recognizable answer field. Genuinely open (no real decision made).
+  // Ground truth 1, baseline 0.
+  'zoo-012-bold-inline-question-not-a-heading.md': { groundTruth: 1, baselineToday: 0 },
 }
 
 function listSpecimens(): string[] {

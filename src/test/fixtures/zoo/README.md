@@ -16,6 +16,28 @@ These are the primary regression test fodder for `src/normalizer/`.
 | [zoo-002-decision-style-no-qsts.md](zoo-002-decision-style-no-qsts.md) | D5 | No Questions section; uses `### Decision N:` structure |
 | [zoo-003-status-with-parenthetical.md](zoo-003-status-with-parenthetical.md) | D2b | `- **Status**: unanswered (see ADR 0004)` — extra text after status value |
 | [zoo-004-wrapped-placeholder-inline-attribution.md](zoo-004-wrapped-placeholder-inline-attribution.md) | D9.4 morphology #4 | `_(pending)_` italic/paren-wrapped placeholder + `**Recommendation** (by X):` inline-attribution form. Real specimen — an "Athanor 5" seat, `temp/0021-crew-architecture-and-staffing.md`, 2026-07-12. Fixed same-day, v0.7.5. |
+| [zoo-005-nonstandard-placeholder-token.md](zoo-005-nonstandard-placeholder-token.md) | placeholder morphology (new) | `[Awaiting answer]` — a fifth placeholder token, not yet in the lexicon. Silent **false-answered** today (parser reads it as real content). Ecosystem: `llm-orchestration-mcp/lyrical-mcp`. |
+| [zoo-006-ans-block-missing-attribution.md](zoo-006-ans-block-missing-attribution.md) | ANS morphology | `**ANS:**` with no `(by [name])` at all, answer text starts next line. Parser handles correctly today — corpus entry protects against regressing. Ecosystem: `penn__hugo-canvas-sync`. |
+| [zoo-007-ans-attribution-from-outside-bold.md](zoo-007-ans-attribution-from-outside-bold.md) | ANS morphology | `**ANS**: (from X)` — colon outside the bold span, "from" not "by". Recurs across 3+ independent ecosystem projects. Handled correctly today; corpus entry protects a common morphology. |
+| [zoo-008-missing-status-field-recommended-typo.md](zoo-008-missing-status-field-recommended-typo.md) | Status-field morphology | No `Status:` field anywhere in the QST block (not even bold — absent), plus `**Recommended**:` instead of `**Recommendation**:`. Handled correctly via ANS-content fallback. Ecosystem: `warm-call`. |
+| [zoo-009-heading-only-no-status-no-ans.md](zoo-009-heading-only-no-status-no-ans.md) | scaffold-absent | Real `### QST:` headings, genuinely open, but no Status field and no ANS block at all. Recalled correctly via heading presence alone. Ecosystem: `spotify-mcp-server`. |
+| [zoo-010-bulleted-questions-no-headings.md](zoo-010-bulleted-questions-no-headings.md) | structural (new) | `## QST: Open Questions` reuses the QST token as a section label (misread as a phantom question); three real questions are `- QST: ...` bullets, not headings — all three invisible. Ground truth 3, baseline 1 (the "1" is the false-positive label, not a real question). Ecosystem: `flightaware/overfly-report`. |
+| [zoo-011-alternate-vocabulary-no-qst-ans-tokens.md](zoo-011-alternate-vocabulary-no-qst-ans-tokens.md) | structural (new) | Whole `QST`/`ANS` vocabulary abandoned — `### Q1:`/`### Q2:` headings, `**ANSWER: ...**` inline. Nothing in this file is recognized as belonging to the Questions structure at all. Ecosystem: `warm-call`. |
+| [zoo-012-bold-inline-question-not-a-heading.md](zoo-012-bold-inline-question-not-a-heading.md) | structural (new) | `**QST: ...**` as bold inline body text, not a heading of any level; answer delivered via `**NOT**:` (this project's own note/observation code, not an answer marker). Ecosystem: `batch-renderer`. |
+
+---
+
+## Known wild patterns not yet in the corpus (2026-07-12 ecosystem sweep)
+
+Found by the sweep, not yet turned into fixtures — logged here per the "no
+silent caps" discipline so a future pass (or anyone else) can pick these up
+without re-sweeping:
+
+- **Bold field names** (`- **Status**:`, `- **Why asking**:`) and **`## Open Questions` heading** — both already covered by `zoo-001` (D2/D3, D1 respectively); the sweep re-found them independently across ~10+ ecosystem files, confirming they're common, not just a `zoo-001` curiosity.
+- **`**ANS** (Jérémie):`** — attribution inside parens directly after `**ANS**`, colon *after* the closing paren, no "by". Distinct from `zoo-007`'s "(from X)" form. Source: `caring-form/docs/adr/0023-pod-page-feedback-primary.md:291-301`.
+- **`(to be filled)`** placeholder + non-canonical heading level `### Questions for Future Iterations` (level 3, not `## Questions`) stacked in one specimen. Source: `caring-form/docs/adr/0005-database-schema.md:202-209`.
+- **`Status:` field repurposed to carry the answer inline**, enum violated (`- **Status**: yes — Render's build command already clones fresh on deploy`), ANS block omitted entirely. Source: `penn__penn-engineering-cv/docs/adr/038-tui-history-git-strategy.md:225-242`.
+- **A whole different (MADR-flavored) template**, not just a collab-adr-lean deviation: `* Status: proposed` at document level, mixed `### QST:`/`## QST:` heading depth *within the same file*, `### ANS:` headings left empty with a parenthetical aside instead of any placeholder token. Violates nearly every assumption simultaneously — valuable as a "wrong template entirely" stress case. Source: `kind-tree-report/docs/adr/0008-location-based-distance-display.md:19-101` and other early-era `kind-tree-*` ADRs.
 
 ---
 
