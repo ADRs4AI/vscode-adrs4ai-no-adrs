@@ -2134,7 +2134,8 @@ Some thread content.
 - Options:
   - A — first option.
   - B — second option.
-- Recommendation (from Someone): **A**.
+
+Some prose discussing the trade-offs between the two options.
 
 ---
 
@@ -2147,7 +2148,7 @@ Some thread content.
     const q = adr.questions[0]
     expect((q.rawBody ?? '').trim()).not.toMatch(/^-{3,}$/m)
     expect(q.rawBody ?? '').not.toContain('---')
-    expect(q.rawBody ?? '').toContain('Recommendation (from Someone)')
+    expect(q.rawBody ?? '').toContain('Some prose discussing the trade-offs')
   })
 
   it('a mid-document QST (not the last) is unaffected — same behavior as before', () => {
@@ -2169,6 +2170,125 @@ Some thread content.
     expect(adr.questions).toHaveLength(2)
     expect(adr.questions[0].text).toBe('First?')
     expect(adr.questions[1].text).toBe('Second?')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Dash-bullet Recommendation form (Lapidary 5, 2026-07-13, temp/0015-
+// database-schema.md specimen): "- Recommendation: text" instead of the
+// canonical standalone "**Recommendation**:" block. Lapidary's diagnosis:
+// the model regularized toward LOCAL consistency — three dash-bullet
+// fields (Status/Why asking/Need) in a row invite a fourth. Ground-truth
+// verified against the real file: 3 plain "- Recommendation: text" cases
+// plus one with an inline attribution, "- Recommendation (Azoth): text".
+// ---------------------------------------------------------------------------
+
+describe('Dash-bullet Recommendation form (NONSTANDARD_RECOMMENDATION_FORM)', () => {
+  it('extracts a plain dash-bullet Recommendation with an inferred author', () => {
+    const content = `# ADR-0015: Test
+
+## Questions
+
+### QST: Should we use pgvector?
+- Status: unanswered
+- Recommendation: **Use pgvector from day 1.** It is one line in the migration.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0015-test.md')
+    expect(adr.questions[0].recommendations).toHaveLength(1)
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.text).toBe('**Use pgvector from day 1.** It is one line in the migration.')
+    expect(rec.pick).toBe('Use pgvector from day 1.')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_RECOMMENDATION_FORM')).toBe(true)
+  })
+
+  it('extracts a dash-bullet Recommendation with an inline attribution: "- Recommendation (Author): text"', () => {
+    const content = `# ADR-0015: Test
+
+## Questions
+
+### QST: Which option?
+- Status: unanswered
+- Recommendation (Azoth): **C.** It's the only option that doesn't require a schema migration.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0015-test.md')
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.author).toBe('Azoth')
+    expect(rec.authorInferred).toBeFalsy()
+    expect(rec.text).toContain("It's the only option")
+  })
+
+  it('does NOT flag the canonical standalone "**Recommendation**:" block', () => {
+    const content = `# ADR-0015: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+**Recommendation**: (by Someone)
+
+Some recommendation text.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0015-test.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_RECOMMENDATION_FORM')).toBe(false)
+  })
+
+  it('ground truth: extracts all four dash-bullet Recommendations from the real temp/0015 specimen shape', () => {
+    // Inlined (temp/ is gitignored, not a committed fixture) — the exact
+    // shape of all four real occurrences in temp/0015-database-schema.md.
+    const content = `# ADR-0015: Database Schema
+
+## Questions
+
+### QST: Should \`template_query_embeddings\` use pgvector's \`vector\` type or store as JSONB array?
+- Status: unanswered
+- Recommendation: **Use pgvector from day 1**. The \`CREATE EXTENSION vector;\` is literally one line in migration 0001.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+---
+
+### QST: Should SQLAlchemy use async (asyncpg) or sync (psycopg2) in the application layer?
+- Status: unanswered
+- Recommendation: **Async SQLAlchemy throughout.** The \`asyncio_mode = "auto"\` setting confirms this was the intent.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+---
+
+### QST: How should the test database be structured?
+- Status: unanswered
+- Recommendation: **Neon test branch for integration tests.** Neon branches are zero-cost copies of the schema.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+---
+
+### QST: \`drafts.confidence REAL NOT NULL\` assumes a number the QA-checklist match model doesn't produce
+- Status: unanswered
+- Recommendation (Azoth): **C.** It's the only option that doesn't require a schema migration.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0015-database-schema.md')
+    expect(adr.questions).toHaveLength(4)
+    expect(adr.questions.every(q => q.recommendations && q.recommendations.length === 1)).toBe(true)
+    expect(adr.questions[3].recommendations![0].author).toBe('Azoth')
+    const formWarnings = adr.parseWarnings.filter(w => w.code === 'NONSTANDARD_RECOMMENDATION_FORM')
+    expect(formWarnings).toHaveLength(4)
   })
 })
 

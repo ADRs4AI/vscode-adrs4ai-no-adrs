@@ -21,6 +21,7 @@ import { D65MissingBoldPreambleFieldHandler } from '../normalizer/handlers/d6-5-
 import { D96NoncanonicalNavCodeHeadingHandler } from '../normalizer/handlers/d9-6-noncanonical-nav-code-heading'
 import { D95MissingRecommendationHandler } from '../normalizer/handlers/d9-5-missing-recommendation'
 import { D94NonstandardFillPlaceholderHandler } from '../normalizer/handlers/d9-4-nonstandard-fill-placeholder'
+import { D97RecommendationBulletFormHandler } from '../normalizer/handlers/d9-7-recommendation-bullet-form'
 import { parseAdr } from '../parser/extractor'
 
 // ---------------------------------------------------------------------------
@@ -1160,5 +1161,144 @@ ${token}
     expect(normalized).toContain('**ANS:** (by Jérémie Lumbroso)\n[Fill this in]')
     const adr = parseAdr(normalized, '/fake/0021-crew.md')
     expect(adr.questions[0].isAnswered).toBe(false)
+  })
+})
+
+// D9.7 (Lapidary 5, 2026-07-13, live specimen temp/0015-database-schema.md):
+// "- Recommendation: text" dash-bullet field instead of the canonical
+// standalone "**Recommendation**:" block — the model regularized toward
+// local consistency with the surrounding dash-bullet fields.
+describe('D97RecommendationBulletFormHandler', () => {
+  const handler = new D97RecommendationBulletFormHandler()
+  const parseResult = parseAdr(CONFORMANT_ADR, '/fake/0001.md')
+
+  const PLAIN_BULLET_SPECIMEN = `# ADR-0015: Test
+
+## Questions
+
+### QST: Should we use pgvector?
+- Status: unanswered
+- Recommendation: **Use pgvector from day 1.** One line in the migration.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+
+  const ATTRIBUTED_BULLET_SPECIMEN = `# ADR-0015: Test
+
+## Questions
+
+### QST: Which option?
+- Status: unanswered
+- Recommendation (Azoth): **C.** No schema migration required.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+
+  it('detects the live specimen shape: "- Recommendation: text"', () => {
+    const records = handler.detect(PLAIN_BULLET_SPECIMEN, parseResult)
+    expect(records).toHaveLength(1)
+    expect(records[0].handlerId).toBe('d9-7-recommendation-bullet-form')
+  })
+
+  it('does NOT flag the canonical standalone "**Recommendation**:" block', () => {
+    const records = handler.detect(CONFORMANT_ADR, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('fix() rewrites to the canonical standalone block, no attribution', () => {
+    const records = handler.detect(PLAIN_BULLET_SPECIMEN, parseResult)
+    const patch = handler.fix(PLAIN_BULLET_SPECIMEN, records[0])
+    expect(patch.replacement).toBe('**Recommendation**: **Use pgvector from day 1.** One line in the migration.')
+  })
+
+  it('fix() preserves an inline attribution, moving it into the canonical "(by Author)" position', () => {
+    const records = handler.detect(ATTRIBUTED_BULLET_SPECIMEN, parseResult)
+    expect(records).toHaveLength(1)
+    const patch = handler.fix(ATTRIBUTED_BULLET_SPECIMEN, records[0])
+    expect(patch.replacement).toBe('**Recommendation** (by Azoth): **C.** No schema migration required.')
+  })
+
+  it('guard the guard: does NOT flag Options bullets that merely mention "recommendation" in prose', () => {
+    const content = `# ADR-0015: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+- Options:
+  - A — the recommendation from Azoth was to skip this.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(0)
+  })
+
+  it('DMA: message validates the attribution/content were preserved before naming the form deviation', () => {
+    const records = handler.detect(ATTRIBUTED_BULLET_SPECIMEN, parseResult)
+    expect(records[0].description).toContain('recognized correctly')
+    expect(records[0].description).toContain('Azoth')
+  })
+
+  it('test discipline (ADR-0014): message contains the deviation-type slug', () => {
+    const records = handler.detect(PLAIN_BULLET_SPECIMEN, parseResult)
+    expect(records[0].description).toContain('NONSTANDARD_RECOMMENDATION_FORM')
+  })
+
+  it('applying process() makes the block canonical and re-parses with recommendations[] populated', () => {
+    const patches = handler.process(ATTRIBUTED_BULLET_SPECIMEN, parseResult)
+    const normalized = applyPatches(ATTRIBUTED_BULLET_SPECIMEN, patches)
+    const adr = parseAdr(normalized, '/fake/0015-test.md')
+    expect(adr.questions[0].recommendations).toHaveLength(1)
+    expect(adr.questions[0].recommendations![0].author).toBe('Azoth')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_RECOMMENDATION_FORM')).toBe(false)
+  })
+
+  it('ground truth: all four real dash-bullet Recommendations from temp/0015 are detected', () => {
+    // Inlined (temp/ is gitignored) — the exact shape of all four real
+    // occurrences, three plain and one attributed ("Azoth").
+    const content = `# ADR-0015: Database Schema
+
+## Questions
+
+### QST: Q1?
+- Status: unanswered
+- Recommendation: **Use pgvector from day 1**. One line in migration 0001.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+---
+
+### QST: Q2?
+- Status: unanswered
+- Recommendation: **Async SQLAlchemy throughout.** Confirms the intent.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+---
+
+### QST: Q3?
+- Status: unanswered
+- Recommendation: **Neon test branch for integration tests.** Zero-cost copies.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+
+---
+
+### QST: Q4?
+- Status: unanswered
+- Recommendation (Azoth): **C.** No schema migration required.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const records = handler.detect(content, parseResult)
+    expect(records).toHaveLength(4)
   })
 })

@@ -254,7 +254,8 @@ export type ParseWarningCode =
   | 'NONSTANDARD_QST_FORMAT'   // QST blocks use a non-standard format (### QST-N: or **Preference?**)
   | 'NONCANONICAL_NAV_CODE_HEADING' // nav code heading recognized only case-insensitively or with a glued colon
   | 'NONCANONICAL_NAV_CODE_LEVEL'  // nav code heading recognized, but at the wrong heading level (## or #### instead of ###)
-  | 'NONSTANDARD_FILL_PLACEHOLDER'; // ANS placeholder uses a non-canonical stock token (e.g. "[unanswered]" instead of "[Fill this in]")
+  | 'NONSTANDARD_FILL_PLACEHOLDER'  // ANS placeholder uses a non-canonical stock token (e.g. "[unanswered]" instead of "[Fill this in]")
+  | 'NONSTANDARD_RECOMMENDATION_FORM'; // Recommendation written as a dash-bullet field ("- Recommendation: ...") instead of the canonical standalone "**Recommendation**:" block
 
 export interface ParseWarning {
   code: ParseWarningCode;

@@ -574,6 +574,18 @@ const REC_ATTRIBUTION_RE = /^\((?:by|from)\s+([^,)]+?)(?:,\s*(.+))?\)\s*$/i;
 // from the ADR's Deciders line (single-AI ADRs dominate the legacy corpus).
 const AI_AUTHOR_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral|fable/i;
 
+// Dash-bullet field form (Lapidary 5, 2026-07-13, temp/0015-database-schema.md
+// specimen): "- Recommendation: text" or "- Recommendation (Author): text" —
+// a plain dash-bullet field, not the canonical standalone "**Recommendation**:"
+// block. Lapidary's diagnosis: the model regularized toward LOCAL
+// consistency — three dash-bullet fields in a row (Status/Why asking/Need)
+// invite a fourth, so the block-form Recommendation gets flattened into the
+// same shape as its neighbors. Before this fix it matched neither
+// RECOMMENDATION_RE nor any other field regex, so it fell through to raw
+// prose: unstyled, unattributed (a real DMA/§1 attribution loss, not just a
+// cosmetic one), and absent from `recommendations[]` entirely.
+const RECOMMENDATION_BULLET_RE = /^-\s+Recommendation(?:\s*\(([^)]+)\))?:\s*(.*)/i;
+
 // ADR-0012: the canonical placeholder — tolerated silently, no diagnostic.
 const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i;
 // D9.4 (live specimen, 2026-07-10, temp/0011-agent-sessions-json-linter-…):
@@ -769,6 +781,34 @@ export function extractQuestion(
       recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
       recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine, inlineAttribution });
       if (firstLine) recommendationLines.push(firstLine);
+      continue;
+    }
+
+    // Dash-bullet field form fallback (temp/0015 specimen): tolerate,
+    // extract correctly (attribution included), warn — never silently drop
+    // the structure the way the pre-fix behavior did (fell through to raw
+    // prose, no attribution, absent from recommendations[] entirely).
+    const recBulletMatch = line.match(RECOMMENDATION_BULLET_RE);
+    if (recBulletMatch) {
+      inRecommendation = true;
+      recommendationBlockStarts.push(recommendationLines.length);
+      const inlineAttribution = recBulletMatch[1]?.trim();
+      const firstLine = recBulletMatch[2].trim();
+      recProtocolForm = false; // dash-bullet form is always single-field, never multi-paragraph
+      recommendationBlockMeta.push({ protocolForm: false, line: absLine, inlineAttribution });
+      if (firstLine) recommendationLines.push(firstLine);
+      if (warnings) {
+        const suggestedMarker = inlineAttribution ? `**Recommendation** (by ${inlineAttribution}):` : '**Recommendation**:';
+        // Recommendation text can run long — the diagnostic names the FORM
+        // problem and shows the canonical marker to rewrite to, not a
+        // full echo of the (potentially multi-hundred-word) recommendation
+        // text itself.
+        warnings.push({
+          code: 'NONSTANDARD_RECOMMENDATION_FORM',
+          message: `A Recommendation was found written as a "- Recommendation:" dash-bullet field, not the canonical standalone block. Recognized anyway — no data lost, attribution ${inlineAttribution ? `("${inlineAttribution}") ` : ''}included — but this form doesn't render with the recommendation's attribution styling, and it's an easy shape to regularize into by accident next to Status/Why asking/Need. SUGGESTED: rewrite this line as its own block starting with "${suggestedMarker}" rather than a dash-bullet field.`,
+          line: absLine,
+        });
+      }
       continue;
     }
 
