@@ -12,6 +12,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import { KNOWN_STATUS_VALUES, requiresScopeRemaining } from './statusInfo'
 import { tokenize, extractRawSections, type RawSection, type Token } from './tokenizer'
+import { unwrapListItems, unwrapParagraphs } from './hardwrap'
 import type {
   AdrFile,
   AdrFormat,
@@ -794,8 +795,17 @@ export function extractQuestion(
   }
   trimBlanks(rawBodyLinesPre)
   trimBlanks(rawBodyLinesPost)
-  const rawBody = rawBodyLinesPre.length > 0 ? rawBodyLinesPre.join('\n') : undefined
-  const rawBodyPost = rawBodyLinesPost.length > 0 ? rawBodyLinesPost.join('\n') : undefined
+  // Hard-wrap robustness (Lapidary 5, 2026-07-13 reframe): rawBody/
+  // rawBodyPost is typically the option bullets (A/B/C...) and gets handed
+  // to the webview's markdown renderer as-is. A hard-wrapped continuation
+  // line inside a bullet has no marker of its own, so the renderer's
+  // line-based list detection can't tell it apart from a new paragraph —
+  // the exact "Option B's text bleeding out of its bullet" screenshot.
+  // Rejoining wrapped list items HERE, at extraction time, means every
+  // downstream consumer (panel, MCP, future ones) sees already-normalized
+  // markdown, not a renderer-specific patch.
+  const rawBody = rawBodyLinesPre.length > 0 ? unwrapListItems(rawBodyLinesPre).join('\n') : undefined
+  const rawBodyPost = rawBodyLinesPost.length > 0 ? unwrapListItems(rawBodyLinesPost).join('\n') : undefined
 
   if (answerLines.length > 0) {
     // Strip trailing horizontal rules and blank lines (--- separators between sections
@@ -836,7 +846,10 @@ export function extractQuestion(
   const isAnswered = statusText.toLowerCase().trim() === 'answered' || !!answer;
 
   if (recommendationLines.length > 0) {
-    recommendation = recommendationLines.join('\n').trim() || undefined;
+    // Hard-wrap robustness: join wrapped continuation lines within each
+    // paragraph, preserving genuine blank-line paragraph breaks — see
+    // unwrapParagraphs() and the matching rawBody fix above.
+    recommendation = unwrapParagraphs(recommendationLines).join('\n').trim() || undefined;
   }
 
   let recommendations: Recommendation[] | undefined;
@@ -871,7 +884,9 @@ export function extractQuestion(
         if (author !== undefined) authorInferred = true;
       }
 
-      const text = bodyLines.join('\n').trim();
+      // Hard-wrap robustness: same paragraph-join as the legacy
+      // `recommendation` field above, applied per-block.
+      const text = unwrapParagraphs(bodyLines).join('\n').trim();
       if (!text) continue;
 
       blocks.push({

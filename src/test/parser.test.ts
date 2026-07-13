@@ -1866,6 +1866,212 @@ describe('Zoarium D5 — multi-line field values (word-wrapped continuations)', 
 })
 
 // ---------------------------------------------------------------------------
+// Hard-wrap robustness (Lapidary 5, 2026-07-13 reframe of the 0420 brief) —
+// distinct from the D5 suite above. D5's continuations are INDENTED (soft
+// word-wrap, 2-space hanging indent, already handled). Hard-wrapping (an
+// editor folding prose at a fixed column) produces FLUSH-LEFT continuation
+// lines with no indent at all — a different morphology, unhandled by the
+// existing isContinuation logic for anything other than Why-asking/Need.
+// Jérémie: "there's *never* a time where you want" a viewport's line-fold
+// baked into the substrate — the fix is robustness at extraction time, not
+// a recommendation to avoid hard-wrapping (that's the separate, weaker,
+// diagnostic-only ask in the same charter).
+// ---------------------------------------------------------------------------
+
+describe('Hard-wrap robustness: rawBody option bullets', () => {
+  it('a hard-wrapped option bullet (flush-left continuation, no indent) joins into one line in rawBody', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+- Why asking: MCP/Relay and Assayer seats should land on substrate, not idle.
+- Need: criterion confirmation
+
+- **A — Calendar**: fixed date.
+- **B — Milestone**: when the pipeline round-trips a real email end-to-end
+  (intake → match → extract → draft → validation surface), so the MCP server
+  exposes something true and the Assayer has a working loop to mine.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    const rawBody = adr.questions[0].rawBody ?? ''
+    expect(rawBody).toContain('- **B — Milestone**: when the pipeline round-trips a real email end-to-end (intake → match → extract → draft → validation surface), so the MCP server exposes something true and the Assayer has a working loop to mine.')
+    // The continuation lines must not survive as separate lines — that's
+    // exactly what let the webview's line-based list renderer treat them
+    // as sibling paragraphs instead of part of Option B's <li>.
+    expect(rawBody.split('\n')).toHaveLength(2)
+  })
+
+  it('does not merge two distinct option bullets into one', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+- **A — First option**: short.
+- **B — Second option**: also short.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    const rawBody = adr.questions[0].rawBody ?? ''
+    expect(rawBody.split('\n')).toEqual([
+      '- **A — First option**: short.',
+      '- **B — Second option**: also short.',
+    ])
+  })
+})
+
+describe('Hard-wrap robustness: recommendation text', () => {
+  it('a hard-wrapped legacy-form recommendation joins into one flowing paragraph', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **B — milestone-triggered.**
+Same argument as the Tablée two-wave decision: stable intermediate forms.
+A calendar trigger could seat the MCP/Relay before there is anything to relay.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.text).toBe(
+      '**B — milestone-triggered.** Same argument as the Tablée two-wave decision: stable intermediate forms. A calendar trigger could seat the MCP/Relay before there is anything to relay.',
+    )
+    expect(rec.pick).toBe('B — milestone-triggered.')
+    expect(rec.author).toBe('Athanor 5, Claude Fable 5')
+  })
+
+  it('a hard-wrapped protocol-form recommendation joins lines within each paragraph, keeps paragraph breaks', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+**Recommendation**: (by Fable 5, 2026-07-13)
+
+First paragraph wraps
+across two lines.
+
+Second paragraph is
+also wrapped.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.author).toBe('Fable 5')
+    expect(rec.text).toBe('First paragraph wraps across two lines.\n\nSecond paragraph is also wrapped.')
+  })
+})
+
+// Ground truth: Athanor 5's actual inbox-alchemy ADR-0021, verbatim as
+// originally authored (hard-wrapped), before the manual unwrap-adrs.mjs
+// pass (inbox-alchemy commit 031dacf). This is Lapidary's named test of
+// done: "Athanor's original wrapped 0021 — un-unwrapped — renders and
+// parses perfectly." Inlined (a different project's repo, not a fixture
+// this repo can read from disk).
+describe('Hard-wrap robustness: ground truth — Athanor\'s original wrapped inbox-alchemy 0021', () => {
+  const content = `# ADR-0021: Crew Architecture, Staffing, and the Athanor Mission
+
+- **Date**: 2026-07-12
+- **Iteration**: 1
+- **Status**: Accepted
+- **Deciders**: Jérémie Lumbroso, Athanor 5 (Claude Fable 5)
+
+---
+
+## Questions
+
+### QST: When does wave 2 trigger?
+- Status: unanswered
+- Why asking: MCP/Relay and Assayer seats should land on substrate, not idle.
+- Need: criterion confirmation
+
+- **A — Calendar**: fixed date.
+- **B — Milestone**: when the pipeline round-trips a real email end-to-end
+  (intake → match → extract → draft → validation surface), so the MCP server
+  exposes something true and the Assayer has a working loop to mine.
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **B — milestone-triggered.**
+Same argument as the Tablée two-wave decision: stable intermediate forms.
+A calendar trigger could seat the MCP/Relay before there is anything to relay.
+
+**ANS:** (by Jérémie Lumbroso)
+[Fill this in]
+
+---
+
+### QST: Is the Assayer a persistent seat or on-demand subagent dispatches?
+- Status: unanswered
+- Why asking: Concept-mining (this repo + the adrs4ai corpus) is recurrent
+  but bursty; the Tablée ADR judged corpus-shopping to be subagent work,
+  while its Atelier precedent showed taste-accumulating streams deserve
+  persistent seats.
+- Need: option choice
+
+- **A — On-demand first, graduate if recurrent**: Athanor dispatches scout
+  subagents; if the assay proves to be a standing stream (Jérémie's research
+  program suggests it might), mint the seat in wave 2.
+- **B — Persistent seat from wave 2**: the assay accumulates taste (which
+  concepts matter to Jérémie's fingerprint) the way Tablée's Atelier
+  accumulates visual taste.
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **A — on-demand first.**
+The first scout was dispatched 2026-07-12 (adrs4ai corpus inventory); its
+yield will show whether the stream is standing or episodic. Graduation is
+cheap; un-seating is awkward.
+
+**ANS:** (by Jérémie Lumbroso)
+[Fill this in]
+
+---
+`
+  const adr = parseAdr(content, '/fake/docs/adr/0021-crew-architecture-and-staffing.md')
+
+  it('recalls both questions, both unanswered', () => {
+    expect(adr.questions).toHaveLength(2)
+    expect(adr.questions.every(q => !q.isAnswered)).toBe(true)
+  })
+
+  it('QST-1: whyAsking, need, recommendation, and rawBody are all fully joined', () => {
+    const q = adr.questions[0]
+    expect(q.whyAsking).toBe('MCP/Relay and Assayer seats should land on substrate, not idle.')
+    expect(q.need).toBe('criterion confirmation')
+    expect(q.recommendations![0].text).not.toContain('\n')
+    expect(q.rawBody?.split('\n')).toHaveLength(2)
+  })
+
+  it('QST-2: whyAsking spans 4 wrapped lines, fully joined; recommendation and rawBody joined', () => {
+    const q = adr.questions[1]
+    expect(q.whyAsking).toBe(
+      'Concept-mining (this repo + the adrs4ai corpus) is recurrent but bursty; the Tablée ADR judged corpus-shopping to be subagent work, while its Atelier precedent showed taste-accumulating streams deserve persistent seats.',
+    )
+    expect(q.recommendations![0].text).not.toContain('\n')
+    expect(q.rawBody?.split('\n')).toHaveLength(2)
+  })
+
+  it('no parse warnings — this is well-formed collab-adr-lean, just hard-wrapped', () => {
+    expect(adr.parseWarnings).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Regression tests: rawBody capture (ADR-0003 / ADR-0008 parsing failures)
 // ---------------------------------------------------------------------------
 
