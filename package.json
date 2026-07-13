@@ -2,7 +2,7 @@
   "name": "adrs-for-ai",
   "displayName": "ADRs for AI",
   "description": "Turn AI design conversations into durable, answerable decision records — open questions live in your sidebar, answers can't be lost.",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "publisher": "jlumbroso",
   "license": "MIT",
   "icon": "media/adr-icon-256.png",
