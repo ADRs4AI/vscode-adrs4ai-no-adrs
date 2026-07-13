@@ -708,7 +708,16 @@ export function extractQuestion(
   let inRecommendation = false;
   // ADR-0019 interim bridge: protocol-form blocks span blank lines; legacy
   // blocks end at the first blank line (preserving ADR-0010 behavior).
+  // `recProtocolForm` specifically means "the first body line is an
+  // attribution-only line to strip" (block-building, below) — it must NOT
+  // be reused for "should collection span multiple paragraphs," which is
+  // `recSpansParagraphs` (Lapidary 5, 2026-07-13, rec-extent-escape fix):
+  // the inline-attribution form ("**Recommendation** (by X): text") has
+  // real content on its own first line, not an attribution-only line, so
+  // conflating the two flags would make block-building wrongly strip that
+  // first line of real content while trying to parse it as an attribution.
   let recProtocolForm = false;
+  let recSpansParagraphs = false;
   // pastRecommendation: true once we have seen AND exited a recommendation block.
   // Lines before recommendation → rawBody (context/grammar/options).
   // Lines after recommendation → rawBodyPost (orphaned closing remarks).
@@ -779,6 +788,18 @@ export function extractQuestion(
       const inlineAttribution = recMatch[1]?.trim();
       const firstLine = recMatch[2].trim();
       recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
+      // Rec-extent escape (Lapidary 5, 2026-07-13, inbox-alchemy ADR-0022
+      // specimen): v0.7.5's inline-attribution tolerance ("**Recommendation**
+      // (by Author): text") captured only the same-line content — legacy-
+      // form's end-at-first-blank-line rule applied, since `firstLine` here
+      // is real content, not an attribution-only line, so REC_ATTRIBUTION_RE
+      // never matched it. A multi-paragraph justification after an inline
+      // attribution escaped past the first blank line into rawBodyPost,
+      // rendering as bare paragraphs below the styled block in the panel.
+      // An explicit inline attribution is just as much a signal of a real,
+      // possibly multi-paragraph recommendation as the protocol form's own
+      // attribution line — extent parity, not just form tolerance.
+      recSpansParagraphs = recProtocolForm || !!inlineAttribution;
       recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine, inlineAttribution });
       if (firstLine) recommendationLines.push(firstLine);
       continue;
@@ -795,6 +816,7 @@ export function extractQuestion(
       const inlineAttribution = recBulletMatch[1]?.trim();
       const firstLine = recBulletMatch[2].trim();
       recProtocolForm = false; // dash-bullet form is always single-field, never multi-paragraph
+      recSpansParagraphs = false;
       recommendationBlockMeta.push({ protocolForm: false, line: absLine, inlineAttribution });
       if (firstLine) recommendationLines.push(firstLine);
       if (warnings) {
@@ -817,9 +839,11 @@ export function extractQuestion(
     // ADR-0010: Fix greediness — stop at "**Caveat**:", "**Edge case**:", etc.
     if (inRecommendation) {
       if (line === '') {
-        // Protocol-form bodies are multi-paragraph: keep collecting across
-        // blank lines until ANS / a new bold-key block / the QST's end.
-        if (recProtocolForm) { recommendationLines.push(''); continue; }
+        // Protocol-form AND inline-attribution bodies are multi-paragraph:
+        // keep collecting across blank lines until ANS / a new bold-key
+        // block / the QST's end (rec-extent escape fix — see
+        // recSpansParagraphs' declaration for why this isn't recProtocolForm).
+        if (recSpansParagraphs) { recommendationLines.push(''); continue; }
         inRecommendation = false; pastRecommendation = true; continue;
       }
       // Stop at any new **Key**: block that isn't the ANS marker

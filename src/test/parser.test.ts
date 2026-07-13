@@ -3007,6 +3007,96 @@ Same argument as the Tablée two-wave decision.
     expect(rec.text).toContain('Same argument as the Tablée two-wave decision')
   })
 
+  // Rec-extent escape (Lapidary 5, 2026-07-13, inbox-alchemy ADR-0022
+  // specimen: "Is 'InboxAlchemy' the permanent name?"). v0.7.5's inline-
+  // attribution tolerance captured only the same-line content — the
+  // first body line is real content, not an attribution-only line, so
+  // legacy single-paragraph rules applied and a multi-paragraph
+  // justification escaped past the first blank line into rawBodyPost,
+  // rendering as bare paragraphs below the styled recommendation block.
+  it('an inline-attribution recommendation spans multiple paragraphs, not just the first blank-line-terminated one', () => {
+    const content = `# ADR-0022: Test
+
+## Questions
+
+### QST: Is the name permanent?
+- Status: unanswered
+- Need: option choice
+
+- **A — Keep it.**
+- **B — Rename.**
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **A.**
+
+*For the name*: first paragraph of justification, several sentences long.
+
+*For the decoupling*: second paragraph, a different argument entirely.
+
+*Boundary note*: third paragraph, a closing caveat.
+
+**ANS:** (by Jérémie Lumbroso)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0022-test.md')
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.author).toBe('Athanor 5, Claude Fable 5')
+    expect(rec.text).toContain('For the name')
+    expect(rec.text).toContain('For the decoupling')
+    expect(rec.text).toContain('Boundary note')
+    // The escape bug's signature: none of this should have leaked into
+    // rawBodyPost as orphaned bare-paragraph text.
+    expect(adr.questions[0].rawBodyPost).toBeUndefined()
+  })
+
+  // Ground truth: the actual live specimen, verbatim from inbox-alchemy's
+  // docs/adr/0022-project-name-vs-product-brand.md (a different project's
+  // repo, not a fixture this repo can read from disk — inlined).
+  it('ground truth: the real inbox-alchemy ADR-0022 specimen — three-paragraph inline-attribution recommendation', () => {
+    const content = `# ADR-0022: Project Name vs. Product Brand
+
+## Originating Context
+
+Jérémie, 2026-07-13, in conversation: "Do you think 'Inbox Alchemy' is a good permanent name?"
+
+### QST: Is "InboxAlchemy" the permanent name?
+- Status: unanswered
+- Need: option choice
+
+- **A — Permanent project name; product brand decided at launch.** The
+  repo, crew, ADRs, and lore keep InboxAlchemy forever.
+- **B — Permanent for everything**, project and product both, now.
+- **C — Rename now** before more lore accretes.
+
+**Recommendation** (by Athanor 5, Claude Fable 5): **A.**
+
+*For the name (why not C)*: the alchemical register turned out to be
+semantically load-bearing, not decorative — transmutation IS the core loop.
+
+*For the decoupling (why not B)*: three product-side cautions deserve
+fresh eyes at launch, not inheritance by default.
+
+*Boundary note*: **Episteme** (ADR-0018) is unaffected — the public,
+MPL v2 framework name carries the scholarship regardless of what the
+product is called.
+
+**ANS:** (by Jérémie Lumbroso)
+_(pending)_
+
+---
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0022-project-name-vs-product-brand.md')
+    expect(adr.questions).toHaveLength(1)
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(false)
+    const rec = q.recommendations![0]
+    expect(rec.author).toBe('Athanor 5, Claude Fable 5')
+    expect(rec.text).toContain('For the name (why not C)')
+    expect(rec.text).toContain('For the decoupling (why not B)')
+    expect(rec.text).toContain('Boundary note')
+    expect(rec.text).toContain('Episteme')
+    expect(q.rawBodyPost).toBeUndefined()
+  })
+
   // Ground truth: the actual reported specimen, verbatim from temp/0021-
   // crew-architecture-and-staffing.md (gitignored scratch content, inlined
   // here since it can't be a committed fixture) — both fixes together,
