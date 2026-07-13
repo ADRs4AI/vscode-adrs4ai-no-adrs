@@ -2354,7 +2354,7 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
     expect(warning?.message).toContain('[Fill this in]')
   })
 
-  it.each(['[to be answered]', '[TBD]', '[pending]', '[todo]'])(
+  it.each(['[to be answered]', '[TBD]', '[pending]', '[todo]', '[Awaiting answer]', '[awaiting]'])(
     'also recognizes the synonym placeholder %s',
     (placeholder) => {
       const content = `# ADR-0011: Test
@@ -2365,6 +2365,28 @@ describe('D9.4 — nonstandard ANS placeholder tokens ("[unanswered]" etc.)', ()
 - Status: unanswered
 
 **ANS:** ${placeholder}
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
+      expect(adr.questions[0].isAnswered).toBe(false)
+      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
+    },
+  )
+
+  // Ecosystem sweep (Quarry 5, 2026-07-12, llm-orchestration-mcp/lyrical-
+  // mcp — corpus zoo-005): a fifth stock token, "awaiting"/"awaiting
+  // answer", not yet in the lexicon at the time of the sweep. Same-day fix.
+  it.each(['_(awaiting answer)_', '(awaiting)', '*(awaiting response)*'])(
+    'also recognizes wrapped "awaiting" placeholders %s',
+    (placeholder) => {
+      const content = `# ADR-0011: Test
+
+## Questions
+
+### QST: Which vocabulary?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+${placeholder}
 `
       const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
       expect(adr.questions[0].isAnswered).toBe(false)

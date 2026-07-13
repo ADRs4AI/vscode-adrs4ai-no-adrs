@@ -39,8 +39,12 @@ import { stripPlaceholderWrapper, PLACEHOLDER_LEXICON_RE } from '../../parser/ex
  * same line as the marker is never misread — this only matches when the
  * ENTIRE trailing content is one of the synonym stock tokens.
  */
+// "awaiting" added 2026-07-12 (Quarry 5 ecosystem sweep, corpus zoo-005) —
+// same lexicon addition as extractor.ts's PLACEHOLDER_SYNONYM_RE; kept in
+// sync by hand until ADR-0031's placeholder.ts module replaces all three
+// sites with one source of truth.
 const INLINE_ANS_PLACEHOLDER_RE =
-  /^(\s*)\*\*ANS:\*\*\s*(\((?:by|from)\s+[^)]+\)\s*)?\[\s*(?:unanswered|to be answered|tbd|pending|todo)[^\]]*\]\s*$/i
+  /^(\s*)\*\*ANS:\*\*\s*(\((?:by|from)\s+[^)]+\)\s*)?\[\s*(?:unanswered|to be answered|tbd|pending|todo|awaiting)[^\]]*\]\s*$/i
 // Bug report (2026-07-12, Jérémie, temp/0048): a bare "[ ]"/"[]" is the same
 // deviation class as the named synonyms above, but a separate regex on
 // purpose — folding it into the group above (matching on empty) would let

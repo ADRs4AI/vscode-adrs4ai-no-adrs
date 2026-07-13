@@ -64,11 +64,10 @@ const CORPUS: Record<string, SpecimenTruth> = {
   // protects against regressing.
   'zoo-004-wrapped-placeholder-inline-attribution.md': { groundTruth: 2, baselineToday: 2 },
   // Ecosystem sweep (2026-07-12, llm-orchestration-mcp/lyrical-mcp): a
-  // FIFTH placeholder token, `[Awaiting answer]`, not yet in the lexicon.
-  // Both questions read as genuinely answered content to the parser today —
-  // silent false-answered, the exact asymmetry ADR-0031 names as the costly
-  // direction. Ground truth 2 open, baseline 0.
-  'zoo-005-nonstandard-placeholder-token.md': { groundTruth: 2, baselineToday: 0 },
+  // FIFTH placeholder token, `[Awaiting answer]`. Flint's same-day fix
+  // (same session as the sweep) added "awaiting" to the lexicon — ground
+  // truth and baseline now agree at 2; corpus entry protects it going forward.
+  'zoo-005-nonstandard-placeholder-token.md': { groundTruth: 2, baselineToday: 2 },
   // Ecosystem sweep (penn__hugo-canvas-sync): a real answer with the
   // "(by [name])" attribution dropped entirely — answer text starts
   // immediately after "**ANS:**". Parser correctly reads this as answered

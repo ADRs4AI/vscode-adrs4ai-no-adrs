@@ -561,7 +561,13 @@ const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i;
 // (anchored ^...$) so a real answer that happens to reference something in
 // brackets — "[see ADR-0014]" — is never misread as a placeholder; only a
 // body that IS one of these stock tokens, and nothing else, counts.
-const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|tbd|pending|todo)[^\]]*\]$/i;
+// "awaiting" added 2026-07-12 (Quarry 5, ecosystem sweep, llm-orchestration-
+// mcp/lyrical-mcp specimen — corpus zoo-005): "[Awaiting answer]", a fifth
+// stock token. Confirms the lexicon design in ADR-0031: an enumerable list
+// is always one incident behind, but naming the CLASS (a wait-state word,
+// wrapped or bracketed) at least means adding a word is a one-line change,
+// not a new regex.
+const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|tbd|pending|todo|awaiting)[^\]]*\]$/i;
 // Bug report (2026-07-12, Jérémie, temp/0048-mcp-support-rfc-connecting-
 // external-tool-servers.md): a bare "[ ]" (or "[]") is a placeholder too —
 // no stock word, just an empty box, and apparently a common one. A separate,
@@ -588,7 +594,7 @@ const PLACEHOLDER_EMPTY_RE = /^\[\s*\]$/;
 // answer like "Pending on budget approval" is never misread (no wrapper to
 // strip → not eligible). Whole-content-only, same discipline as the
 // bracket forms.
-export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending)\b.*$/i;
+export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending|awaiting)\b.*$/i;
 
 /**
  * Exported so the D9.4 normalizer handler (d9-4-nonstandard-fill-
