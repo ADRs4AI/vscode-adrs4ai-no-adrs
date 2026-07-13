@@ -1698,15 +1698,19 @@ const ZOO_D4_COLLAPSED_ANS = `# ADR-0002: Python Package Toolchain
 `
 
 describe('Zoarium D4 — collapsed ANS block: current parser behavior', () => {
-  it('"**ANS:** (fill in)" causes question to be treated as ANSWERED — the primary blocker', () => {
-    // Mechanism: ANS_INLINE_RE matches "**ANS:**" and captures "(fill in)" as answer text.
-    // "(fill in)" does NOT match /^\[\s*fill\s+this\s+in[^\]]*\]$/ (missing square brackets).
-    // Therefore answer = { text: "(fill in)" } → isAnswered = true.
-    // Questions exist in adr.questions but are all "answered" — silently hidden from panel.
-    // Empirically confirmed root cause — see zoarium README.
+  // Was: "'**ANS:** (fill in)' causes question to be treated as ANSWERED —
+  // the primary blocker" (asserted 0 unanswered — documenting the bug as a
+  // known limitation). Fixed 2026-07-13 (Riddle 5's ADR-0031 Phase A′):
+  // "(fill in)" peels to "fill in" via stripPlaceholderWrapper (paren-
+  // wrapped, no italics) and is now in PLACEHOLDER_LEXICON_RE — recognized
+  // as a non-canonical placeholder (NONSTANDARD_FILL_PLACEHOLDER), not a
+  // real answer. Both zoo-001/zoo-003 questions now correctly surface as
+  // unanswered without needing the D4 normalizer pass first.
+  it('"**ANS:** (fill in)" is recognized as an unanswered placeholder, not a real answer', () => {
     const adr = parseAdr(ZOO_D4_COLLAPSED_ANS, '/fake/docs/adr/zoo/0002-toolchain.md')
-    expect(adr.questions).toHaveLength(2)                           // parsed, but...
-    expect(adr.questions.filter(q => !q.isAnswered)).toHaveLength(0) // ...all treated as answered!
+    expect(adr.questions).toHaveLength(2)
+    expect(adr.questions.filter(q => !q.isAnswered)).toHaveLength(2)
+    expect(adr.parseWarnings.filter(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toHaveLength(2)
   })
 
   it('after D4 normalization, both questions surface correctly', () => {
@@ -2921,6 +2925,32 @@ ${placeholder}
 
 **ANS:** (by Jérémie Lumbroso)
 ${placeholder}
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+      expect(adr.questions[0].isAnswered).toBe(false)
+      expect(adr.questions[0].answer).toBeUndefined()
+      expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
+    },
+  )
+
+  // ADR-0031 Phase A′ (Riddle 5, 2026-07-13, real zoo-001/zoo-003
+  // specimens): "(fill in)" — paren-wrapped, no italics, missing "this" —
+  // already peeled to "fill in" via stripPlaceholderWrapper, but "fill in"
+  // wasn't in the lexicon, so it read as a real answer. Distinct from
+  // PLACEHOLDER_CANONICAL_RE's silent "[Fill this in]" — this is a
+  // deviation from canonical (parens not brackets, no "this"), so it's
+  // tolerated AND warned, same as the other wrapped morphologies.
+  it.each(['(fill in)', '(fill this in)', '_(fill in)_'])(
+    'wrapped "fill (this) in" morphology %s is recognized as unanswered, not a real answer',
+    (placeholder) => {
+      const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+**ANS:** ${placeholder}
 `
       const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
       expect(adr.questions[0].isAnswered).toBe(false)

@@ -632,7 +632,14 @@ const PLACEHOLDER_EMPTY_RE = /^\[\s*\]$/;
 // answer like "Pending on budget approval" is never misread (no wrapper to
 // strip → not eligible). Whole-content-only, same discipline as the
 // bracket forms.
-export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending|awaiting)\b.*$/i;
+// "fill (this) in" added 2026-07-13 (Riddle 5, ADR-0031 implementation
+// plan §5 Phase A′): zoo-001/zoo-003's real specimen "**ANS:** (fill in)"
+// already peels to "fill in" via stripPlaceholderWrapper (paren-wrapped,
+// no italics) — it just wasn't in the lexicon, so it read as a real
+// answer. Wrapped-only + whole-content anchoring (inherited from the
+// caller) keep the false-positive surface unchanged: bare "fill in the
+// form below" prose is never eligible (no wrapper to strip).
+export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending|awaiting|fill(?:\s+this)?\s+in)\b.*$/i;
 
 /**
  * Exported so the D9.4 normalizer handler (d9-4-nonstandard-fill-

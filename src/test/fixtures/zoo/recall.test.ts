@@ -46,18 +46,22 @@ interface SpecimenTruth {
 
 const CORPUS: Record<string, SpecimenTruth> = {
   // D1 (## Open Questions) + D2/D3 (bold field names) + D4 (collapsed ANS
-  // block `**ANS:** (fill in)`) cluster. D4 alone is the blocker — README's
+  // block `**ANS:** (fill in)`) cluster. D4 was the sole blocker — README's
   // own empirical finding: parseAdr requires a detectable answer
-  // placeholder to confirm a question is open, and `(fill in)` inline isn't
-  // one. Ground truth 2, baseline 0 until the normalizer runs (manual
-  // Quick-Fix today, not automatic) or ADR-0031's multi-signal candidacy ships.
-  'zoo-001-bold-fields-open-questions.md': { groundTruth: 2, baselineToday: 0 },
+  // placeholder to confirm a question is open, and `(fill in)` inline
+  // wasn't recognized as one (D1/D2/D3 were already tolerated — heading
+  // detection doesn't care about section name, and bold field forms
+  // already parsed). ADR-0031 Phase A′ (Riddle 5, 2026-07-13): "(fill in)"
+  // peels to "fill in" via stripPlaceholderWrapper — it just wasn't in
+  // PLACEHOLDER_LEXICON_RE. Ground truth and baseline now agree at 2.
+  'zoo-001-bold-fields-open-questions.md': { groundTruth: 2, baselineToday: 2 },
   // D5: Decision-style ADR, no Questions section at all. Zero questions is
   // CORRECT here, not a gap — ground truth and baseline agree at 0.
   'zoo-002-decision-style-no-qsts.md': { groundTruth: 0, baselineToday: 0 },
   // D2b: bold Status with trailing parenthetical. Same D4-shaped blocker
-  // as zoo-001 (`**ANS:** (fill in)`) — ground truth 2, baseline 0.
-  'zoo-003-status-with-parenthetical.md': { groundTruth: 2, baselineToday: 0 },
+  // as zoo-001 (`**ANS:** (fill in)`) — fixed by the same Phase A′ lexicon
+  // addition. Ground truth and baseline now agree at 2.
+  'zoo-003-status-with-parenthetical.md': { groundTruth: 2, baselineToday: 2 },
   // D9.4 morphology #4 (wrapped placeholder `_(pending)_`) + inline-
   // attribution recommendation — Flint's same-day fix (v0.7.5) closed
   // both. Ground truth and baseline agree: this one the corpus already
