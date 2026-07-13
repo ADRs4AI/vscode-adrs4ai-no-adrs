@@ -16,6 +16,9 @@ import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { CompositeIndex } from './index/compositeIndex'
 import { computeNamespace } from './index/rootNode'
 import { AdrTreeProvider } from './views/adrTreeProvider'
+import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
+import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
+import { resolveReference } from './mcp/reference'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
 import { Coordinator } from './normalizer/coordinator'
@@ -101,6 +104,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   compositeIndex = CompositeIndex.wrapSingle(workspaceRoot ?? '', index, seedIndex, namespace);
   treeProvider = new AdrTreeProvider(index, seedIndex);
 
+  // ── Deep-link click-through (2026-07-13) ────────────────────────────────
+  // The provider is a CALLER, not a resolver (Lapidary's brief): it holds no
+  // resolution logic of its own. Swapping compositeIndex for a future
+  // multi-root-aware backend, once the resolver-unification conversation
+  // settles, only changes this one closure — never the provider or command.
+  const resolveLink = (ref: string) => resolveReference(createRepositoryContextAdapter(compositeIndex!), ref);
+
   // ── Diagnostics collection ────────────────────────────────────────────────
   diagnosticCollection = vscode.languages.createDiagnosticCollection('adr-manager');
   context.subscriptions.push(diagnosticCollection);
@@ -177,6 +187,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
       copyDeepLink(item);
     }),
+
+    vscode.languages.registerDocumentLinkProvider({ language: 'markdown' }, new AdrDocumentLinkProvider()),
+    registerOpenDeepLinkCommand(resolveLink),
 
     vscode.commands.registerCommand('adrManager.openQuestionsPanel', () => {
       if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex);
