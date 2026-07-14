@@ -17,6 +17,7 @@
 
 import { parseAdr } from '../parser/extractor'
 import type { AdrIteration } from '../parser/types'
+import { findSectionForQuestion } from './reference'
 
 export type WriteResult =
   | { ok: true; newContent: string; diff: string }
@@ -25,7 +26,23 @@ export type WriteResult =
 const ANS_HEADER_RE = /^\*\*ANS:\*\*/
 const FILL_PLACEHOLDER_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
 const STATUS_LINE_RE = /^- Status:/
-const QST_HEADING_RE = /^### QST:/
+
+/**
+ * Same-day hazard fix (Lapidary's 2026-07-14 adjudication, Riddle 5's
+ * escalation): the search window used to stop at the next line matching
+ * `/^### QST:/` — a private regex that doesn't recognize every heading form
+ * the extractor accepts (the ratified `### QST-<ID>:` handle form included).
+ * If a question has no complete ANS scaffold of its own (a realistic case
+ * for freshly-authored or freshly-ported ADRs) and the regex fails to
+ * recognize the *next* question's heading as a boundary, the scan kept
+ * going and could land on — and overwrite — the wrong question's ANS
+ * block. "One parser, N consumers": the window is now the extractor's own
+ * already-correct section extent for this question (`findSectionForQuestion`,
+ * `src/mcp/reference.ts`), never a private regex re-derivation of where
+ * that boundary is. `section.lineEnd` is 1-indexed inclusive; the scan
+ * loops below are 0-indexed exclusive-of-end, so bounding at it directly
+ * needs no off-by-one adjustment.
+ */
 
 /** Answer a question — replace semantics (a QST has exactly one current answer). */
 export function applyAnswerQuestion(
@@ -43,7 +60,10 @@ export function applyAnswerQuestion(
 
   const lines = currentContent.split('\n')
   const start = question.lineStart - 1
-  const end = Math.min(start + 40, lines.length)
+  const section = findSectionForQuestion(freshAdr, question)
+  // section.lineEnd is 1-indexed inclusive; the loop below is 0-indexed
+  // exclusive-of-end, so no off-by-one adjustment needed to bound at it.
+  const end = section ? Math.min(section.lineEnd, lines.length) : Math.min(start + 40, lines.length)
 
   let statusLineIdx = -1
   let ansHeaderLineIdx = -1
@@ -54,7 +74,6 @@ export function applyAnswerQuestion(
     if (STATUS_LINE_RE.test(trimmed) && statusLineIdx === -1) statusLineIdx = i
     if (ANS_HEADER_RE.test(trimmed) && ansHeaderLineIdx === -1) ansHeaderLineIdx = i
     if (FILL_PLACEHOLDER_RE.test(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
-    if (i > start && QST_HEADING_RE.test(trimmed)) break
   }
 
   if (ansHeaderLineIdx === -1) {
@@ -95,13 +114,13 @@ export function applyAddRecommendation(
 
   const lines = currentContent.split('\n')
   const start = question.lineStart - 1
-  const end = Math.min(start + 60, lines.length)
+  const section = findSectionForQuestion(freshAdr, question)
+  const end = section ? Math.min(section.lineEnd, lines.length) : Math.min(start + 60, lines.length)
 
   let ansHeaderLineIdx = -1
   for (let i = start; i < end; i++) {
     const trimmed = lines[i].trim()
     if (ANS_HEADER_RE.test(trimmed)) { ansHeaderLineIdx = i; break }
-    if (i > start && QST_HEADING_RE.test(trimmed)) break
   }
   if (ansHeaderLineIdx === -1) {
     return { ok: false, error: `Could not find a **ANS:** block near line ${question.lineStart} in ${adrPath} to insert the recommendation before — this question may use a non-standard format.` }

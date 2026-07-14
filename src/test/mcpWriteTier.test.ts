@@ -383,4 +383,66 @@ describe('Adversarial findings: concurrency races in the write tier', () => {
     expect(content).toContain('- Outcome: first')
     expect(content).toContain('- Outcome: second') // FAILS today — whichever call wrote first is silently discarded
   })
+
+  it('CATCH 10 — a question with no ANS scaffold of its own, followed by a handle-form QST heading: answering it must never write into the next question\'s block (Riddle 5\'s escalation, Lapidary\'s 2026-07-14 adjudication)', async () => {
+    // The search window used to stop at the first line matching
+    // /^### QST:/ — which does NOT match the ratified handle form
+    // (### QST-B:). QST-1 here has no **ANS:** header of its own (a
+    // realistic case: a freshly-authored or freshly-ported question whose
+    // ANS scaffold hasn't been added yet). Before the fix, scanning for
+    // QST-1's answer block would fail to stop at QST-2's heading, keep
+    // going, and find — and overwrite — QST-2's perfectly good ANS block
+    // instead. The answer must land in QST-1's own extent or refuse;
+    // it must NEVER land in QST-2.
+    const TWO_QUESTIONS_HANDLE_FORM = `# ADR-0001: Test Decision
+
+- **Date**: 2026-01-01
+- **Iteration**: 1
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: First question, no ANS scaffold yet?
+- Status: unanswered
+
+### QST-B: Second question, has its own complete ANS block?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+---
+
+## Iterations
+
+### Iteration 1 (2026-01-01)
+- Outcome: Draft created.
+
+---
+
+## Links
+`
+    const { ctx, files } = makeContext(TWO_QUESTIONS_HANDLE_FORM)
+    const adr = parseAdr(TWO_QUESTIONS_HANDLE_FORM, ADR_PATH)
+    const firstQuestion = adr.questions.find((q) => q.text.startsWith('First question'))!
+    const secondQuestion = adr.questions.find((q) => q.text.startsWith('Second question'))!
+
+    const result = await answerQuestion(ctx, '1', firstQuestion.id, 'Meant for QST-1 only.', { author: 'relay-test' })
+
+    const content = files.get(ADR_PATH)!
+    // Never land in QST-2's block:
+    expect(content).not.toContain('**ANS:** (by relay-test)\nMeant for QST-1 only.')
+    const secondBlockStart = content.indexOf(secondQuestion.text)
+    expect(content.slice(secondBlockStart)).not.toContain('Meant for QST-1 only.')
+    // Either it refused (structured error, no write) or it landed inside
+    // QST-1's own extent — both are acceptable; silent misattribution is not.
+    if (result.startsWith('error:') || result.includes('Could not find')) {
+      expect(content).toBe(TWO_QUESTIONS_HANDLE_FORM) // refused — file untouched
+    } else {
+      const firstBlockEnd = content.indexOf(secondQuestion.text)
+      expect(content.slice(0, firstBlockEnd)).toContain('Meant for QST-1 only.')
+    }
+  })
 })
