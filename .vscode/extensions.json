@@ -1,5 +1,8 @@
 {
   "recommendations": [
     "vitest.explorer"
+  ],
+  "unwantedRecommendations": [
+    "ms-python.debugpy"
   ]
 }
