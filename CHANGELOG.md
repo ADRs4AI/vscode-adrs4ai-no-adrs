@@ -8,6 +8,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.12] - 2026-07-14
+
+### Fixed
+- The Open Questions panel's collapsible "ADR context" box no longer shows the entire file (questions and freshly-written answers included) for ADRs whose questions don't live under a section literally named `## Questions`. The context boundary is now derived from where the questions actually sit, so freeform layouts get a correct, questions-free context box — and a corpus-wide regression test enforces that context can never again contain a question.
+
 ## [0.7.11] - 2026-07-13
 
 ### Fixed
