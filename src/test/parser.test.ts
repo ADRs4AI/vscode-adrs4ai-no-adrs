@@ -1762,9 +1762,13 @@ describe('Zoarium D1 — "Open Questions" section name: current parser behavior'
   })
 
   it('"Open Questions" section heading is NOT "Questions" — exact-match lookup fails', () => {
-    // The Open Questions panel uses: adr.sections.find(s => s.heading === 'Questions')
-    // This exact match returns undefined for "Open Questions" → context boundary = Infinity
-    // → all sections included as context (ADR context box shows entire file).
+    // Historical note: the panel's context box used to anchor on
+    // adr.sections.find(s => s.heading === 'Questions') — undefined here →
+    // boundary = Infinity → the ADR context box showed the entire file.
+    // Fixed 2026-07-14 (overfly hq ADR-0031 incident): the boundary is now
+    // DERIVED from question positions (parser/adrContext.ts), so this
+    // name-lookup fact no longer controls the panel. Kept as a parser-level
+    // fact check; panel behavior is covered in adrContext.test.ts.
     const adr = parseAdr(ZOO_D1_OPEN_QUESTIONS, '/fake/docs/adr/zoo/0001-storage.md')
     expect(adr.sections.find(s => s.heading === 'Questions')).toBeUndefined()
     expect(adr.sections.find(s => s.heading === 'Open Questions')).toBeDefined()

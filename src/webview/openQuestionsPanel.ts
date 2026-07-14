@@ -20,6 +20,7 @@ import * as os from 'os'
 import type { CompositeIndex } from '../index/compositeIndex'
 import type { AdrFile, Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
+import { computeAdrContext } from '../parser/adrContext'
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
@@ -273,18 +274,11 @@ export class OpenQuestionsPanel {
     for (const node of this.composite.walk()) {
       const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => {
         const cleanTitle = adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || adr.title
-        // ADR-0010: Collect context from sections before ## Questions for the collapsible context box.
-        // Include: Human Context, AI Interpretation (and any other ## sections before Questions).
-        const contextSections = adr.sections.filter(s => {
-          const h = s.heading.toLowerCase()
-          return h !== 'questions' && h !== 'quick reference' && h !== 'decision'
-            && h !== 'action items' && h !== 'iterations' && h !== 'links'
-            && h !== 'validation' && h !== 'supporting materials'
-            && s.lineStart < (adr.sections.find(qs => qs.heading === 'Questions')?.lineStart ?? Infinity)
-        })
-        const adrContext = contextSections.length > 0
-          ? contextSections.map(s => `## ${s.heading}\n\n${s.body}`).join('\n\n---\n\n').trim()
-          : undefined
+        // ADR-0010: collapsible context box. The boundary is derived from
+        // where the extracted questions sit (prefix of sections before the
+        // first question-bearing one), never from section names — see
+        // parser/adrContext.ts for why name-anchoring showed whole files.
+        const adrContext = computeAdrContext(adr)
 
         const num = String(adr.number).padStart(4, '0')
         return this.buildRows(adr.questions, {
