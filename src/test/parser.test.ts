@@ -1638,12 +1638,15 @@ Yes, decided in the kickoff meeting.
 `
 
 describe('Zoarium D2/D3 — bold field variants: current parser behavior', () => {
-  it('question with bold "- **Status**: unanswered" still surfaces (isAnswered=false)', () => {
-    // Bold Status does not match STATUS_LINE_RE (/^-\s+Status:\s+/).
-    // statusText stays as default 'unanswered' → isAnswered=false.
+  // ADR-0031 signal S2 (Riddle 5's crossfoot ADR-0029 specimen, 2026-07-14):
+  // STATUS_LINE_RE now tolerates the bold form ("- **Status**:") alongside
+  // plain — statusText is genuinely read from the file now, not defaulted.
+  it('question with bold "- **Status**: unanswered" is correctly parsed (isAnswered=false)', () => {
     const adr = parseAdr(ZOO_D2_BOLD_FIELDS, '/fake/docs/adr/zoo/0003-widget.md')
     expect(adr.questions).toHaveLength(2)
     expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.questions[0].statusText).toBe('unanswered')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_STATUS_LINE_FORM')).toBe(true)
   })
 
   it('bold "- **Why asking**:" is NOT parsed — whyAsking is undefined (display degradation)', () => {
@@ -1658,12 +1661,10 @@ describe('Zoarium D2/D3 — bold field variants: current parser behavior', () =>
     expect(adr.questions[0].need).toBeUndefined()
   })
 
-  it('question with bold "- **Status**: answered" AND real answer text is still answered', () => {
-    // Bold Status not parsed, but !!answer fallback makes isAnswered=true.
-    // statusText defaults to 'unanswered' — the field was never read from the file.
+  it('question with bold "- **Status**: answered" is genuinely read as answered now', () => {
     const adr = parseAdr(ZOO_D2_BOLD_FIELDS, '/fake/docs/adr/zoo/0003-widget.md')
     expect(adr.questions[1].isAnswered).toBe(true)
-    expect(adr.questions[1].statusText).toBe('unanswered') // not read — bold not parsed
+    expect(adr.questions[1].statusText).toBe('answered')
   })
 })
 
@@ -3171,6 +3172,172 @@ _(pending)_
     expect(q.recommendations).toHaveLength(1)
     expect(q.recommendations![0].author).toBe('Athanor 5, Claude Fable 5')
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Crossfoot ADR-0029 compound specimen (Riddle 5, 2026-07-14) — three
+// independent morphologies, all required for correct reading: colon-
+// outside-bold ANS with inline attribution, bold Status field, and an
+// annotated status value. Jérémie's real ADR rendered as four OPEN
+// questions with the answers displayed as body text — a false-open, the
+// direction opposite most specimens this session (those silently answered
+// real-open questions; this one silently reopened real-answered ones).
+// ---------------------------------------------------------------------------
+
+describe('Crossfoot compound specimen: ANS colon-outside-bold + bold Status + annotated status value', () => {
+  it('"**ANS** (by X): text" (colon outside bold) is recognized, attribution captured, full text extent preserved', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Which registrar?
+- Status: unanswered
+
+**Recommendation** (by Opus 4.7): **A — Spaceship.**
+Justification paragraph one.
+
+Justification paragraph two.
+
+**ANS** (by Jérémie): *"I registered crossfoot.tools."* Follow-up sentence. Another sentence.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    const q = adr.questions[0]
+    expect(q.answer?.author).toBe('Jérémie')
+    expect(q.answer?.text).toContain('I registered crossfoot.tools')
+    expect(q.answer?.text).toContain('Follow-up sentence')
+    expect(q.answer?.text).toContain('Another sentence')
+    expect(q.isAnswered).toBe(true)
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_ANS_MARKER')).toBe(true)
+  })
+
+  it('does NOT flag the canonical "**ANS:**" form with NONCANONICAL_ANS_MARKER', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+**ANS:** (by Jérémie) Real answer.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_ANS_MARKER')).toBe(false)
+  })
+
+  it('"- **Status**: value" (bold field) is recognized the same as plain "- Status:"', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Test?
+- **Status**: unanswered
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    expect(adr.questions[0].statusText).toBe('unanswered')
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_STATUS_LINE_FORM')).toBe(true)
+  })
+
+  it('does NOT flag the canonical plain "- Status:" form with NONSTANDARD_STATUS_LINE_FORM', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_STATUS_LINE_FORM')).toBe(false)
+  })
+
+  it('an annotated status value ("answered 2026-07-13 (reason)") is recognized as answered via leading-token match', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Test?
+- Status: answered 2026-07-13 (registrar implicit — DNS wired already)
+
+Some discussion.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.statusText).toBe('answered 2026-07-13 (registrar implicit — DNS wired already)')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_STATUS_ANNOTATION')).toBe(true)
+  })
+
+  it('does NOT flag the bare canonical "answered" value with NONSTANDARD_STATUS_ANNOTATION', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Test?
+- Status: answered
+
+**ANS:** (by Jérémie) Real answer.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_STATUS_ANNOTATION')).toBe(false)
+  })
+
+  it('guard the guard: "unanswered" (annotated or not) never gets misread as answered', () => {
+    const content = `# ADR-0029: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered — awaiting registrar decision
+
+Some discussion, no real answer yet.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-test.md')
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_STATUS_ANNOTATION')).toBe(false)
+  })
+
+  // Ground truth: the real crossfoot 0029-domain-plan.md QST-1, verbatim
+  // (a sibling project's repo, not a fixture this repo can read from disk
+  // — inlined). All three morphologies compound in one real question.
+  it('ground truth: the real crossfoot ADR-0029 QST-1 recalls as answered with full answer text', () => {
+    const content = `# ADR-0029: Domain Plan for Crossfoot
+
+## Questions
+
+### QST-1: Which registrar?
+
+- **Status**: answered 2026-07-13 (registrar implicit — DNS wired and resolving at time of ADR acceptance; specific registrar not named in the ANS)
+- **Why asking**: The registrar affects renewal-year pricing, DNS UX, and account portability.
+- **Need**: pick + rationale note if not the recommendation.
+
+**Option A**: **Spaceship** (Namecheap subsidiary, redesigned UI).
+
+**Option B**: **Cloudflare Registrar**.
+
+**Recommendation** (by Opus 4.7): **A — Spaceship.** The snapshot is already on record, the account is already set up, and Jérémie has already done the diligence pass on this registrar's shape.
+
+**ANS** (by Jérémie): *"I registered crossfoot.tools ... and put Github pages dns configured so its ready."* The specific registrar is not named; DNS at time of ADR acceptance shows GitHub Pages A/AAAA at the apex and a CNAME to \`jlumbroso.github.io\` on \`www\`, so the registrar decision is downstream-invisible to the rest of the plan.
+
+---
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0029-domain-plan.md')
+    expect(adr.questions).toHaveLength(1)
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.answer?.author).toBe('Jérémie')
+    expect(q.answer?.text).toContain('I registered crossfoot.tools')
+    expect(q.answer?.text).toContain('downstream-invisible to the rest of the plan')
+    const codes = adr.parseWarnings.map(w => w.code)
+    expect(codes).toContain('NONCANONICAL_ANS_MARKER')
+    expect(codes).toContain('NONSTANDARD_STATUS_LINE_FORM')
+    expect(codes).toContain('NONSTANDARD_STATUS_ANNOTATION')
   })
 })
 

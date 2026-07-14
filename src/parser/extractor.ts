@@ -548,8 +548,29 @@ export function buildSubsections(
 
 // Matches: **ANS:** (by Author) or **ANS:** (from Author)
 const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?/;
+// ANS colon-outside-bold with inline attribution (Riddle 5's crossfoot
+// ADR-0029 specimen, 2026-07-14): "**ANS** (by Jérémie): text" — the
+// closing ** lands BEFORE the attribution and colon, mirroring the
+// Recommendation inline-attribution form's exact shape one level up
+// (**Recommendation** (by X): text — v0.7.5). ANS_INLINE_RE requires the
+// colon INSIDE the bold ("**ANS:**"), so this matched nothing at all: no
+// `answer` was ever set, and the human-authored answer sat as body text
+// while whatever flipped isAnswered (declared Status) made the panel
+// show the question as OPEN with no visible answer field content.
+const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?:\s*/;
 // Matches: - Status: value
-const STATUS_LINE_RE = /^-\s+Status:\s+(.+)$/;
+// Bold form ("- **Status**: value" — D2, Zoarium since March, crossfoot
+// ADR-0029 specimen) tolerated alongside plain form; group 1 is always the
+// value regardless of which form matched.
+const STATUS_LINE_RE = /^-\s+(?:\*\*Status\*\*|Status):\s+(.+)$/;
+const STATUS_LINE_BOLD_RE = /^-\s+\*\*Status\*\*:/;
+// Annotated status value (Naturalist's status-with-annotation dialect,
+// ~20 docs across a 1,061-doc survey; crossfoot ADR-0029: "answered
+// 2026-07-13 (registrar implicit — ...)"). isAnswered's exact `=== 'answered'`
+// check failed on this — real ADRs annotate the value with a date/reason.
+// Leading-token match: the value must START with the canonical token
+// (word boundary), tolerating trailing annotation for display.
+const ANSWERED_LEADING_TOKEN_RE = /^answered\b/i;
 // Matches: - Why asking: value
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
 // Matches: - Need: value
@@ -775,7 +796,27 @@ export function extractQuestion(
 
     const statusMatch = line.match(STATUS_LINE_RE);
     // ADR-0012: trim to handle "- Status:  answered " with trailing/leading spaces
-    if (statusMatch) { statusText = statusMatch[1].trim(); inRecommendation = false; inWhyAsking = false; inNeed = false; continue; }
+    if (statusMatch) {
+      statusText = statusMatch[1].trim();
+      inRecommendation = false; inWhyAsking = false; inNeed = false;
+      if (warnings) {
+        if (STATUS_LINE_BOLD_RE.test(line)) {
+          warnings.push({
+            code: 'NONSTANDARD_STATUS_LINE_FORM',
+            message: `Status field "${line.trim()}" was recognized, but written as "- **Status**:" (bold) instead of the canonical plain form "- Status:". Recognized anyway — no data lost. SUGGESTED: "- Status: ${statusText}"`,
+            line: absLine,
+          });
+        }
+        if (ANSWERED_LEADING_TOKEN_RE.test(statusText) && statusText.toLowerCase() !== 'answered') {
+          warnings.push({
+            code: 'NONSTANDARD_STATUS_ANNOTATION',
+            message: `Status value "${statusText}" was recognized as answered (leading token match), but carries a trailing annotation beyond the canonical bare "answered". Recognized anyway — no data lost, annotation preserved for display. SUGGESTED: keep the annotation in Why asking or a NOT: note instead, if it doesn't need to live in the Status value itself.`,
+            line: absLine,
+          });
+        }
+      }
+      continue;
+    }
 
     const whyMatch = line.match(WHY_ASKING_RE);
     if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; inWhyAsking = true; inNeed = false; continue; }
@@ -857,7 +898,12 @@ export function extractQuestion(
       if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
         inRecommendation = false; pastRecommendation = true;
         /* fall through — process this line normally */
-      } else if (/^\*\*ANS:\*\*/.test(line)) {
+      } else if (/^\*\*ANS:\*\*/.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
+        // The colon-outside-bold ANS form ("**ANS** (by X): text") has no
+        // "**:" immediately after the bold span, so the bold-key check above
+        // never fires for it either — without this explicit check it fell
+        // straight to the `else` branch and got swallowed as more
+        // recommendation prose, and the ANS marker below never saw the line.
         inRecommendation = false; pastRecommendation = true; /* fall through */
       } else {
         recommendationLines.push(line);
@@ -866,13 +912,23 @@ export function extractQuestion(
     }
 
     const ansMatch = line.match(ANS_INLINE_RE);
-    if (ansMatch) {
+    const ansColonOutsideMatch = ansMatch ? null : line.match(ANS_COLON_OUTSIDE_RE);
+    if (ansMatch || ansColonOutsideMatch) {
       inAnswer = true;
-      answerAuthor = ansMatch[1]?.trim();
+      const matched = ansMatch ?? ansColonOutsideMatch!;
+      answerAuthor = matched[1]?.trim();
       answerLine = absLine;
       // Collect any text on the same line after the ANS marker
-      const afterMarker = line.replace(ANS_INLINE_RE, '').trim();
+      const markerRe = ansMatch ? ANS_INLINE_RE : ANS_COLON_OUTSIDE_RE;
+      const afterMarker = line.replace(markerRe, '').trim();
       if (afterMarker) answerLines.push(afterMarker);
+      if (ansColonOutsideMatch && warnings) {
+        warnings.push({
+          code: 'NONCANONICAL_ANS_MARKER',
+          message: `ANS marker "${line.trim().slice(0, 60)}${line.trim().length > 60 ? '…' : ''}" was recognized, but written with the colon outside the bold span ("**ANS**${matched[1] ? ' (by ' + matched[1] + ')' : ''}:") instead of the canonical "**ANS:**${matched[1] ? ' (by ' + matched[1] + ')' : ''}" form. Recognized anyway — no data lost. SUGGESTED: "**ANS:**${matched[1] ? ' (by ' + matched[1] + ')' : ''}"`,
+          line: absLine,
+        });
+      }
       continue;
     }
 
@@ -939,7 +995,9 @@ export function extractQuestion(
   }
 
   // ADR-0012: Case-insensitive, trimmed comparison — human-typed values like "Answered" should work.
-  const isAnswered = statusText.toLowerCase().trim() === 'answered' || !!answer;
+  // Leading-token match (not exact-match) tolerates a trailing annotation
+  // ("answered 2026-07-13 (reason)") — see ANSWERED_LEADING_TOKEN_RE.
+  const isAnswered = ANSWERED_LEADING_TOKEN_RE.test(statusText.trim()) || !!answer;
 
   if (recommendationLines.length > 0) {
     // Hard-wrap robustness: join wrapped continuation lines within each
