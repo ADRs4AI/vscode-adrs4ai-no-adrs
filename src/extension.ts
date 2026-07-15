@@ -15,6 +15,7 @@ import { AdrIndex } from './index/adrIndex'
 import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { CompositeIndex } from './index/compositeIndex'
 import { computeNamespace } from './index/rootNode'
+import { isAdrBasename, isSeedBasename, isDirectChildOf } from './index/fileGuards'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
@@ -321,7 +322,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ── File watchers ─────────────────────────────────────────────────────────
   setupFileWatcher(context, index, adrDir);
   setupSeedFileWatcher(context, seedIndex, adrDir);
-  setupBufferChangeTrigger(context, index, seedIndex);
+  setupBufferChangeTrigger(context, index, seedIndex, adrDir);
 
   // ── Initial index population ──────────────────────────────────────────────
   // Trigger when the sidebar is first revealed (lazy) OR immediately if already visible
@@ -393,15 +394,15 @@ function setupFileWatcher(
 }
 
 function isAdrFile(filePath: string): boolean {
-  // Match ADR files (one-or-more-digits followed by - or _ then title.md).
-  // ADR-0012: Accept any digit count, not just 4 digits (3-digit projects are real).
-  // Exclude seed files (seed-YYYY-MM-DD-title.md) which are indexed separately.
-  const base = path.basename(filePath);
-  return /^\d+[-_].+\.md$/.test(base) && !base.startsWith('seed-');
+  // Basename SHAPE only — NOT containment. Safe for the disk watchers,
+  // whose `<adrDir>/*.md` glob already scopes the directory; any other
+  // caller must pair this with isDirectChildOf (see fileGuards.ts and the
+  // 2026-07-14 phantom-ADR incident in setupBufferChangeTrigger).
+  return isAdrBasename(path.basename(filePath));
 }
 
 function isSeedFile(filePath: string): boolean {
-  return path.basename(filePath).startsWith('seed-') && filePath.endsWith('.md');
+  return isSeedBasename(path.basename(filePath));
 }
 
 function setupSeedFileWatcher(
@@ -452,11 +453,23 @@ function setupBufferChangeTrigger(
   context: vscode.ExtensionContext,
   idx: AdrIndex,
   sidx: SeedIndex,
+  adrDirRel: string,
 ): void {
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const disposable = vscode.workspace.onDidChangeTextDocument(event => {
     const filePath = event.document.uri.fsPath;
+    // Phantom-ADR guard (2026-07-14, system3 incident): this event fires for
+    // EVERY document in the workspace, and the basename-shape checks alone
+    // are not containment — a date-prefixed report merely opened in the
+    // editor ("2026-07-14-...-gpt-5.6-sol.md" in docs/reports/) matched
+    // isAdrFile and was injected into the index as phantom ADR-2026. The
+    // disk watchers never needed this check only because their glob
+    // (`<adrDir>/*.md`) already scoped the directory; this trigger must
+    // enforce the same scope explicitly. See src/index/fileGuards.ts.
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) return;
+    if (!isDirectChildOf(filePath, path.join(folder.uri.fsPath, adrDirRel))) return;
     const isAdr = isAdrFile(filePath);
     const isSeed = !isAdr && isSeedFile(filePath);
     if (!isAdr && !isSeed) return;
