@@ -1,0 +1,45 @@
+/**
+ * Title-prefix cleaning — regression tests.
+ *
+ * Nit (Jérémie, 2026-07-14, system3): `# ADR 0033 — Team-completism...`
+ * rendered as "ADR-0033: — Team-completism..." because the display cleaner
+ * knew ":", "-", and whitespace as separators but not the en/em dashes
+ * models routinely emit. The cleaner also existed as two identical inline
+ * copies (tree + panel); it now lives once in parser/adrTitle.ts.
+ */
+
+import { describe, it, expect } from 'vitest'
+import { stripAdrNumberPrefix } from '../parser/adrTitle'
+
+describe('stripAdrNumberPrefix', () => {
+  describe('Regression tests', () => {
+    it('em-dash separator — the real system3 ADR-0033 title (2026-07-14 nit)', () => {
+      expect(stripAdrNumberPrefix('ADR 0033 — Team-completism: capture admin atoms for Claude Team / org accounts'))
+        .toBe('Team-completism: capture admin atoms for Claude Team / org accounts')
+    })
+
+    it('colon separator — the real system3 ADR-0032 title, already working, pinned', () => {
+      expect(stripAdrNumberPrefix('ADR 0032: Projects vs Custom Assistants Ontology'))
+        .toBe('Projects vs Custom Assistants Ontology')
+    })
+
+    it('en-dash separator, and en-dash in the ADR/number joint', () => {
+      expect(stripAdrNumberPrefix('ADR 0031 – Domain plan')).toBe('Domain plan')
+      expect(stripAdrNumberPrefix('ADR–0031: Domain plan')).toBe('Domain plan')
+    })
+  })
+
+  it('hyphen and space forms keep working', () => {
+    expect(stripAdrNumberPrefix('ADR-0001: Storage')).toBe('Storage')
+    expect(stripAdrNumberPrefix('adr 001 - lowercase and hyphen')).toBe('lowercase and hyphen')
+  })
+
+  it('titles without the prefix pass through untouched; a mid-title dash is never a separator', () => {
+    expect(stripAdrNumberPrefix('Recall-first question detection — once and for all'))
+      .toBe('Recall-first question detection — once and for all')
+  })
+
+  it('a title that IS just the prefix falls back to itself rather than emptying', () => {
+    expect(stripAdrNumberPrefix('ADR 0031:')).toBe('ADR 0031:')
+  })
+})

@@ -21,6 +21,7 @@ import type { CompositeIndex } from '../index/compositeIndex'
 import type { AdrFile, Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
+import { stripAdrNumberPrefix } from '../parser/adrTitle'
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
@@ -273,7 +274,7 @@ export class OpenQuestionsPanel {
     const questions: WebviewQuestion[] = []
     for (const node of this.composite.walk()) {
       const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => {
-        const cleanTitle = adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || adr.title
+        const cleanTitle = stripAdrNumberPrefix(adr.title)
         // ADR-0010: collapsible context box. The boundary is derived from
         // where the extracted questions sit (prefix of sections before the
         // first question-bearing one), never from section names — see

@@ -22,6 +22,7 @@ import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { AdrIndex } from '../index/adrIndex'
 import type { SeedIndex } from '../index/seedIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
+import { stripAdrNumberPrefix } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 
 // ---------------------------------------------------------------------------
@@ -161,9 +162,9 @@ export class AdrTreeItem extends vscode.TreeItem {
         return dateStr ? `SEED (${dateStr}): ${title}` : `SEED: ${title}`
       }
       const num = String(opts.adr.number).padStart(4, '0')
-      // Strip leading "ADR-NNNN:" or "ADR NNN:" from title to avoid duplication.
-      // Handles both hyphen ("ADR-001:") and space ("ADR 001:") separators.
-      const title = opts.adr.title.replace(/^ADR[-\s]*\d+[:\s\-]+/i, '').trim() || opts.adr.title
+      // Strip leading "ADR <number><separator>" from title to avoid duplication
+      // (shared helper — tolerates :, -, – and — separators; see adrTitle.ts).
+      const title = stripAdrNumberPrefix(opts.adr.title)
       return `ADR-${num}: ${title}`
     }
     if (opts.kind === 'question' && opts.question) {
