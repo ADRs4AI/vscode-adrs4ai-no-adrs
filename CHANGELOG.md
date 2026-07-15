@@ -8,6 +8,17 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.14] - 2026-07-14
+
+### Fixed
+- Phantom ADRs: opening or editing any date-prefixed markdown file anywhere in the workspace (e.g. a research report in `docs/reports/`) no longer injects it into the ADR index as a ghost entry. Live-edit reindexing now applies only to files actually inside the configured ADR directory, matching what the disk watchers always enforced.
+
+## [0.7.13] - 2026-07-14
+
+### Fixed
+- Answers written in the `**ANS** (by Name): ...` form — attribution between the bold marker and the colon — are now parsed in full, with attribution preserved. (Entry backfilled by v0.7.14's release; shipped in v0.7.13.)
+- Bold Status fields inside question blocks (`- **Status**: ...`) are now recognized, and annotated status values (`answered 2026-07-13 (details...)`) correctly mark a question as answered while preserving the annotation.
+
 ## [0.7.12] - 2026-07-14
 
 ### Fixed
