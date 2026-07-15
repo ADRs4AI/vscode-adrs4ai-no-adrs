@@ -179,18 +179,66 @@ function resolveAnchorInAdr(adr: AdrFile, anchor: string): ResolvedSection | Res
   }
 }
 
+function isRefError(x: AdrFile | RefError): x is RefError {
+  return (x as RefError).kind === 'error'
+}
+
+/**
+ * Resolve a bare ADR number against every root in the live index — never
+ * `ctx.getAdr`'s first-match semantics directly, because with a genuine
+ * multi-root composite (CompositeIndex.fromWorkspace, 2026-07-14) two roots
+ * can share a number (elenchus's four ADR trees even have *internal*
+ * duplicates within one root — 0016 and 0041 each appear twice in
+ * `legacy/docs/adr`). Silently picking the first match here would be
+ * exactly the class of bug this module exists to refuse everywhere else.
+ */
+function resolveAdrByNumber(ctx: RepositoryContext, num: number): AdrFile | RefError {
+  const matches = ctx.listAdrs().filter((a) => a.number === num)
+  const padded = String(num).padStart(4, '0')
+  if (matches.length === 0) {
+    return { kind: 'error', error: 'not_found', message: `No ADR numbered ${padded}` }
+  }
+  if (matches.length === 1) return matches[0]
+  // Namespace alone doesn't always disambiguate: a duplicate can live
+  // *within* one root too (elenchus's legacy/ tree has two files both
+  // numbered 0016), in which case every match shares the same namespace.
+  // Always include the filename, which is unique per match regardless of
+  // whether the namespace collision is cross-root or same-root — found by
+  // testing against elenchus's real corpus, not the (cross-root-only)
+  // synthetic unit test this shipped with initially.
+  const sameNamespace = new Set(matches.map((a) => a.namespace)).size === 1
+  return {
+    kind: 'error',
+    error: 'ambiguous',
+    message: sameNamespace
+      ? `ADR ${padded} appears ${matches.length} times within the same namespace/root ("${matches[0].namespace ?? '[no namespace]'}") — likely a real duplicate-numbering problem in that project, not something a namespace qualifier can disambiguate`
+      : `ADR ${padded} exists in ${matches.length} roots/namespaces — specify a namespace-qualified reference`,
+    candidates: matches.map((a) => `${a.namespace ?? '[no namespace]'}.${padded} (${a.path.split('/').pop()})`),
+    hint: sameNamespace ? 'fix the duplicate ADR number at the source, or reference by exact file path' : `use "<namespace>.${padded}" to disambiguate`,
+  }
+}
+
 /** Resolve just the ADR part of a reference — used by tools whose signature takes a plain `adr_ref`. */
 export function resolveAdrByRef(ctx: RepositoryContext, rawRef: string): ResolvedAdr | RefError {
   const ref = rawRef.trim().split('#')[0]
+  const qualified = ref.match(/^([a-z0-9-]+)\.(\d+)$/)
+  if (qualified) {
+    const [, namespace, numStr] = qualified
+    const num = parseInt(numStr, 10)
+    const match = ctx.listAdrs().find((a) => a.namespace === namespace && a.number === num)
+    if (!match) {
+      const known = Array.from(new Set(ctx.listAdrs().map((a) => a.namespace).filter(Boolean)))
+      return { kind: 'error', error: 'not_found', message: `No ADR ${numStr} in namespace "${namespace}"`, hint: known.length ? `known namespaces: ${known.join(', ')}` : undefined }
+    }
+    return { kind: 'adr', adr: match }
+  }
+
   const bareNumber = /^\d+$/.test(ref) ? ref : ref.match(/^adr:(\d+)$/)?.[1]
   if (!bareNumber) {
     return { kind: 'error', error: 'unrecognized_reference', message: `"${rawRef}" is not a recognized ADR reference` }
   }
-  const adr = ctx.getAdr(`adr:${bareNumber}`)
-  if (!adr) {
-    return { kind: 'error', error: 'not_found', message: `No ADR numbered ${bareNumber}` }
-  }
-  return { kind: 'adr', adr }
+  const result = resolveAdrByNumber(ctx, parseInt(bareNumber, 10))
+  return isRefError(result) ? result : { kind: 'adr', adr: result }
 }
 
 /**
@@ -221,12 +269,27 @@ export function resolveReference(ctx: RepositoryContext, rawRef: string): Resolv
   }
 
   if (parsed.format === 'xproject-alias') {
-    return {
-      kind: 'error',
-      error: 'unsupported_reference',
-      message: 'cross-project reference resolution requires .vscode/namespace_registry.json — not present',
-      hint: 'local, seed, and canonical-project-URI references all work today',
+    // Resolved against live namespace data (2026-07-14), not a hypothetical
+    // registry file: every AdrFile in a real multi-root composite already
+    // carries its own `namespace` (set at parse time from the root that
+    // contains it — CompositeIndex's buildNode). The original rejection
+    // ("no registry mechanism exists yet") no longer holds the moment a
+    // genuine multi-root index is in play; for a single-root context this
+    // just resolves against that one namespace or reports not-found.
+    if (typeof parsed.number !== 'number' || !parsed.namespace) {
+      return { kind: 'error', error: 'unrecognized_reference', message: `"${ref}" is not a well-formed cross-project alias` }
     }
+    const match = ctx.listAdrs().find((a) => a.namespace === parsed.namespace && a.number === parsed.number)
+    if (!match) {
+      const known = Array.from(new Set(ctx.listAdrs().map((a) => a.namespace).filter(Boolean)))
+      return {
+        kind: 'error',
+        error: 'not_found',
+        message: `No ADR ${parsed.number} in namespace "${parsed.namespace}"`,
+        hint: known.length ? `known namespaces: ${known.join(', ')}` : 'no namespaces present in the current index',
+      }
+    }
+    return parsed.anchor ? resolveAnchorInAdr(match, parsed.anchor) : { kind: 'adr', adr: match }
   }
 
   if (parsed.artifact === 'seed') {
@@ -245,12 +308,10 @@ export function resolveReference(ctx: RepositoryContext, rawRef: string): Resolv
   if (typeof parsed.number !== 'number') {
     return { kind: 'error', error: 'unrecognized_reference', message: `"${ref}" has no resolvable ADR number` }
   }
-  const adr = ctx.getAdr(`adr:${parsed.number}`)
-  if (!adr) {
-    return { kind: 'error', error: 'not_found', message: `No ADR numbered ${parsed.number}` }
-  }
+  const result = resolveAdrByNumber(ctx, parsed.number)
+  if (isRefError(result)) return result
   if (!parsed.anchor) {
-    return { kind: 'adr', adr }
+    return { kind: 'adr', adr: result }
   }
-  return resolveAnchorInAdr(adr, parsed.anchor)
+  return resolveAnchorInAdr(result, parsed.anchor)
 }

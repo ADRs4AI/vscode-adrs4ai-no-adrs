@@ -10,20 +10,29 @@
  *
  * Every tool handler this registers (src/mcp/handlers.ts) and the
  * RepositoryContext it's built against (src/index/repositoryContextAdapter.ts
- * over plain-fs AdrIndex/SeedIndex) are already vscode-free — this file is
- * the first thing in the whole MCP surface that assembles them into a
- * running server, not new resolution or write logic.
+ * over CompositeIndex/AdrIndex/SeedIndex) are already vscode-free — this
+ * file is the first thing in the whole MCP surface that assembles them into
+ * a running server, not new resolution or write logic.
  *
- * ADR directory: first CLI argument, else $ADR_DIR, else "./docs/adr"
- * relative to the current working directory the client launches this with.
+ * Native multi-project (2026-07-14, Lapidary's ADR-0021 Iteration 8
+ * addition): a workspace root can contain several ADR-bearing trees — e.g.
+ * elenchus-monorepo has docs/adr at its root plus ui/docs/adr, legacy/docs/adr,
+ * api/docs/adr. Running one server instance per tree is a workaround, not
+ * the answer; CompositeIndex.fromWorkspace (Fitter's ADR-0025 discovery
+ * walker, already vscode-free) is the obvious backend, so this server scans
+ * from a *workspace root* rather than a single ADR directory.
+ *
+ * Workspace root: first CLI argument, else $ADR_WORKSPACE_ROOT, else "."
+ * (the directory the client launches this with). ADR directory within each
+ * discovered root: $ADR_DIR_REL, else "docs/adr" — matching the extension's
+ * own `adrManager.adrDirectory` default.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import * as path from 'path'
-import { AdrIndex } from '../index/adrIndex'
-import { SeedIndex } from '../index/seedIndex'
+import { CompositeIndex } from '../index/compositeIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import {
   projectOverview,
@@ -42,16 +51,14 @@ function text(value: string) {
 }
 
 async function main() {
-  const adrDir = path.resolve(process.argv[2] ?? process.env.ADR_DIR ?? './docs/adr')
+  const workspaceRoot = path.resolve(process.argv[2] ?? process.env.ADR_WORKSPACE_ROOT ?? '.')
+  const adrDirRel = process.env.ADR_DIR_REL ?? 'docs/adr'
 
-  const adrIndex = new AdrIndex()
-  const seedIndex = new SeedIndex()
-  await adrIndex.indexDirectory(adrDir)
-  await seedIndex.indexDirectory(adrDir)
-  const ctx = createRepositoryContextAdapter({
-    allAdrs: () => adrIndex.allAdrs(),
-    allSeeds: () => seedIndex.allSeeds(),
-  })
+  const composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
+  // CompositeIndex already exposes allAdrs()/allSeeds() aggregated across
+  // every discovered root — the adapter's IndexSource shape needs nothing
+  // more, so this is a direct pass-through, not a new integration.
+  const ctx = createRepositoryContextAdapter(composite)
 
   const server = new McpServer({ name: 'adrs-for-ai', version: '1.0.0' })
 

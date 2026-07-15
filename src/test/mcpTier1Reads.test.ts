@@ -240,10 +240,40 @@ describe('lookup', () => {
     expect(result).toContain('error: unrecognized_reference')
   })
 
-  it('returns a structured unsupported_reference error for cross-project aliases (no registry yet)', () => {
+  it('resolves against live namespace data (2026-07-14) rather than a registry file — not_found when no ADR carries that namespace', () => {
+    // The fixture ADR has no `namespace` set, so no ADR matches
+    // "elenchus-app" — a real not_found, not a blanket rejection. Naming
+    // the available namespaces (none here) rather than a fixed hint string.
     const result = lookup(ctx, 'elenchus-app.0001#decision')
-    expect(result).toContain('error: unsupported_reference')
-    expect(result).toContain('namespace_registry.json')
+    expect(result).toContain('error: not_found')
+    expect(result).toContain('namespace "elenchus-app"')
+  })
+
+  it('resolves a namespace-qualified alias when an ADR actually carries that namespace (multi-root composite)', () => {
+    const namespacedAdr = makeAdr({ namespace: 'elenchus-legacy' })
+    const result = lookup(makeContext([namespacedAdr]), 'elenchus-legacy.0001#decision')
+    expect(result).toContain('We decided to use a hand-written tokenizer.')
+  })
+
+  it('flags cross-root ambiguity rather than silently picking one ADR when two roots share a number', () => {
+    const first = makeAdr({ namespace: 'root-a', path: '/fake/root-a/docs/adr/0001-a.md' })
+    const second = makeAdr({ namespace: 'root-b', path: '/fake/root-b/docs/adr/0001-b.md' })
+    const result = lookup(makeContext([first, second]), 'adr:0001')
+    expect(result).toContain('error: ambiguous')
+    expect(result).toContain('root-a.0001 (0001-a.md)')
+    expect(result).toContain('root-b.0001 (0001-b.md)')
+    expect(result).toContain('use "<namespace>.0001" to disambiguate')
+  })
+
+  it('flags same-namespace ambiguity with a distinct message, and disambiguates by filename since the namespace qualifier can\'t (a real elenchus specimen: two files, both "0016", in the same legacy/ root)', () => {
+    const first = makeAdr({ number: 16, namespace: 'legacy', path: '/fake/legacy/docs/adr/0016-dev-debug-mode.md' })
+    const second = makeAdr({ number: 16, namespace: 'legacy', path: '/fake/legacy/docs/adr/0016-implementation-plan.md' })
+    const result = lookup(makeContext([first, second]), 'adr:0016')
+    expect(result).toContain('error: ambiguous')
+    expect(result).toContain('appears 2 times within the same namespace/root ("legacy")')
+    expect(result).toContain('legacy.0016 (0016-dev-debug-mode.md)')
+    expect(result).toContain('legacy.0016 (0016-implementation-plan.md)')
+    expect(result).toContain('fix the duplicate ADR number at the source')
   })
 
   it('resolves a whole seed when given a seed: reference', () => {
