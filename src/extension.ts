@@ -14,8 +14,8 @@ import * as fs from 'fs'
 import { AdrIndex } from './index/adrIndex'
 import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { CompositeIndex } from './index/compositeIndex'
-import { computeNamespace } from './index/rootNode'
 import { isAdrBasename, isSeedBasename, isDirectChildOf } from './index/fileGuards'
+import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from './watchers/rootWatcherLifecycle'
 import { AdrTreeProvider } from './views/adrTreeProvider'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
@@ -59,25 +59,29 @@ const normalizerCoordinator = new Coordinator([
 // Extension state
 // ---------------------------------------------------------------------------
 
+/**
+ * ADR-0025 activation rewiring ("GO on fromWorkspace", 2026-07-15): `index`/
+ * `seedIndex` now alias the TOP-LEVEL root's own AdrIndex/SeedIndex —
+ * `compositeIndex.root.adrs`/`.seeds` — not independent objects. Kept
+ * (rather than retired outright) because several functions below are still
+ * deliberately scoped to the top root only: `determineNextNumber`/
+ * `createNewAdr` (Decision 6's per-root creation-target logic is its own
+ * follow-up pass, not this one) and `copyDeepLink` (Decision 7, same).
+ * That's an honest, documented limitation, not a silent regression — it's
+ * the exact same scope those two already had before this pass. Everything
+ * that genuinely needs every root (diagnostics, the status bar count,
+ * `adrManager.refresh`, the buffer-change trigger, `changeAdrStatus`'s
+ * reindex-on-write, the panel, deep-link resolution) reads through
+ * `compositeIndex` instead.
+ */
 let index: AdrIndex | undefined;
 let seedIndex: SeedIndex | undefined;
-/**
- * ADR-0025 panel-aggregation (Option A): a trivial (N=1, no filesystem
- * scan) wrap of the SAME `index`/`seedIndex` singletons above — NOT a
- * replacement for them, and NOT the "full activation rewiring" (module
- * singletons → CompositeIndex, per-root watchers) that Lapidary's work
- * order scoped out pending Cairn's three shaped QSTs (watcher lifecycle,
- * creation-target root, deep-link copy format). This just gives the panel
- * a CompositeIndex-shaped seam to build against now, ready for the moment
- * a real multi-root scan replaces `wrapSingle` with `fromWorkspace` —
- * without the panel itself needing to change again when that lands.
- */
 let compositeIndex: CompositeIndex | undefined;
+let watcherLifecycle: RootWatcherLifecycleController | undefined;
+let diagnosticsSubscription: vscode.Disposable | undefined;
+let diagnosticCollection: vscode.DiagnosticCollection | undefined;
 let treeProvider: AdrTreeProvider | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
-let fileWatcher: vscode.FileSystemWatcher | undefined;
-let seedFileWatcher: vscode.FileSystemWatcher | undefined;
-let diagnosticCollection: vscode.DiagnosticCollection | undefined;
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -97,12 +101,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(outputChannel);
   outputChannel.appendLine(`ADR Manager v${runningVersion} activated at ${new Date().toISOString()}`);
 
-  // Create the indices (no files parsed yet — lazy init)
-  index = new AdrIndex();
-  seedIndex = new SeedIndex();
+  // ── Root discovery + per-root watchers (ADR-0025, "GO on fromWorkspace") ──
+  // No workspace open: fall back to an empty single wrapped root rather than
+  // scanning nothing meaningful — matches the prior behavior's graceful
+  // degradation (empty indices, no watchers, extension stays inert).
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const namespace = workspaceRoot ? computeNamespace(workspaceRoot) : 'project';
-  compositeIndex = CompositeIndex.wrapSingle(workspaceRoot ?? '', index, seedIndex, namespace);
+  if (workspaceRoot) {
+    watcherLifecycle = await startRootWatcherLifecycle(
+      workspaceRoot,
+      { adrDirRel: adrDir },
+      context,
+      (event, node) => outputChannel.appendLine(`[${event}] ${node.namespace} (${node.path})`),
+      refreshed => { compositeIndex = refreshed; onCompositeRefreshed(diagnosticCollection); },
+    );
+    compositeIndex = watcherLifecycle.composite;
+  } else {
+    compositeIndex = CompositeIndex.wrapSingle('', new AdrIndex(), new SeedIndex());
+  }
+  index = compositeIndex.root.adrs;
+  seedIndex = compositeIndex.root.seeds;
   treeProvider = new AdrTreeProvider(index, seedIndex);
 
   // ── Deep-link click-through (2026-07-13) ────────────────────────────────
@@ -116,25 +133,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   diagnosticCollection = vscode.languages.createDiagnosticCollection('adr-manager');
   context.subscriptions.push(diagnosticCollection);
 
-  // Whenever the index changes, refresh diagnostics for all indexed ADRs
-  index.onChange(event => {
-    if (!diagnosticCollection) return;
-    if (event.type === 'removed') {
-      diagnosticCollection.delete(vscode.Uri.file(event.adrPath));
-    } else {
-      updateDiagnostics(diagnosticCollection, event.adr);
-    }
-    // ADR-0016: an ADR add/update may be the first cross-reference that
-    // resolves a seed's SEED_INCOMPLETE — recompute seed diagnostics too.
-    updateAllSeedDiagnostics(diagnosticCollection, seedIndex!, index!);
-  });
-
-  // ADR-0016 SEED_INCOMPLETE: recompute whenever the seed index changes
-  // (scoped to the current workspace only — Iteration 3 scoping note).
-  seedIndex.onChange(() => {
-    if (!diagnosticCollection) return;
-    updateAllSeedDiagnostics(diagnosticCollection, seedIndex!, index!);
-  });
+  // Per-root subscriptions (targeted, event-driven — same per-file logic as
+  // before, applied once per discovered root instead of once for a single
+  // top-level index) plus one explicit initial pass, since fromWorkspace's
+  // own indexDirectory() calls happened before anything was subscribed to
+  // hear them.
+  diagnosticsSubscription = subscribeDiagnostics(compositeIndex, diagnosticCollection);
+  for (const adr of compositeIndex.allAdrs()) updateDiagnostics(diagnosticCollection, adr);
+  for (const node of compositeIndex.walk()) updateAllSeedDiagnostics(diagnosticCollection, node.seeds, node.adrs);
 
   // ── Status bar item ──────────────────────────────────────────────────────
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -143,6 +149,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarItem.text = 'ADRs: …';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
+  updateStatusBarText();
+  compositeIndex.onChange(updateStatusBarText);
 
   // ── Tree view ────────────────────────────────────────────────────────────
   const treeView = vscode.window.createTreeView('adrExplorer', {
@@ -151,13 +159,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   context.subscriptions.push(treeView);
 
-  // Update status bar whenever index changes
-  index.onChange(() => {
-    if (statusBarItem) {
-      statusBarItem.text = `$(file-text) ${index!.statusBarText}`;
-    }
-  });
-
   // ── Commands ─────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.commands.registerCommand('adrManager.open', () => {
@@ -165,7 +166,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.refresh', () => {
-      reindexWorkspace(index!, seedIndex!, adrDir);
+      // Prefer a full rediscovery (picks up new/removed roots too) when a
+      // live watcher lifecycle exists; fall back to a content-only
+      // re-parse of already-known roots otherwise (no-workspace edge case).
+      if (watcherLifecycle) void watcherLifecycle.requestRefresh();
+      else if (compositeIndex) reindexWorkspace(compositeIndex, adrDir);
     }),
 
     vscode.commands.registerCommand('adrManager.showVersion', () => {
@@ -282,7 +287,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const normDiags = context.diagnostics.filter(d => d.source === 'adr-normalizer');
           if (normDiags.length === 0) return [];
 
-          const adr = index?.allAdrs().find(a => a.path === document.uri.fsPath);
+          const adr = compositeIndex?.allAdrs().find(a => a.path === document.uri.fsPath);
           if (!adr) return [];
 
           const content = document.getText();
@@ -319,21 +324,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  // ── File watchers ─────────────────────────────────────────────────────────
-  setupFileWatcher(context, index, adrDir);
-  setupSeedFileWatcher(context, seedIndex, adrDir);
-  setupBufferChangeTrigger(context, index, seedIndex, adrDir);
-
-  // ── Initial index population ──────────────────────────────────────────────
-  // Trigger when the sidebar is first revealed (lazy) OR immediately if already visible
-  treeView.onDidChangeVisibility(e => {
-    if (e.visible && index!.size === 0) {
-      reindexWorkspace(index!, seedIndex!, adrDir);
-    }
-  }, null, context.subscriptions);
-
-  // Also index now if workspace is already open (common case: extension installed in existing project)
-  reindexWorkspace(index, seedIndex, adrDir);
+  // ── Buffer-change trigger ────────────────────────────────────────────────
+  // Per-root disk watchers are already live (startRootWatcherLifecycle,
+  // above) — this is the ADDITIONAL live-typing path (buffer truth, not
+  // disk truth; see the function's own doc comment for the incident this
+  // closes). Root discovery itself already happened synchronously before
+  // this point (fromWorkspace awaited above), so there's no separate
+  // "initial index population" step left to schedule — every root's
+  // content is already parsed by the time activate() reaches here.
+  setupBufferChangeTrigger(context, () => compositeIndex, adrDir);
 }
 
 // ---------------------------------------------------------------------------
@@ -341,57 +340,120 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 // ---------------------------------------------------------------------------
 
 export function deactivate(): void {
-  fileWatcher?.dispose();
-  fileWatcher = undefined;
-  seedFileWatcher?.dispose();
-  seedFileWatcher = undefined;
+  watcherLifecycle?.dispose();
+  watcherLifecycle = undefined;
+  diagnosticsSubscription?.dispose();
+  diagnosticsSubscription = undefined;
 }
 
 // ---------------------------------------------------------------------------
-// Workspace indexing
+// Composite refresh + status bar
 // ---------------------------------------------------------------------------
 
-async function reindexWorkspace(idx: AdrIndex, sidx: SeedIndex, adrDirRel: string): Promise<void> {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders || workspaceFolders.length === 0) return;
-
-  for (const folder of workspaceFolders) {
-    const adrDir = path.join(folder.uri.fsPath, adrDirRel);
-    await idx.indexDirectory(adrDir);
-    await sidx.indexDirectory(adrDir);
+/**
+ * Re-parses every already-discovered root's own directory content (does
+ * NOT re-run root discovery — that's watcherLifecycle.requestRefresh()'s
+ * job, triggered by .settings/roots.json / .adrignore changes). Used by the
+ * manual "Refresh" command as a fallback when there's no live watcher
+ * lifecycle to delegate to (the no-workspace-open edge case).
+ */
+async function reindexWorkspace(composite: CompositeIndex, adrDirRel: string): Promise<void> {
+  if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) return;
+  for (const node of composite.walk()) {
+    if (!node.hasAdrDir) continue;
+    const adrDir = path.join(node.path, adrDirRel);
+    await node.adrs.indexDirectory(adrDir);
+    await node.seeds.indexDirectory(adrDir);
   }
+}
+
+/** Aggregate ADR count + open-question count across every discovered root. */
+function updateStatusBarText(): void {
+  if (!statusBarItem || !compositeIndex) return;
+  const adrCount = compositeIndex.allAdrs().length;
+  const openCount = compositeIndex.allAdrs()
+    .flatMap(a => a.questions)
+    .filter(q => !q.isAnswered).length
+    + compositeIndex.allSeeds().flatMap(s => s.questions).filter(q => !q.isAnswered).length;
+  statusBarItem.text = `$(file-text) ADRs: ${adrCount}${openCount > 0 ? ` | ? ${openCount}` : ''}`;
+}
+
+/**
+ * Subscribes to every discovered root's own AdrIndex/SeedIndex onChange —
+ * the same targeted, event-driven diagnostics logic the pre-ADR-0025
+ * single-root code used, applied once per root instead of once for a
+ * single top-level index. Seed cross-referencing (SEED_INCOMPLETE) stays
+ * scoped to the OWNING root's own ADRs, not global — a seed's "Derived
+ * Into" section references ADRs from its own project; cross-root lookup
+ * here would be a correctness bug (finding a same-numbered ADR in the
+ * wrong project), not a feature. Callers must dispose the previous
+ * subscription before calling this again after a root-set refresh (see
+ * onCompositeRefreshed).
+ */
+function subscribeDiagnostics(composite: CompositeIndex, collection: vscode.DiagnosticCollection): vscode.Disposable {
+  const disposables: vscode.Disposable[] = [];
+  for (const node of composite.walk()) {
+    const unsubAdrs = node.adrs.onChange(event => {
+      if (event.type === 'removed') {
+        collection.delete(vscode.Uri.file(event.adrPath));
+      } else {
+        updateDiagnostics(collection, event.adr);
+      }
+      // ADR-0016: an ADR add/update may be the first cross-reference that
+      // resolves a seed's SEED_INCOMPLETE — recompute this root's seed diagnostics too.
+      updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
+    });
+    const unsubSeeds = node.seeds.onChange(() => {
+      updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
+    });
+    disposables.push({ dispose: unsubAdrs }, { dispose: unsubSeeds });
+  }
+  return { dispose: () => { for (const d of disposables) d.dispose(); } };
+}
+
+/**
+ * Called after watcherLifecycle rebuilds the composite (a root-set change —
+ * .settings/roots.json edited, an .adrignore marker created/removed).
+ * Re-points the top-root aliases, re-subscribes diagnostics against the new
+ * node set, and refreshes the status bar, plus one explicit diagnostics
+ * pass (same reasoning as activate()'s initial pass — the rebuild's own
+ * indexDirectory() calls happened before anything new was subscribed to
+ * hear them).
+ *
+ * Known gap, not fixed here: `treeProvider` is NOT updated. It was
+ * constructed once with the top root's AdrIndex/SeedIndex instances
+ * (AdrTreeProvider has no API to swap them post-construction, and it only
+ * ever renders the top root anyway — the Linear Multi-Root Tree Projection,
+ * ADR-0025 Decision 4, is its own follow-up pass, not this one). A root-set
+ * change is rare relative to routine file edits — .settings/roots.json
+ * edits or .adrignore markers, not everyday saves — so the tree view
+ * staying frozen at its pre-refresh state until that pass lands (or a
+ * window reload) is an accepted, honest limitation, not a silent bug.
+ */
+function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefined): void {
+  if (!compositeIndex) return;
+  index = compositeIndex.root.adrs;
+  seedIndex = compositeIndex.root.seeds;
+  diagnosticsSubscription?.dispose();
+  if (collection) {
+    diagnosticsSubscription = subscribeDiagnostics(compositeIndex, collection);
+    for (const adr of compositeIndex.allAdrs()) updateDiagnostics(collection, adr);
+    for (const node of compositeIndex.walk()) updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
+  }
+  updateStatusBarText();
 }
 
 // ---------------------------------------------------------------------------
 // File watcher setup
 // ---------------------------------------------------------------------------
-
-function setupFileWatcher(
-  context: vscode.ExtensionContext,
-  idx: AdrIndex,
-  adrDirRel: string,
-): void {
-  const pattern = new vscode.RelativePattern(
-    vscode.workspace.workspaceFolders?.[0] ?? '',
-    `${adrDirRel}/*.md`,
-  );
-
-  fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
-
-  fileWatcher.onDidCreate(uri => {
-    if (isAdrFile(uri.fsPath)) idx.indexFile(uri.fsPath);
-  }, null, context.subscriptions);
-
-  fileWatcher.onDidChange(uri => {
-    if (isAdrFile(uri.fsPath)) idx.indexFile(uri.fsPath);
-  }, null, context.subscriptions);
-
-  fileWatcher.onDidDelete(uri => {
-    idx.removeFile(uri.fsPath);
-  }, null, context.subscriptions);
-
-  context.subscriptions.push(fileWatcher);
-}
+//
+// Per-root disk watchers now live in src/watchers/rootWatcherLifecycle.ts
+// (ADR-0025 Decision 3/5) — one FileSystemWatcher per discovered root,
+// composed into ExtensionContext.subscriptions, with Disposable-shaped
+// teardown and Decision 3's audit events. The single-watcher
+// setupFileWatcher()/setupSeedFileWatcher() pair they replaced is gone;
+// isAdrFile()/isSeedFile() stay (basename-shape helpers, still used by the
+// buffer-change trigger below).
 
 function isAdrFile(filePath: string): boolean {
   // Basename SHAPE only — NOT containment. Safe for the disk watchers,
@@ -403,33 +465,6 @@ function isAdrFile(filePath: string): boolean {
 
 function isSeedFile(filePath: string): boolean {
   return isSeedBasename(path.basename(filePath));
-}
-
-function setupSeedFileWatcher(
-  context: vscode.ExtensionContext,
-  sidx: SeedIndex,
-  adrDirRel: string,
-): void {
-  const pattern = new vscode.RelativePattern(
-    vscode.workspace.workspaceFolders?.[0] ?? '',
-    `${adrDirRel}/seed-*.md`,
-  );
-
-  seedFileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
-
-  seedFileWatcher.onDidCreate(uri => {
-    if (isSeedFile(uri.fsPath)) sidx.indexFile(uri.fsPath);
-  }, null, context.subscriptions);
-
-  seedFileWatcher.onDidChange(uri => {
-    if (isSeedFile(uri.fsPath)) sidx.indexFile(uri.fsPath);
-  }, null, context.subscriptions);
-
-  seedFileWatcher.onDidDelete(uri => {
-    sidx.removeFile(uri.fsPath);
-  }, null, context.subscriptions);
-
-  context.subscriptions.push(seedFileWatcher);
 }
 
 /**
@@ -451,14 +486,15 @@ function setupSeedFileWatcher(
  */
 function setupBufferChangeTrigger(
   context: vscode.ExtensionContext,
-  idx: AdrIndex,
-  sidx: SeedIndex,
+  getComposite: () => CompositeIndex | undefined,
   adrDirRel: string,
 ): void {
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const disposable = vscode.workspace.onDidChangeTextDocument(event => {
     const filePath = event.document.uri.fsPath;
+    const composite = getComposite();
+    if (!composite) return;
     // Phantom-ADR guard (2026-07-14, system3 incident): this event fires for
     // EVERY document in the workspace, and the basename-shape checks alone
     // are not containment — a date-prefixed report merely opened in the
@@ -467,9 +503,15 @@ function setupBufferChangeTrigger(
     // disk watchers never needed this check only because their glob
     // (`<adrDir>/*.md`) already scoped the directory; this trigger must
     // enforce the same scope explicitly. See src/index/fileGuards.ts.
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    if (!folder) return;
-    if (!isDirectChildOf(filePath, path.join(folder.uri.fsPath, adrDirRel))) return;
+    //
+    // ADR-0025: resolve the OWNING root first (any discovered root, not
+    // just the top workspace folder), then require direct-child containment
+    // relative to THAT root's own adrDir — the same guard the top root
+    // always had, now correctly scoped per-root instead of hardcoded to
+    // workspaceFolders[0].
+    const owningRoot = composite.findRoot(filePath);
+    if (!owningRoot) return;
+    if (!isDirectChildOf(filePath, path.join(owningRoot.path, adrDirRel))) return;
     const isAdr = isAdrFile(filePath);
     const isSeed = !isAdr && isSeedFile(filePath);
     if (!isAdr && !isSeed) return;
@@ -480,8 +522,8 @@ function setupBufferChangeTrigger(
     debounceTimers.set(filePath, setTimeout(() => {
       debounceTimers.delete(filePath);
       const content = event.document.getText();
-      if (isAdr) idx.indexContent(filePath, content);
-      else sidx.indexContent(filePath, content);
+      if (isAdr) owningRoot.adrs.indexContent(filePath, content);
+      else owningRoot.seeds.indexContent(filePath, content);
     }, 500));
   }, null, context.subscriptions);
 
@@ -793,8 +835,10 @@ async function changeAdrStatus(item: import('./views/adrTreeProvider').AdrTreeIt
   // immediately regardless of watcher latency (seed-2026-07-06-panel-submit-
   // no-refresh-bug.md: the same applyEdit+save-then-wait-for-watcher pattern
   // in the panel's writeAnswer() left the UI stuck until an unrelated manual
-  // save nudged the watcher).
-  index?.indexFile(item.adr.path);
+  // save nudged the watcher). ADR-0025: reindex through the OWNING root's
+  // own index, not the top-root alias — item.adr.path may live in any
+  // discovered root.
+  compositeIndex?.findRoot(item.adr.path)?.adrs.indexFile(item.adr.path);
 }
 
 /**
