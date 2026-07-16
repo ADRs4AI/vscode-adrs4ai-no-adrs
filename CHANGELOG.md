@@ -8,6 +8,25 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.17] - 2026-07-16
+
+### Fixed
+- Questions using bold `- **Status**:` fields can now be answered from the Open Questions panel — previously the panel refused with "Could not find the ANS block… answer this one manually," even though the question displayed fine. The panel's and MCP's write paths now recognize exactly the forms the parser reads (one shared definition), including `### QST-N:` handle headings as block boundaries.
+- ADR titles using en/em dashes as the number separator (`# ADR 0033 — Title`) display cleanly in the tree and panel. (Landed 2026-07-14, entry backfilled.)
+
+## [0.7.16] - 2026-07-15
+
+### Fixed
+- The "answer may not have saved" warning no longer fires as a false positive (and no longer blinks away — it now persists until dismissed). (Entry backfilled by v0.7.17's release.)
+
+## [0.7.15] - 2026-07-15
+
+### Added
+- Multi-root workspaces: the extension now discovers every ADR-bearing project root in the workspace and watches each one — sidebar, panel, and diagnostics aggregate across roots instead of serving only the first folder. (Entry backfilled by v0.7.17's release.)
+
+### Fixed
+- Our own demo fixture's recommendation rendered attribution-only with the body escaped below the styled block — root-caused to the attribution regex breaking on a nested parenthesis in the author name (`Sonnet 4.6 (1M)`).
+
 ## [0.7.14] - 2026-07-14
 
 ### Fixed
