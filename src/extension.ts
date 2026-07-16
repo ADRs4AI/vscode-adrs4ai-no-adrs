@@ -4,8 +4,19 @@
  * Forma 1: Parser + ActivityBar sidebar tree view + status bar + file watcher.
  *
  * Activation: triggered when the workspace contains docs/adr/*.md files.
- * Lazy init: the ADR index is populated when the sidebar is first revealed,
- * not on activation (avoids startup overhead per ADR-0004 performance note).
+ *
+ * Eager init (reversed 2026-07-15, ADR-0025's `fromWorkspace` activation
+ * pass, `8f765f8`): root discovery now runs — and every discovered root's
+ * indices are fully populated — before `activate()` returns, not lazily on
+ * first sidebar reveal as ADR-0004 originally specified. Flint 5's review
+ * named this explicitly as an undiscussed reversal; re-ratified here rather
+ * than silently left stale. Reasoning: per-root watchers (Decision 5) need
+ * to exist before diagnostics, the panel, or the status bar can be correct
+ * at all, so deferring `fromWorkspace` to first-reveal would only move the
+ * same cost to a different, less predictable moment — not eliminate it.
+ * `discoverRoots()` already skips `node_modules`/`.git`/build output during
+ * the scan, bounding the common case; if eager startup cost becomes a real
+ * complaint in practice, revisit then rather than pre-optimizing for it now.
  */
 
 import * as vscode from 'vscode'
@@ -79,6 +90,18 @@ let seedIndex: SeedIndex | undefined;
 let compositeIndex: CompositeIndex | undefined;
 let watcherLifecycle: RootWatcherLifecycleController | undefined;
 let diagnosticsSubscription: vscode.Disposable | undefined;
+/**
+ * Flint 5's review of 8f765f8 (2026-07-16): `CompositeIndex.onChange()`
+ * walks the tree AT CALL TIME and subscribes to each node's own AdrIndex/
+ * SeedIndex individually — it is not a live aggregate. Without re-
+ * subscribing this after a root-set refresh (a `.settings/roots.json` edit
+ * or `.adrignore` marker change, which replaces `compositeIndex` with a
+ * fresh instance holding fresh per-node indices), the old subscription is
+ * left listening to now-orphaned objects nothing feeds anymore — the
+ * status bar's count silently freezes for the rest of the session. Same
+ * dispose-and-resubscribe pattern as `diagnosticsSubscription`.
+ */
+let statusBarSubscription: (() => void) | undefined;
 let diagnosticCollection: vscode.DiagnosticCollection | undefined;
 let treeProvider: AdrTreeProvider | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
@@ -150,7 +173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
   updateStatusBarText();
-  compositeIndex.onChange(updateStatusBarText);
+  statusBarSubscription = compositeIndex.onChange(updateStatusBarText);
 
   // ── Tree view ────────────────────────────────────────────────────────────
   const treeView = vscode.window.createTreeView('adrExplorer', {
@@ -344,6 +367,8 @@ export function deactivate(): void {
   watcherLifecycle = undefined;
   diagnosticsSubscription?.dispose();
   diagnosticsSubscription = undefined;
+  statusBarSubscription?.();
+  statusBarSubscription = undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +465,13 @@ function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefine
     for (const adr of compositeIndex.allAdrs()) updateDiagnostics(collection, adr);
     for (const node of compositeIndex.walk()) updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
   }
+  // Flint 5's review finding (2026-07-16): compositeIndex.onChange() is a
+  // one-time subscription against the node instances live at call time, not
+  // a live aggregate — must be re-subscribed against the NEW composite here,
+  // same as diagnosticsSubscription just above, or the status bar silently
+  // freezes after every root-set refresh for the rest of the session.
+  statusBarSubscription?.();
+  statusBarSubscription = compositeIndex.onChange(updateStatusBarText);
   updateStatusBarText();
 }
 
@@ -511,6 +543,15 @@ function setupBufferChangeTrigger(
     // workspaceFolders[0].
     const owningRoot = composite.findRoot(filePath);
     if (!owningRoot) return;
+    // No-workspace fallback guard (Flint 5's review, minor finding): the
+    // CompositeIndex.wrapSingle('', ...) used when no workspace is open has
+    // an empty root path, under which findRoot()'s prefix match degrades to
+    // "starts with '/'" — true for any absolute path. The isDirectChildOf
+    // check below happens to still reject everything in that state (it
+    // resolves 'docs/adr' as a relative path against the process cwd, never
+    // matching a real file), but only by accident of two mismatched
+    // assumptions, not by explicit intent — make the intent explicit.
+    if (owningRoot.path === '') return;
     if (!isDirectChildOf(filePath, path.join(owningRoot.path, adrDirRel))) return;
     const isAdr = isAdrFile(filePath);
     const isSeed = !isAdr && isSeedFile(filePath);
