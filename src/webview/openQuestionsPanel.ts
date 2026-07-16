@@ -22,6 +22,7 @@ import type { AdrFile, Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
 import { stripAdrNumberPrefix } from '../parser/adrTitle'
+import { scanAnswerWriteAnchors } from './answerWriteScan'
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
@@ -457,33 +458,12 @@ export class OpenQuestionsPanel {
       const start = currentQuestion.lineStart - 1
       const end = Math.min(start + 40, lines.length)
 
-      let statusLineIdx = -1
-      let ansHeaderLineIdx = -1
-      let fillLineIdx = -1
-      // Block-extent tail-swallow discipline (Lapidary 5, 2026-07-13, same
-      // fix shape as buildSubsections'): the scan window used to only stop
-      // at the next "### QST:" heading, so with nothing after it (the
-      // question was the LAST one) blockEndLineIdx defaulted to the raw
-      // +40-line window — meaning the append fallback below could land
-      // past a "---" divider, inside whatever followed. A thematic break
-      // is also a hard stop.
-      let blockEndLineIdx = end
-
-      for (let i = start; i < end; i++) {
-        const trimmed = lines[i].trim()
-        if (trimmed.startsWith('- Status:') && statusLineIdx === -1) statusLineIdx = i
-        if (/^\*\*ANS:\*\*/.test(trimmed) && ansHeaderLineIdx === -1) ansHeaderLineIdx = i
-        // ADR-0012: Tolerant matching — handle extra spaces and case variations like
-        // "[ Fill this in ]", "[ Fill this in please ]", "[fill this in]".
-        if (/^\[\s*fill\s+this\s+in[^\]]*\]$/i.test(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
-        // Stop searching at the next QST heading or a thematic break
-        // ("---"/"***"/"___") — same boundary set as extractor.ts's
-        // THEMATIC_BREAK_RE.
-        if (i > start && (trimmed.startsWith('### QST:') || /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(trimmed))) {
-          blockEndLineIdx = i
-          break
-        }
-      }
+      // One scan, built from the extractor's own exported regexes — the
+      // private near-copy that lived here refused bold-Status questions the
+      // extractor itself had surfaced (crossfoot ADR-0030, 2026-07-16) and
+      // didn't know handle-form QST boundaries. See answerWriteScan.ts.
+      const { statusLineIdx, ansHeaderLineIdx, fillLineIdx, blockEndLineIdx } =
+        scanAnswerWriteAnchors(lines, start, end)
 
       // 1. Update status → answered
       if (statusLineIdx >= 0) {

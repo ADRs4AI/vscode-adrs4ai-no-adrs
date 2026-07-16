@@ -562,8 +562,20 @@ const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?:\s*/
 // Bold form ("- **Status**: value" — D2, Zoarium since March, crossfoot
 // ADR-0029 specimen) tolerated alongside plain form; group 1 is always the
 // value regardless of which form matched.
-const STATUS_LINE_RE = /^-\s+(?:\*\*Status\*\*|Status):\s+(.+)$/;
+// EXPORTED ("one parser, N consumers", ratified 2026-07-14): the write
+// paths' Status anchoring must use THIS definition, never a private copy —
+// the panel's private `startsWith('- Status:')` couldn't see bold Status,
+// so the append-ANS fallback refused a question the extractor itself had
+// surfaced (crossfoot ADR-0030 incident, 2026-07-16).
+export const STATUS_LINE_RE = /^-\s+(?:\*\*Status\*\*|Status):\s+(.+)$/;
 const STATUS_LINE_BOLD_RE = /^-\s+\*\*Status\*\*:/;
+// Raw-LINE form of "a heading the extractor reads as a QST" — any level
+// (level tolerance is NONCANONICAL_NAV_CODE_LEVEL's lane), case-tolerant,
+// optional handle id. For line-based write-path scans that need a question
+// BOUNDARY without re-tokenizing; kept beside its heading-text cousins
+// (NAV_CODE_HEADING_TOLERANT_RE / QST_HANDLE_RE) so the definitions can't
+// drift apart. Same export rationale as STATUS_LINE_RE above.
+export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:-[\p{L}\p{N}]{1,12})?\s*:/iu;
 // Annotated status value (Naturalist's status-with-annotation dialect,
 // ~20 docs across a 1,061-doc survey; crossfoot ADR-0029: "answered
 // 2026-07-13 (registrar implicit — ...)"). isAnswered's exact `=== 'answered'`

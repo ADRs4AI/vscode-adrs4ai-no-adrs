@@ -315,12 +315,19 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}\\n`)')
   })
 
-  it('writeAnswer\'s block-extent scan stops at a thematic break, not just the next QST heading — the append fallback must never land past a "---" divider', () => {
-    expect(PANEL_SRC).toContain('let blockEndLineIdx = end')
-    expect(PANEL_SRC).toMatch(/blockEndLineIdx = i/)
-    // Same boundary regex as extractor.ts's THEMATIC_BREAK_RE — kept in
-    // sync by hand until there's a single shared module for both.
-    expect(PANEL_SRC).toContain('/^ {0,3}([-*_])(?:\\s*\\1){2,}\\s*$/')
+  it('writeAnswer\'s anchor scan is the SHARED module, never a private re-derivation — block extent, Status form, and boundaries are answerWriteScan.ts\'s to define', () => {
+    // This test used to pin the inline scan's source strings ("kept in sync
+    // by hand until there's a single shared module for both" — its own
+    // words). The shared module arrived 2026-07-16 (crossfoot ADR-0030
+    // refusal: the panel's private scan couldn't see bold Status, so the
+    // append fallback refused a question the extractor had surfaced). The
+    // behavioral coverage — thematic-break stop, handle-form boundaries,
+    // bold-Status anchoring — now lives in answerWriteScan.test.ts; what
+    // this file still owns is the wiring claim: the panel consumes the
+    // shared scan and has no private scan left to drift.
+    expect(PANEL_SRC).toContain('scanAnswerWriteAnchors(lines, start, end)')
+    expect(PANEL_SRC).not.toContain('let blockEndLineIdx')
+    expect(PANEL_SRC).not.toContain("startsWith('- Status:')")
   })
 
   // DEBRIEF-004 (Jérémie, 2026-07-12, ADR-0025 QST-1): live answer vanished

@@ -15,7 +15,11 @@
  * later, but isn't this pass's call to make on someone else's file.
  */
 
-import { parseAdr } from '../parser/extractor'
+// STATUS_LINE_RE is the extractor's own definition ("one parser, N
+// consumers") — it tolerates the bold `- **Status**:` form the private
+// `/^- Status:/` copy here couldn't see, which left Status un-flipped on
+// bold-form files (the D2 write-back class) even when the answer wrote fine.
+import { parseAdr, STATUS_LINE_RE } from '../parser/extractor'
 import type { AdrIteration } from '../parser/types'
 import { findSectionForQuestion } from './reference'
 
@@ -25,7 +29,6 @@ export type WriteResult =
 
 const ANS_HEADER_RE = /^\*\*ANS:\*\*/
 const FILL_PLACEHOLDER_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
-const STATUS_LINE_RE = /^- Status:/
 
 /**
  * Same-day hazard fix (Lapidary's 2026-07-14 adjudication, Riddle 5's
