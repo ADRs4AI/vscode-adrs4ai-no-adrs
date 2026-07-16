@@ -8,6 +8,14 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.18] - 2026-07-16
+
+### Added
+- QST handle ids now allow interior hyphens and up to 24 characters (`### QST-STATUS-AUTHORITY: …`), so topical handles are first-class alongside lettered ones — anchors preserve the hyphens (`#qst-status-authority`). Existing short ids are unaffected.
+
+### Fixed
+- A `QST-…:` heading whose id doesn't conform to the handle grammar is now recognized as a question with a fix-it warning, instead of silently disappearing from every view with no diagnostic at all.
+
 ## [0.7.17] - 2026-07-16
 
 ### Fixed
