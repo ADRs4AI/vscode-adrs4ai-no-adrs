@@ -925,6 +925,90 @@ Confirm as-is.
     expect(recs![0].authorInferred).toBeUndefined()
   })
 
+  // Fixture-escape (Lapidary 5, 2026-07-15/16 — Format Stability Council
+  // convening, Item 0): our OWN fixture-workspace/docs/adr/0002-primary-
+  // datastore.md rendered attribution-only, body escaped as unstyled prose
+  // — in the demo we ship to strangers. Root cause: the model name itself
+  // contains a paren ("Sonnet 4.6 (1M)"), and the old REC_ATTRIBUTION_RE
+  // excluded ")" from the author-name character class entirely (to find
+  // the "real" close paren before an optional ", date") — so it couldn't
+  // span the nested paren and failed to match at all. recProtocolForm
+  // computed false, and the multi-paragraph body escaped past the first
+  // blank line into rawBodyPost, exactly like the v0.7.10 rec-extent
+  // escape but triggered by a different mechanism.
+  it('protocol-form attribution whose author name itself contains a paren still spans the multi-paragraph body', () => {
+    const content = `# ADR-0002: Test
+
+## Questions
+
+### QST: Test?
+- Status: unanswered
+
+**Recommendation**: (by Sonnet 4.6 (1M), 2026-06-10)
+
+**Ship it.** First paragraph of justification, several sentences long, explaining the reasoning in detail.
+
+**ANS:** (by Human)
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-test.md')
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.author).toBe('Sonnet 4.6 (1M)')
+    expect(rec.date).toBe('2026-06-10')
+    expect(rec.text).toContain('Ship it.')
+    expect(rec.text).toContain('First paragraph of justification')
+    expect(adr.questions[0].rawBodyPost).toBeUndefined()
+  })
+
+  // Ground truth: our real fixture-workspace demo file, exact shape.
+  it('ground truth: fixture-workspace/docs/adr/0002-primary-datastore.md — both QSTs\' recommendations fully captured', () => {
+    const content = `# ADR-0002: Primary Datastore — Embedded SQLite vs. Postgres
+
+## Questions
+
+### QST-SCALE: Should we plan for horizontal scaling from day one, or ship SQLite and migrate later if a hosted tier happens?
+
+<!-- @adr-anchor: horizontal-scaling-from-day-one -->
+
+- Status: unanswered
+- Why asking: This is the ADR-0001 tension again, one layer down.
+- Need: a decision, or an explicit "defer until the hosted tier is real"
+
+**Recommendation**: (by Sonnet 4.6 (1M), 2026-06-10)
+
+**Ship SQLite now; treat the Postgres migration as a scoped, deferred task, not a design constraint on today's schema.** SQLite's write-serialization is a real limit, but it's a *hosted-tier* limit — a single household doing occasional concurrent writes will never observe it (SQLite's WAL mode handles concurrent readers plus one writer without contention that a human would notice).
+
+**ANS:** (by Ren Okafor)
+[Fill this in]
+
+---
+
+### QST: How do we handle concurrent writes from multiple household members on the same pantry?
+- Status: unanswered
+- Why asking: Even without the hosted-tier question, this is a real, near-term scenario.
+- Need: a concurrency strategy for the common case (household-scale, not hosted-scale)
+
+**Recommendation**: (by Sonnet 4.6 (1M), 2026-06-10)
+
+**Last-write-wins at the row level, with a \`updated_at\` optimistic-concurrency check on the pantry-item table only** (not the whole schema). If two people toggle the same item within the same second, the second write wins.
+
+**ANS:** (by Ren Okafor)
+[Fill this in]
+
+---
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0002-primary-datastore.md')
+    expect(adr.questions).toHaveLength(2)
+    for (const q of adr.questions) {
+      expect(q.recommendations).toHaveLength(1)
+      expect(q.recommendations![0].author).toBe('Sonnet 4.6 (1M)')
+      expect(q.recommendations![0].date).toBe('2026-06-10')
+      expect(q.rawBodyPost).toBeUndefined()
+    }
+    expect(adr.questions[0].recommendations![0].text).toContain('Ship SQLite now')
+    expect(adr.questions[1].recommendations![0].text).toContain('Last-write-wins at the row level')
+  })
+
   it('ADR-0019 QST-1: legacy "**My recommendation**:" infers author from Deciders, marked authorInferred', () => {
     const content = `# ADR-0002: Parser
 

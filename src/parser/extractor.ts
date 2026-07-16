@@ -588,9 +588,33 @@ const NEED_RE = /^-\s+Need:\s+(.+)$/;
 // attribution text, used as an explicit `author` — see recMatch handling.
 const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*(?:\s*\((?:by|from)\s+([^)]+)\))?:\s*(.*)/;
 // Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)"
-// or "(from Sonnet 4.6)". Captures author + optional date. Their body spans
-// blank lines (paragraphs), unlike legacy single-paragraph prose.
-const REC_ATTRIBUTION_RE = /^\((?:by|from)\s+([^,)]+?)(?:,\s*(.+))?\)\s*$/i;
+// or "(from Sonnet 4.6)". Their body spans blank lines (paragraphs), unlike
+// legacy single-paragraph prose.
+//
+// Group 1 captures EVERYTHING between "by"/"from" and the FINAL closing
+// paren — author/date splitting is a separate step (splitRecAttribution
+// below), not baked into this regex. The previous version excluded `)`
+// from the author-name character class to stop at the "real" close paren
+// before an optional ", date" — which breaks the moment the author name
+// itself contains a paren (our own fixture, Lapidary 5, 2026-07-15/16,
+// docs.../0002-primary-datastore.md: "(by Sonnet 4.6 (1M), 2026-06-10)").
+// `[^,)]+?` cannot span the nested "(1M)" at all — the whole regex failed
+// to match, recProtocolForm computed false, and the entire multi-paragraph
+// recommendation body escaped past the first blank line into rawBodyPost,
+// rendering unstyled below the (attribution-only) green block. `.+` has no
+// such exclusion, so it spans nested parens; `\)\s*$` still anchors to the
+// true final close paren since only one position lets the greedy match
+// reach end-of-string.
+const REC_ATTRIBUTION_RE = /^\((?:by|from)\s+(.+)\)\s*$/i;
+// A trailing ", YYYY-MM-DD" on the captured attribution is the date;
+// everything before it is the author, however many parens it contains.
+const REC_ATTRIBUTION_DATE_RE = /^(.*?),\s*(\d{4}-\d{2}-\d{2})\s*$/;
+
+function splitRecAttribution(raw: string): { author: string; date?: string } {
+  const dateMatch = raw.match(REC_ATTRIBUTION_DATE_RE);
+  if (dateMatch) return { author: dateMatch[1].trim(), date: dateMatch[2].trim() };
+  return { author: raw.trim() };
+}
 // ADR-0019 QST-1: legacy `**My recommendation**:` blocks infer attribution
 // from the ADR's Deciders line (single-AI ADRs dominate the legacy corpus).
 const AI_AUTHOR_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral|fable/i;
@@ -1022,8 +1046,9 @@ export function extractQuestion(
       if (meta.protocolForm) {
         const attrMatch = (rawLines[0] ?? '').match(REC_ATTRIBUTION_RE);
         if (attrMatch) {
-          author = attrMatch[1].trim();
-          date = attrMatch[2]?.trim();
+          const split = splitRecAttribution(attrMatch[1]);
+          author = split.author;
+          date = split.date;
         }
         bodyLines = rawLines.slice(1);
       } else if (meta.inlineAttribution) {
