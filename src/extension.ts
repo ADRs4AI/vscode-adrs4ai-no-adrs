@@ -143,7 +143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   index = compositeIndex.root.adrs;
   seedIndex = compositeIndex.root.seeds;
-  treeProvider = new AdrTreeProvider(index, seedIndex);
+  treeProvider = new AdrTreeProvider(compositeIndex);
 
   // ── Deep-link click-through (2026-07-13) ────────────────────────────────
   // The provider is a CALLER, not a resolver (Lapidary's brief): it holds no
@@ -439,21 +439,16 @@ function subscribeDiagnostics(composite: CompositeIndex, collection: vscode.Diag
 /**
  * Called after watcherLifecycle rebuilds the composite (a root-set change —
  * .settings/roots.json edited, an .adrignore marker created/removed).
- * Re-points the top-root aliases, re-subscribes diagnostics against the new
- * node set, and refreshes the status bar, plus one explicit diagnostics
- * pass (same reasoning as activate()'s initial pass — the rebuild's own
+ * Re-points the top-root aliases, re-subscribes diagnostics/status-bar/tree
+ * against the new node set, plus one explicit diagnostics pass (same
+ * reasoning as activate()'s initial pass — the rebuild's own
  * indexDirectory() calls happened before anything new was subscribed to
  * hear them).
  *
- * Known gap, not fixed here: `treeProvider` is NOT updated. It was
- * constructed once with the top root's AdrIndex/SeedIndex instances
- * (AdrTreeProvider has no API to swap them post-construction, and it only
- * ever renders the top root anyway — the Linear Multi-Root Tree Projection,
- * ADR-0025 Decision 4, is its own follow-up pass, not this one). A root-set
- * change is rare relative to routine file edits — .settings/roots.json
- * edits or .adrignore markers, not everyday saves — so the tree view
- * staying frozen at its pre-refresh state until that pass lands (or a
- * window reload) is an accepted, honest limitation, not a silent bug.
+ * `treeProvider.setComposite()` (landed alongside the Linear Multi-Root
+ * Tree Projection, 2026-07-16) closes what was originally a documented gap
+ * here — the tree view no longer freezes at its pre-refresh state after a
+ * root-set change.
  */
 function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefined): void {
   if (!compositeIndex) return;
@@ -473,6 +468,7 @@ function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefine
   statusBarSubscription?.();
   statusBarSubscription = compositeIndex.onChange(updateStatusBarText);
   updateStatusBarText();
+  treeProvider?.setComposite(compositeIndex);
 }
 
 // ---------------------------------------------------------------------------

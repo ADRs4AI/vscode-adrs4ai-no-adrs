@@ -3,7 +3,7 @@
  *
  * Implements VS Code's TreeDataProvider to display ADRs and Seeds in the ActivityBar sidebar.
  *
- * Tree structure (ADR-0011 decision):
+ * Tree structure (ADR-0011 decision), N=1 (single root, the common case — unchanged, no extra nesting):
  *   [? N open questions]         (header, shown when any questions exist)
  *   ▼ ADRs (12)
  *     ADR-0001: Project Specifications [Accepted]
@@ -14,22 +14,37 @@
  *     SEED (2026-03-07): Bug Reports   [wrench = unprocessed]
  *     SEED (2026-03-12): Debrief       [check = processed]
  *
- * See ADR-0004: UI Paradigm, ADR-0011: Seeds as First-Class Artifacts.
+ * Multi-root (ADR-0025 Decision 4, Linear Multi-Root Tree Projection —
+ * founder-priority fix, 2026-07-16, "provenance vertigo": Jérémie answered
+ * a question belonging to a different root via the panel and the tree
+ * showed nothing for it): every discovered root becomes a flat top-level
+ * entry, regardless of nesting depth —
+ *   ▶ vscode-adrs-for-ai (root)
+ *   ▶ elenchus-app (subprojects/elenchus-app)
+ * — each expanding into exactly the SAME structure shown above. The N=1
+ * case is not a special code path: `getRootItems()` flattens directly to
+ * the container structure when there's exactly one discovered root, and
+ * every container-listing method is parameterized by a `RootNode` rather
+ * than closing over a single fixed index — one shape at every depth, per
+ * this whole project's composability discipline.
+ *
+ * See ADR-0004: UI Paradigm, ADR-0011: Seeds as First-Class Artifacts,
+ * ADR-0025: Multi-Root Recursive Project Roots.
  */
 
 import * as vscode from 'vscode'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
-import type { AdrIndex } from '../index/adrIndex'
-import type { SeedIndex } from '../index/seedIndex'
+import type { CompositeIndex, RootNode } from '../index/compositeIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
 import { stripAdrNumberPrefix } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
+import { pathFragmentFor } from './rootPathFragment'
 
 // ---------------------------------------------------------------------------
 // Tree item types
 // ---------------------------------------------------------------------------
 
-type AdrTreeItemKind = 'adr' | 'question' | 'open-questions-header' | 'adr-group' | 'seed-group' | 'seed';
+type AdrTreeItemKind = 'root' | 'adr' | 'question' | 'open-questions-header' | 'adr-group' | 'seed-group' | 'seed';
 
 /** The broad implementation parameter type shared by all constructor overloads and static helpers.
  *  Using AdrTreeItemOpts resolves to the LAST overload only,
@@ -41,6 +56,8 @@ type AdrTreeItemOpts = {
   seed?: SeedFile;
   count?: number;
   collapsibleState?: vscode.TreeItemCollapsibleState;
+  rootNode?: RootNode;
+  pathFragment?: string;
 };
 
 export class AdrTreeItem extends vscode.TreeItem {
@@ -48,7 +65,15 @@ export class AdrTreeItem extends vscode.TreeItem {
   public readonly adr?: AdrFile;
   public readonly question?: Question;
   public readonly seed?: SeedFile;
+  /** Present on 'root' items, and on 'open-questions-header'/'adr-group'/'seed-group' items when the tree is multi-root — the container `getChildren()` must dispatch against. Undefined in the N=1 case, where there's only ever one root to mean anyway. */
+  public readonly rootNode?: RootNode;
 
+  constructor(opts: {
+    kind: 'root';
+    rootNode: RootNode;
+    pathFragment: string;
+    openCount: number;
+  });
   constructor(opts: {
     kind: 'adr';
     adr: AdrFile;
@@ -68,14 +93,17 @@ export class AdrTreeItem extends vscode.TreeItem {
   constructor(opts: {
     kind: 'open-questions-header';
     count: number;
+    rootNode?: RootNode;
   });
   constructor(opts: {
     kind: 'adr-group';
     count: number;
+    rootNode?: RootNode;
   });
   constructor(opts: {
     kind: 'seed-group';
     count: number;
+    rootNode?: RootNode;
   });
   constructor(opts: {
     kind: 'seed';
@@ -89,6 +117,8 @@ export class AdrTreeItem extends vscode.TreeItem {
     seed?: SeedFile;
     count?: number;
     collapsibleState?: vscode.TreeItemCollapsibleState;
+    rootNode?: RootNode;
+    pathFragment?: string;
   }) {
     const collapsible = AdrTreeItem.makeCollapsible(opts)
     const label = AdrTreeItem.makeLabel(opts)
@@ -98,6 +128,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     this.adr = opts.adr
     this.question = opts.question
     this.seed = opts.seed
+    this.rootNode = opts.rootNode
 
     this.contextValue = opts.kind
     this.iconPath = AdrTreeItem.makeIcon(opts)
@@ -139,11 +170,18 @@ export class AdrTreeItem extends vscode.TreeItem {
       }
       this.resourceUri = vscode.Uri.file(opts.seed.path)
     }
+
+    if (opts.kind === 'root' && opts.rootNode) {
+      this.resourceUri = vscode.Uri.file(opts.rootNode.path)
+    }
   }
 
   private static makeCollapsible(opts: AdrTreeItemOpts): vscode.TreeItemCollapsibleState {
+    if (opts.kind === 'root') {
+      return vscode.TreeItemCollapsibleState.Expanded
+    }
     if (opts.kind === 'adr-group' || opts.kind === 'seed-group') {
-      return (opts as { count?: number }).count! > 0
+      return (opts.count ?? 0) > 0
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.None
     }
@@ -151,6 +189,9 @@ export class AdrTreeItem extends vscode.TreeItem {
   }
 
   private static makeLabel(opts: AdrTreeItemOpts): string {
+    if (opts.kind === 'root' && opts.rootNode) {
+      return opts.rootNode.namespace
+    }
     if (opts.kind === 'adr' && opts.adr) {
       // Defensive guard: seeds should not reach the ADR tree (they're excluded by
       // indexDirectory's /^\d+[-_]/ filter), but if a legacy numeric-prefix seed
@@ -171,16 +212,14 @@ export class AdrTreeItem extends vscode.TreeItem {
       return `? ${opts.question.text}`
     }
     if (opts.kind === 'open-questions-header') {
-      const c = (opts as { count: number }).count
+      const c = opts.count ?? 0
       return `${c} open question${c === 1 ? '' : 's'}`
     }
     if (opts.kind === 'adr-group') {
-      const c = (opts as { count: number }).count
-      return `ADRs (${c})`
+      return `ADRs (${opts.count ?? 0})`
     }
     if (opts.kind === 'seed-group') {
-      const c = (opts as { count: number }).count
-      return `Seeds (${c})`
+      return `Seeds (${opts.count ?? 0})`
     }
     if (opts.kind === 'seed' && opts.seed) {
       const s = opts.seed
@@ -191,6 +230,10 @@ export class AdrTreeItem extends vscode.TreeItem {
   }
 
   private static makeDescription(opts: AdrTreeItemOpts): string {
+    if (opts.kind === 'root') {
+      const parts = [opts.pathFragment, (opts.count ?? 0) > 0 ? `${opts.count} open` : null].filter(Boolean)
+      return parts.join(' · ')
+    }
     if (opts.kind === 'adr' && opts.adr) {
       const openCount = opts.adr.questions.filter(q => !q.isAnswered).length
       const statusPart = `[${opts.adr.status}]`
@@ -207,6 +250,14 @@ export class AdrTreeItem extends vscode.TreeItem {
   }
 
   private static makeTooltip(opts: AdrTreeItemOpts): string {
+    if (opts.kind === 'root' && opts.rootNode) {
+      const parts = [
+        `**${opts.rootNode.namespace}**`,
+        `Path: ${opts.rootNode.path}`,
+        opts.rootNode.isSubmodule ? 'Git submodule' : null,
+      ].filter(Boolean)
+      return parts.join('\n')
+    }
     if (opts.kind === 'adr' && opts.adr) {
       const a = opts.adr
       const parts = [
@@ -249,6 +300,9 @@ export class AdrTreeItem extends vscode.TreeItem {
   }
 
   private static makeIcon(opts: AdrTreeItemOpts): vscode.ThemeIcon {
+    if (opts.kind === 'root') {
+      return new vscode.ThemeIcon('root-folder')
+    }
     if (opts.kind === 'adr' && opts.adr) {
       return statusThemeIcon(opts.adr.status, vscode.ThemeIcon, vscode.ThemeColor)
     }
@@ -290,13 +344,28 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event
 
   filterMode: QuestionFilter = 'open'
+  private composite: CompositeIndex
+  private compositeSubscription: (() => void) | undefined
 
-  constructor(
-    private readonly index: AdrIndex,
-    private readonly seedIndex: SeedIndex,
-  ) {
-    index.onChange(() => this.refresh())
-    seedIndex.onChange(() => this.refresh())
+  constructor(composite: CompositeIndex) {
+    this.composite = composite
+    this.compositeSubscription = composite.onChange(() => this.refresh())
+  }
+
+  /**
+   * Swap the underlying composite after a root-set refresh (ADR-0025
+   * Decision 5 — a `.settings/roots.json` edit or `.adrignore` marker
+   * change rebuilds `CompositeIndex` from scratch). Re-subscribes against
+   * the new node instances, same dispose-and-resubscribe discipline as
+   * `extension.ts`'s `diagnosticsSubscription`/`statusBarSubscription` —
+   * this is what closes the "tree view freezes after a root-set change"
+   * gap named in `8f765f8`'s own known-limitations note.
+   */
+  setComposite(composite: CompositeIndex): void {
+    this.compositeSubscription?.()
+    this.composite = composite
+    this.compositeSubscription = composite.onChange(() => this.refresh())
+    this.refresh()
   }
 
   setFilter(mode: QuestionFilter): void {
@@ -314,34 +383,65 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
 
   getChildren(element?: AdrTreeItem): AdrTreeItem[] {
     if (!element) return this.getRootItems()
-    if (element.kind === 'adr-group') return this.getAdrGroupChildren()
-    if (element.kind === 'seed-group') return this.getSeedGroupChildren()
+    if (element.kind === 'root' && element.rootNode) return this.getContainerChildren(element.rootNode)
+    if (element.kind === 'adr-group') return this.getAdrGroupChildren(this.resolveNode(element.rootNode))
+    if (element.kind === 'seed-group') return this.getSeedGroupChildren(this.resolveNode(element.rootNode))
     if (element.kind === 'adr' && element.adr) return this.getAdrChildren(element.adr)
     if (element.kind === 'seed' && element.seed) return this.getSeedChildren(element.seed)
     return []
   }
 
-  private getRootItems(): AdrTreeItem[] {
-    const items: AdrTreeItem[] = []
+  /** N=1's group items carry no rootNode (there's only ever one to mean); fall back to the composite's own root. */
+  private resolveNode(rootNode: RootNode | undefined): RootNode {
+    return rootNode ?? this.composite.root
+  }
 
-    const openCount = this.index.openQuestionCount
+  /**
+   * Linear Multi-Root Tree Projection (ADR-0025 Decision 4): one flat entry
+   * per discovered root, regardless of nesting depth. N=1 stays the trivial
+   * case — flattens directly to the container structure with no extra
+   * wrapper layer, zero behavior change from the pre-multi-root tree.
+   */
+  private getRootItems(): AdrTreeItem[] {
+    const nodes = Array.from(this.composite.walk())
+    if (nodes.length <= 1) return this.getContainerChildren(nodes[0] ?? this.composite.root)
+
+    const workspaceRoot = this.composite.root.path
+    return nodes.map(node => new AdrTreeItem({
+      kind: 'root',
+      rootNode: node,
+      pathFragment: pathFragmentFor(node, workspaceRoot),
+      openCount: this.openQuestionCountFor(node),
+    }))
+  }
+
+  private getContainerChildren(node: RootNode): AdrTreeItem[] {
+    const items: AdrTreeItem[] = []
+    const multiRoot = Array.from(this.composite.walk()).length > 1
+    const rootNodeArg = multiRoot ? node : undefined
+
+    const openCount = this.openQuestionCountFor(node)
     if (openCount > 0) {
-      items.push(new AdrTreeItem({ kind: 'open-questions-header', count: openCount }))
+      items.push(new AdrTreeItem({ kind: 'open-questions-header', count: openCount, rootNode: rootNodeArg }))
     }
 
-    const adrCount = this.index.allAdrs().filter(a => !a.isSeed).length
-    items.push(new AdrTreeItem({ kind: 'adr-group', count: adrCount }))
+    const adrCount = node.adrs.allAdrs().filter(a => !a.isSeed).length
+    items.push(new AdrTreeItem({ kind: 'adr-group', count: adrCount, rootNode: rootNodeArg }))
 
-    const seedCount = this.seedIndex.size
+    const seedCount = node.seeds.size
     if (seedCount > 0) {
-      items.push(new AdrTreeItem({ kind: 'seed-group', count: seedCount }))
+      items.push(new AdrTreeItem({ kind: 'seed-group', count: seedCount, rootNode: rootNodeArg }))
     }
 
     return items
   }
 
-  private getAdrGroupChildren(): AdrTreeItem[] {
-    const adrs = this.index.allAdrs().filter(a => !a.isSeed)
+  private openQuestionCountFor(node: RootNode): number {
+    return node.adrs.openQuestionCount + node.seeds.allOpenQuestions().length
+  }
+
+  private getAdrGroupChildren(node: RootNode): AdrTreeItem[] {
+    const adrs = node.adrs.allAdrs().filter(a => !a.isSeed)
     return adrs.map(adr => {
       const visibleQuestions = this.filterQuestions(adr.questions)
       return new AdrTreeItem({
@@ -354,8 +454,8 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     })
   }
 
-  private getSeedGroupChildren(): AdrTreeItem[] {
-    return this.seedIndex.allSeeds().map(seed => {
+  private getSeedGroupChildren(node: RootNode): AdrTreeItem[] {
+    return node.seeds.allSeeds().map(seed => {
       const visible = this.filterQuestions(seed.questions)
       return new AdrTreeItem({
         kind: 'seed',
@@ -381,3 +481,4 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     return questions.filter(q => !q.isAnswered) // 'open' (default)
   }
 }
+
