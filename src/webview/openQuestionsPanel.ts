@@ -108,6 +108,8 @@ type WebviewMessage =
   | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string; totalOccurrences: number }
   | { type: 'refreshRequest' }
   | { type: 'ready' }
+  /** Persistent save-failure warning (Lapidary 5, 2026-07-16): "Save now" retry. */
+  | { type: 'retrySave'; adrPath: string }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -350,6 +352,7 @@ export class OpenQuestionsPanel {
         // panel's next 'questions' push reflects the file as it is now.
         this.sendQuestions()
         break
+      case 'retrySave': await this.retrySave(msg.adrPath); break
     }
   }
 
@@ -541,11 +544,23 @@ export class OpenQuestionsPanel {
         return
       }
 
-      let saved = await vscode.workspace.save(uri)
+      // Not-dirty / no-visible-editor false positive (Lapidary 5,
+      // 2026-07-16, caught on camera in a GIF take — Jérémie: "seen it
+      // blink past many times"): vscode.workspace.save(uri) requires an
+      // actual open EDITOR for that URI ("an editor with the provided
+      // resource must be opened in order to be saved" — @types/vscode).
+      // The panel never shows an editor for the file it's answering into
+      // (that's the whole point — "answerable in place"), so this almost
+      // always resolved undefined regardless of whether applyEdit's write
+      // actually landed, making the retry-and-warn path fire on ordinary,
+      // successful writes. doc.save() (TextDocument.save()) operates on
+      // the document model directly and needs no visible editor — the
+      // correct API for "did this document's pending edit get written."
+      let saved = await doc.save()
       if (!saved) {
         // A single retry clears the common transient case (a momentary fs
         // hiccup, a race with another writer); only warn if it fails twice.
-        saved = await vscode.workspace.save(uri)
+        saved = await doc.save()
       }
 
       // Reindex from the BUFFER (doc.getText()), not disk (indexFile()) —
@@ -578,6 +593,7 @@ export class OpenQuestionsPanel {
         this.panel.webview.postMessage({
           type: 'answered',
           questionId: msg.questionId,
+          adrPath: msg.adrPath,
           warning: `Answer applied but not yet saved to disk (${msg.adrPath}) — save the file manually to make sure it isn't lost.`,
         })
         return
@@ -586,6 +602,23 @@ export class OpenQuestionsPanel {
       this.panel.webview.postMessage({ type: 'answered', questionId: msg.questionId })
     } catch (err) {
       this.panel.webview.postMessage({ type: 'error', message: String(err) })
+    }
+  }
+
+  /**
+   * "Save now" retry (Lapidary 5, 2026-07-16) for the persistent save-
+   * failure warning. Uses doc.save() (TextDocument.save()) for the same
+   * reason writeAnswer does — vscode.workspace.save(uri) requires an open
+   * editor for the URI, which this panel deliberately never has.
+   */
+  private async retrySave(adrPath: string): Promise<void> {
+    try {
+      const uri = vscode.Uri.file(adrPath)
+      const doc = await vscode.workspace.openTextDocument(uri)
+      const saved = await doc.save()
+      this.panel.webview.postMessage({ type: 'saveRetryResult', adrPath, saved })
+    } catch {
+      this.panel.webview.postMessage({ type: 'saveRetryResult', adrPath, saved: false })
     }
   }
 
@@ -1125,6 +1158,17 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
     <button class="btn-skip" id="btn-drift-write">Write anyway</button>
     <button class="btn-skip" id="btn-drift-hold">Hold draft</button>
   </div>
+
+  <!-- Persistent save-failure warning (Lapidary 5, 2026-07-16): a genuine
+       save failure has to stay visible until the human acts on it — #err
+       gets wiped by render() on every background "questions" push (any
+       concurrent save anywhere in this multi-writer repo), which is what
+       made the old inline warning "blink past" before it could be read. -->
+  <div class="drift-bar" id="save-warning-bar" style="display:none">
+    <span id="save-warning-text"></span>
+    <button class="btn-skip" id="btn-save-now">Save now</button>
+    <button class="btn-skip" id="btn-save-dismiss">Dismiss</button>
+  </div>
 </div>
 
 <div id="q-overlay">
@@ -1583,6 +1627,28 @@ $id('btn-drift-hold').addEventListener('click', () => {
   $id('btn-ans').disabled = false;
 });
 
+// Persistent save-failure warning (Lapidary 5, 2026-07-16). Tracked
+// separately from #err/#drift-bar, which render() clears on every
+// routine background refresh — this one must survive those, since it's
+// reporting a fact about disk state that doesn't stop being true just
+// because an unrelated file was saved elsewhere. Cleared only by an
+// explicit Save now (on success) or Dismiss.
+let saveWarningPath = null;
+function showSaveWarning(message, adrPath) {
+  saveWarningPath = adrPath;
+  $id('save-warning-text').textContent = message;
+  $id('save-warning-bar').style.display = 'flex';
+}
+function hideSaveWarning() {
+  saveWarningPath = null;
+  $id('save-warning-bar').style.display = 'none';
+}
+$id('btn-save-now').addEventListener('click', () => {
+  if (!saveWarningPath) return;
+  vscode.postMessage({ type: 'retrySave', adrPath: saveWarningPath });
+});
+$id('btn-save-dismiss').addEventListener('click', hideSaveWarning);
+
 function render() {
   if (questions.length === 0) {
     // DEBRIEF-004 row 4 (Quarry 5): do NOT reset lastShownDraftKey here.
@@ -1726,9 +1792,18 @@ window.addEventListener('message', e => {
     // advances even when the disk save itself failed (reindex uses buffer
     // truth) — but the human still needs to know the answer isn't
     // persisted yet, or a crash before the next successful save loses it.
+    // Persistent (2026-07-16, Lapidary 5): a background "questions" push
+    // (constant, in this multi-writer repo) must not silently dismiss this
+    // before it's been read — see showSaveWarning's declaration.
     if (msg.warning) {
-      $id('err').style.display = 'block';
-      $id('err').textContent = msg.warning;
+      showSaveWarning(msg.warning, msg.adrPath);
+    }
+  }
+  if (msg.type === 'saveRetryResult') {
+    if (msg.saved) {
+      hideSaveWarning();
+    } else {
+      $id('save-warning-text').textContent = 'Still not saved — ' + msg.adrPath + '. Try saving the file manually.';
     }
   }
   if (msg.type === 'navigate') {

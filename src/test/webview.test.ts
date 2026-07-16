@@ -203,12 +203,81 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('if (!applied)')
   })
 
-  it('writeAnswer checks save()\'s return value and retries once before warning', () => {
-    expect(PANEL_SRC).toContain('let saved = await vscode.workspace.save(uri)')
+  // Updated 2026-07-16 (Lapidary 5, not-dirty/no-visible-editor false
+  // positive, caught on camera): doc.save() (TextDocument.save()), not
+  // vscode.workspace.save(uri) — the latter requires an open EDITOR for
+  // the URI, which the panel never has ("answerable in place"), so it
+  // resolved falsy on ordinary successful writes and fired the warning
+  // over nothing.
+  it('writeAnswer checks doc.save()\'s return value and retries once before warning', () => {
+    expect(PANEL_SRC).toContain('let saved = await doc.save()')
     expect(PANEL_SRC).toContain('if (!saved) {')
-    // Two save() call sites: the retry, and the (now-decoupled) reindex
-    // that no longer depends on it.
-    expect((PANEL_SRC.match(/vscode\.workspace\.save\(uri\)/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    expect((PANEL_SRC.match(/doc\.save\(\)/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  // DEBRIEF (Lapidary 5, 2026-07-16, caught on camera in a GIF take —
+  // Jérémie: "seen it blink past many times"): the save-failure warning
+  // used to share #err with everything else render() clears on every
+  // background "questions" push (any concurrent save anywhere in this
+  // multi-writer repo) — so it could vanish before it was ever read.
+  // These run the ACTUAL shipped script (Quarry 5's harness), not a
+  // description of intended behavior.
+  describe('Persistent save-failure warning survives background refreshes', () => {
+    const Q1 = { id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' }
+
+    it('a save-failure warning stays visible across an unrelated background "questions" push', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.postToWebview({ type: 'answered', questionId: 'q1', adrPath: '/fake/a.md', warning: 'Answer applied but not yet saved to disk (/fake/a.md) — save the file manually to make sure it isn\'t lost.' })
+      expect(h.element('save-warning-bar').style.display).toBe('flex')
+
+      // An unrelated background refresh — same shape as any concurrent
+      // save elsewhere triggering index.onChange -> sendQuestions().
+      h.postToWebview({ type: 'questions', generation: 1, questions: [Q1] })
+
+      expect(h.element('save-warning-bar').style.display).toBe('flex')
+      expect(h.element('save-warning-text').textContent).toContain('not yet saved to disk')
+    })
+
+    it('"Save now" posts a retrySave message with the warned file\'s path', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.postToWebview({ type: 'answered', questionId: 'q1', adrPath: '/fake/a.md', warning: 'not saved' })
+      h.click('btn-save-now')
+      expect(h.sentMessages).toContainEqual({ type: 'retrySave', adrPath: '/fake/a.md' })
+    })
+
+    it('a successful retry result hides the warning', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.postToWebview({ type: 'answered', questionId: 'q1', adrPath: '/fake/a.md', warning: 'not saved' })
+      h.postToWebview({ type: 'saveRetryResult', adrPath: '/fake/a.md', saved: true })
+      expect(h.element('save-warning-bar').style.display).toBe('none')
+    })
+
+    it('a failed retry result keeps the warning visible and updates its text', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.postToWebview({ type: 'answered', questionId: 'q1', adrPath: '/fake/a.md', warning: 'not saved' })
+      h.postToWebview({ type: 'saveRetryResult', adrPath: '/fake/a.md', saved: false })
+      expect(h.element('save-warning-bar').style.display).toBe('flex')
+      expect(h.element('save-warning-text').textContent).toContain('Still not saved')
+    })
+
+    it('Dismiss hides the warning', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.postToWebview({ type: 'answered', questionId: 'q1', adrPath: '/fake/a.md', warning: 'not saved' })
+      h.click('btn-save-dismiss')
+      expect(h.element('save-warning-bar').style.display).toBe('none')
+    })
+
+    it('does not show the warning bar at all on an ordinary successful answer', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.postToWebview({ type: 'answered', questionId: 'q1' })
+      expect(h.element('save-warning-bar').style.display).not.toBe('flex')
+    })
   })
 
   it('reindexes from the live buffer (doc.getText()), not disk, so the panel advances even if the save failed', () => {
