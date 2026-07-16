@@ -77,29 +77,56 @@ const NAV_CODE_HEADING_TOLERANT_RE = /^(QST|ANS|COD|API|FIL|DOC|NOT):\s*(.*)$/i;
 // incident for the HQ ADR). `id` accepts Unicode letters/digits on input
 // (so "QST-JÉRÉMIE" can be typed) and is NFD-folded to the ratified bounded
 // ASCII charset before use — see foldQstId().
-const QST_HANDLE_RE = /^QST-([\p{L}\p{N}]{1,12}):\s*(.*)$/u;
+// Widened 2026-07-16 (ADR-0032 QST-IDCHARSET, ratified by Jérémie; grammar
+// change HQ-paired with ADR-0012): ids allow INTERIOR hyphens and run up to
+// 24 chars — "QST-STATUS-AUTHORITY:" is a handle, not a dialect. The
+// original {1,12} no-hyphen charset was designed from lettered/numeric ids
+// (QST-A, QST-3); its first sustained topical-slug user (the ADR-0032
+// register's own chair) bounced off it within a day and invented a
+// counterfeit id-in-title convention — the grammar resisting natural use is
+// a format defect, not an author error (CoffeeScript doctrine). Start/end
+// stay alphanumeric so "QST--X:"/"QST-X-:" remain malformed (caught by the
+// recall fallback below, never silently dropped).
+const QST_HANDLE_RE = /^QST-([\p{L}\p{N}](?:[\p{L}\p{N}-]{0,22}[\p{L}\p{N}])?):\s*(.*)$/u;
 // Tolerant fallback (same posture as ADR-0024): a lowercase/mixed-case "QST"
 // keyword ("qst-a: Title") would otherwise fall through this AND the generic
 // nav-code regexes (which need literal "QST:", no hyphen-id support) —
 // shipping this grammar without a case-tolerant fallback would reopen the
 // exact silent-drop hole it exists to close, just spelled differently.
-const QST_HANDLE_TOLERANT_RE = /^qst-([\p{L}\p{N}]{1,12}):\s*(.*)$/iu;
+const QST_HANDLE_TOLERANT_RE = /^qst-([\p{L}\p{N}](?:[\p{L}\p{N}-]{0,22}[\p{L}\p{N}])?):\s*(.*)$/iu;
+// Recall floor for handle-SHAPED headings whose id fails the grammar
+// ("QST-BAD_CHARS:", "QST--X:", an over-long id): before 2026-07-16 these
+// matched NOTHING — not the handle regexes, not the generic nav-code
+// regexes (which require "QST:" with no hyphen), not even
+// NONSTANDARD_QST_HEADING_RE — a total silent drop, discovered while
+// investigating the counterfeit-id incident. The QST token is present; the
+// question must appear (recall-first, ADR-0031 element 1), wearing a
+// model-facing warning about the id instead of vanishing.
+const QST_HANDLE_MALFORMED_RE = /^QST-([^\s:]{1,64}):\s*(.*)$/iu;
 
 /**
  * NFD-normalize, strip combining marks (diacritics), uppercase, keep only
- * [A-Z0-9] — "QST-JÉRÉMIE" → "JEREMIE" (HQ ADR-0012 Iteration 2, "fold,
+ * [A-Z0-9-] — "QST-JÉRÉMIE" → "JEREMIE" (HQ ADR-0012 Iteration 2, "fold,
  * don't forbid": authoring with accents is accepted input; the substrate
- * files with its spine, not the author's keyboard). Re-bounded to 12 chars
- * after folding — combining-mark stripping only shortens in practice, but
- * this keeps the {1,12} invariant explicit rather than assumed.
+ * files with its spine, not the author's keyboard). Hyphens are retained
+ * since the 2026-07-16 widening (see the inline note below); re-bounded to
+ * 24 chars after folding — combining-mark stripping only shortens in
+ * practice, but this keeps the bound explicit rather than assumed.
  */
 function foldQstId(raw: string): string {
   return raw
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // strip combining diacritical marks (U+0300-U+036F)
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 12);
+    // Hyphens RETAINED (2026-07-16 widening, ADR-0032 QST-IDCHARSET):
+    // stripping them would collapse distinct ids ("RE-CALL" vs "RECALL")
+    // and break the visible↔anchor mapping — the folded id IS the anchor
+    // ("qst-status-authority"). Re-bounded to 24 after folding, then
+    // edge-hyphens trimmed so a slice can never mint a boundary hyphen
+    // the grammar itself forbids.
+    .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, 24)
+    .replace(/^-+|-+$/g, '');
 }
 
 export function detectFormat(tokens: ReturnType<typeof tokenize>): FormatDetectionResult {
@@ -375,7 +402,25 @@ export function buildSection(
       })
     }
   }
-  const qstId = handleMatch ? foldQstId(handleMatch[1]) : undefined;
+  // Recall floor (2026-07-16, ADR-0032 QST-IDCHARSET incident): a handle-
+  // SHAPED heading whose id fails the grammar (bad chars, boundary hyphen,
+  // over-long) still carries the QST token and MUST appear — before this,
+  // it matched nothing anywhere and vanished with zero warnings. The id is
+  // best-effort folded (a usable anchor survives); the warning is the
+  // model-facing letter about what to fix.
+  if (!handleMatch) {
+    const malformed = heading.match(QST_HANDLE_MALFORMED_RE);
+    if (malformed) {
+      handleMatch = malformed;
+      const folded = foldQstId(malformed[1]);
+      warnings.push({
+        code: 'MALFORMED_QST_HANDLE_ID',
+        message: `Heading "${heading}" looks like a QST handle, but the id "${malformed[1]}" doesn't conform to the handle grammar (1-24 characters, letters/digits with interior hyphens only). Recognized as a question anyway — never silently dropped — with the best-effort id "${folded || 'none'}". SUGGESTED: "QST-${folded || '<ID>'}: ${malformed[2].trim()}"`,
+        line: raw.heading.line,
+      })
+    }
+  }
+  const qstId = handleMatch ? (foldQstId(handleMatch[1]) || undefined) : undefined;
 
   let navMatch: RegExpMatchArray | null = handleMatch
     ? (['', 'QST', handleMatch[2]] as unknown as RegExpMatchArray)
@@ -575,7 +620,7 @@ const STATUS_LINE_BOLD_RE = /^-\s+\*\*Status\*\*:/;
 // BOUNDARY without re-tokenizing; kept beside its heading-text cousins
 // (NAV_CODE_HEADING_TOLERANT_RE / QST_HANDLE_RE) so the definitions can't
 // drift apart. Same export rationale as STATUS_LINE_RE above.
-export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:-[\p{L}\p{N}]{1,12})?\s*:/iu;
+export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:-[^\s:]{1,64})?\s*:/iu;
 // Annotated status value (Naturalist's status-with-annotation dialect,
 // ~20 docs across a 1,061-doc survey; crossfoot ADR-0029: "answered
 // 2026-07-13 (registrar implicit — ...)"). isAnswered's exact `=== 'answered'`

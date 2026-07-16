@@ -109,8 +109,9 @@ export interface AdrSection {
   anchorOverride?: string;
   /**
    * HQ ADR-0012 (QST Identifier Grammar): the explicit, author-chosen id
-   * from "### QST-<ID>: text", NFD-folded to the ratified [A-Z0-9]{1,12}
-   * charset (accents stripped — "QST-JÉRÉMIE" → "JEREMIE"). Undefined for
+   * from "### QST-<ID>: text", NFD-folded to [A-Z0-9-]{1,24} — interior
+   * hyphens allowed since the 2026-07-16 widening (ADR-0032 QST-IDCHARSET,
+   * HQ-paired; accents stripped — "QST-JÉRÉMIE" → "JEREMIE"). Undefined for
    * plain "### QST: text" headings (positional, no explicit handle) and for
    * non-QST nav codes (only questions get this grammar).
    */
@@ -258,7 +259,8 @@ export type ParseWarningCode =
   | 'NONSTANDARD_RECOMMENDATION_FORM' // Recommendation written as a dash-bullet field ("- Recommendation: ...") instead of the canonical standalone "**Recommendation**:" block
   | 'NONCANONICAL_ANS_MARKER'       // ANS marker recognized, but with the colon outside the bold span ("**ANS** (by X):" instead of "**ANS:** (by X)")
   | 'NONSTANDARD_STATUS_LINE_FORM'  // QST-block Status field is bold ("- **Status**:") instead of the canonical plain form ("- Status:")
-  | 'NONSTANDARD_STATUS_ANNOTATION'; // QST-block Status value is "answered"/"unanswered" plus a trailing annotation (e.g. "answered 2026-07-13 (reason)")
+  | 'NONSTANDARD_STATUS_ANNOTATION'  // QST-block Status value is "answered"/"unanswered" plus a trailing annotation (e.g. "answered 2026-07-13 (reason)")
+  | 'MALFORMED_QST_HANDLE_ID';       // handle-shaped heading ("### QST-<id>:") whose id fails the grammar — recognized as a question anyway, never silently dropped (ADR-0032 QST-IDCHARSET)
 
 export interface ParseWarning {
   code: ParseWarningCode;
