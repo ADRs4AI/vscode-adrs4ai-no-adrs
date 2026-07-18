@@ -8,6 +8,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.20] - 2026-07-18
+
+### Fixed
+- **DEBRIEF-006**: answering a question whose block is longer than ~40 lines could insert the answer in the wrong place — mid-sentence inside the recommendation. The insertion point is now always a real structural boundary (next heading, divider, or end of file), never an arbitrary scan limit, and the write refuses rather than guessing.
+
 ## [0.7.19] - 2026-07-18
 
 ### Fixed
