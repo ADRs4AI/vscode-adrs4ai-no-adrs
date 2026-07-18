@@ -3126,6 +3126,54 @@ Same argument as the Tablée two-wave decision.
     expect(rec.text).toContain('Same argument as the Tablée two-wave decision')
   })
 
+  it('recognizes KEYWORD-LESS inline attribution: "**Recommendation** (Author): text" (fixes HQ mobile-clients seed, 2026-07-18)', () => {
+    // Bug: the attribution group required "by"/"from" — "(Portolan 5,
+    // Claude Fable 5)" had neither, the group failed, the colon wasn't
+    // where the strict form expected it, and all four of the seed's
+    // recommendations fell through to raw body text: unstyled,
+    // unattributed, absent from recommendations[]. The between-bold-and-
+    // colon position is unambiguously attribution, so the keyword is
+    // optional there (and ONLY there — a parenthetical AFTER a marker can
+    // be content, e.g. "**ANS:** (see ADR-14) real answer").
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Data plane for v0 — direct-to-GitHub, or backend from day one?
+- Status: unanswered
+
+**Recommendation** (Portolan 5, Claude Fable 5): **Serverless v0** — direct GitHub API.
+
+A backend enters only when multi-tenant caching forces it.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    expect(adr.questions[0].recommendations).toHaveLength(1)
+    const rec = adr.questions[0].recommendations![0]
+    expect(rec.author).toBe('Portolan 5, Claude Fable 5')
+    expect(rec.authorInferred).toBeFalsy()
+    expect(rec.text).toContain('Serverless v0')
+    // Extent parity rides the attribution, keyword or not (v0.7.10 lesson):
+    // the follow-on paragraph belongs to the recommendation, not rawBodyPost.
+    expect(rec.text).toContain('multi-tenant caching')
+    expect(adr.questions[0].rawBodyPost).toBeUndefined()
+  })
+
+  it('recognizes keyword-less ANS attribution in the colon-outside form: "**ANS** (Jérémie): text" (the sweep\'s logged wild pattern)', () => {
+    const content = `# ADR-0021: Test
+
+## Questions
+
+### QST: Logged variant?
+- Status: unanswered
+
+**ANS** (Jérémie): Yes — this exact form recurs in caring-form.
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
+    expect(adr.questions[0].isAnswered).toBe(true)
+    expect(adr.questions[0].answer?.author).toBe('Jérémie')
+    expect(adr.questions[0].answer?.text).toContain('recurs in caring-form')
+  })
+
   // Rec-extent escape (Lapidary 5, 2026-07-13, inbox-alchemy ADR-0022
   // specimen: "Is 'InboxAlchemy' the permanent name?"). v0.7.5's inline-
   // attribution tolerance captured only the same-line content — the

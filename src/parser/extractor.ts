@@ -602,7 +602,13 @@ const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?/;
 // `answer` was ever set, and the human-authored answer sat as body text
 // while whatever flipped isAnswered (declared Status) made the panel
 // show the question as OPEN with no visible answer field content.
-const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?:\s*/;
+// Keyword-less attribution (2026-07-18, HQ mobile-clients seed specimen +
+// the sweep's logged "**ANS** (Jérémie):" pattern): the by/from keyword is
+// optional when the parenthetical sits BETWEEN the bold marker and the
+// colon — that structural position is unambiguously attribution (unlike a
+// parenthetical AFTER the marker, which can be content like "(see
+// ADR-14)"; that position stays keyword-required).
+const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:(?:by|from)\s+)?([^)]+)\))?:\s*/;
 // Matches: - Status: value
 // Bold form ("- **Status**: value" — D2, Zoarium since March, crossfoot
 // ADR-0029 specimen) tolerated alongside plain form; group 1 is always the
@@ -643,7 +649,12 @@ const NEED_RE = /^-\s+Need:\s+(.+)$/;
 // structured field (not a visible-loss bug, a silent-misclassification one:
 // same nemesis, different shape). Group 1 (optional): the inline
 // attribution text, used as an explicit `author` — see recMatch handling.
-const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*(?:\s*\((?:by|from)\s+([^)]+)\))?:\s*(.*)/;
+// Keyword-less inline attribution (2026-07-18, HQ mobile-clients seed —
+// "**Recommendation** (Portolan 5, Claude Fable 5): text"): same
+// between-bold-and-colon position rule as ANS_COLON_OUTSIDE_RE above; the
+// captured attribution drives extent parity (recSpansParagraphs) exactly
+// like the by/from form, per the v0.7.10 lesson.
+const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*(?:\s*\((?:(?:by|from)\s+)?([^)]+)\))?:\s*(.*)/;
 // Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)"
 // or "(from Sonnet 4.6)". Their body spans blank lines (paragraphs), unlike
 // legacy single-paragraph prose.
