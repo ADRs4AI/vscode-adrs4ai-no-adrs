@@ -80,6 +80,57 @@ describe('scanAnswerWriteAnchors', () => {
     })
   })
 
+  describe('Regression tests: the block longer than any scan window (DEBRIEF-006)', () => {
+    // Minimized from caring-form's seed-2026-07-18-blocking-docket.md QST-1:
+    // a rich ORJ block (~50 lines: aperture, long why-asking, options, a
+    // multi-line recommendation) with Status near the top and NO ANS block.
+    // The old 40-line window found no boundary inside the cap, defaulted
+    // blockEnd to the cap, and the append fallback spliced Jérémie's answer
+    // into the middle of the recommendation sentence at heading+40.
+    const longBlock = [
+      '### QST: The landing page — will you do the rating sitting?',
+      '',
+      '- Status: answered',
+      ...Array.from({ length: 40 }, (_, i) => `- Why asking line ${i}: context context context.`),
+      '**Recommendation**: (by Commodore 5) **"This weekend," done from the',
+      'manifest.** It unblocks the entire landing arc (round-3 convergence →',
+      'Builder implementation → the public face), retires the oldest stall.',
+      '',
+      '---',
+      '',
+      '### QST: The evaluation harness — manifest alone, or full instrument?',
+    ]
+
+    it('the block end is the real boundary (the ---), NOT an arbitrary cap — the splice class is dead', () => {
+      const anchors = scanAnswerWriteAnchors(longBlock, 0)
+      expect(anchors.boundaryKind).toBe('break')
+      expect(longBlock[anchors.blockEndLineIdx].trim()).toBe('---')
+      // The insertion point sits AFTER the full recommendation — never inside it.
+      expect(anchors.blockEndLineIdx).toBeGreaterThan(
+        longBlock.findIndex(l => l.includes('the public face')),
+      )
+    })
+
+    it('an explicit too-small window reports boundaryKind "window" — callers must refuse to append there', () => {
+      const anchors = scanAnswerWriteAnchors(longBlock, 0, 40)
+      expect(anchors.boundaryKind).toBe('window')
+    })
+
+    it('a last-question block with no trailing divider terminates at EOF — a real boundary, appendable', () => {
+      const tail = longBlock.slice(0, longBlock.length - 3) // strip ---, blank, next QST
+      const anchors = scanAnswerWriteAnchors(tail, 0)
+      expect(anchors.boundaryKind).toBe('eof')
+      expect(anchors.blockEndLineIdx).toBe(tail.length)
+    })
+
+    it('a non-QST heading (e.g. "## Thread") is a block boundary too', () => {
+      const withSection = [...longBlock.slice(0, longBlock.length - 3), '## Thread']
+      const anchors = scanAnswerWriteAnchors(withSection, 0)
+      expect(anchors.boundaryKind).toBe('heading')
+      expect(withSection[anchors.blockEndLineIdx]).toBe('## Thread')
+    })
+  })
+
   it('canonical scaffold still resolves all anchors (behavior pinned)', () => {
     const canonical = [
       '### QST: Simple?',

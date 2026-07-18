@@ -310,8 +310,8 @@ describe('Webview script block syntax', () => {
   // able to insert one, which I thought was already a feature"). writeAnswer
   // now appends a brand-new ANS block when neither an ANS header nor a
   // placeholder line is found, using Status as the reliable anchor.
-  it('writeAnswer appends a fresh ANS block when the question has Status but no ANS marker at all', () => {
-    expect(PANEL_SRC).toContain("} else if (statusLineIdx >= 0) {")
+  it('writeAnswer appends a fresh ANS block when the question has Status but no ANS marker at all — only at a REAL boundary (DEBRIEF-006 gate)', () => {
+    expect(PANEL_SRC).toContain("} else if (statusLineIdx >= 0 && boundaryKind !== 'window') {")
     expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}\\n`)')
   })
 
@@ -325,7 +325,12 @@ describe('Webview script block syntax', () => {
     // bold-Status anchoring — now lives in answerWriteScan.test.ts; what
     // this file still owns is the wiring claim: the panel consumes the
     // shared scan and has no private scan left to drift.
-    expect(PANEL_SRC).toContain('scanAnswerWriteAnchors(lines, start, end)')
+    expect(PANEL_SRC).toContain('scanAnswerWriteAnchors(lines, start)')
+    // DEBRIEF-006 (2026-07-18): no arbitrary line cap may reappear — the
+    // 40-line window's cap doubled as the append fallback's insertion
+    // point and spliced an answer mid-recommendation.
+    expect(PANEL_SRC).not.toContain('start + 40')
+    expect(PANEL_SRC).toContain("boundaryKind !== 'window'")
     expect(PANEL_SRC).not.toContain('let blockEndLineIdx')
     expect(PANEL_SRC).not.toContain("startsWith('- Status:')")
   })

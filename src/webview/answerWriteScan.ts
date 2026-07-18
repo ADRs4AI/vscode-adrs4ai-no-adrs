@@ -16,7 +16,7 @@
  * questions the machinery then can't serve (the 0620 composition rule).
  */
 
-import { STATUS_LINE_RE, QST_HEADING_LINE_RE } from '../parser/extractor'
+import { STATUS_LINE_RE } from '../parser/extractor'
 
 /** Thematic break — same boundary set as extractor.ts's THEMATIC_BREAK_RE. */
 const THEMATIC_BREAK_LINE_RE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/
@@ -31,20 +31,35 @@ export interface AnswerWriteAnchors {
   ansHeaderLineIdx: number
   /** Line index of the `[Fill this in]` placeholder (only after an ANS marker), or -1. */
   fillLineIdx: number
-  /** Exclusive end of the question's block: next QST heading (any form the
-   * extractor accepts, handle ids included) or thematic break, else the
-   * window end. The append-ANS fallback inserts just before this. */
+  /** Exclusive end of the question's block: next heading (ANY level — a
+   * question's block never continues past a heading), thematic break, or
+   * end of file. The append-ANS fallback inserts just before this. */
   blockEndLineIdx: number
+  /**
+   * What terminated the block. The append fallback may ONLY insert at a
+   * real structural boundary ('heading' | 'break' | 'eof') — never at
+   * 'window', an arbitrary scan cap. Caring-form blocking-docket incident
+   * (2026-07-18, DEBRIEF-006): a ~50-line ORJ question block overran the
+   * old 40-line window, the cap defaulted in as the "block end," and
+   * Jérémie's answer was spliced into the middle of a recommendation
+   * sentence. A cap is a search budget, not a place in the document.
+   */
+  boundaryKind: 'heading' | 'break' | 'eof' | 'window'
 }
 
 /**
  * Scan `lines[startIdx..windowEnd)` for the write anchors of the question
  * whose heading is at `startIdx`.
  */
+/** Any markdown heading line — a question's block never continues past one,
+ * whatever its level or text (same conservative-clamp discipline as the
+ * extractor's buildSubsections). */
+const ANY_HEADING_LINE_RE = /^#{1,6}\s+\S/
+
 export function scanAnswerWriteAnchors(
   lines: string[],
   startIdx: number,
-  windowEnd: number,
+  windowEnd: number = lines.length,
 ): AnswerWriteAnchors {
   const end = Math.min(windowEnd, lines.length)
   const anchors: AnswerWriteAnchors = {
@@ -52,12 +67,14 @@ export function scanAnswerWriteAnchors(
     ansHeaderLineIdx: -1,
     fillLineIdx: -1,
     blockEndLineIdx: end,
+    boundaryKind: end === lines.length ? 'eof' : 'window',
   }
 
   for (let i = startIdx; i < end; i++) {
     const trimmed = lines[i].trim()
-    if (i > startIdx && (QST_HEADING_LINE_RE.test(trimmed) || THEMATIC_BREAK_LINE_RE.test(trimmed))) {
+    if (i > startIdx && (ANY_HEADING_LINE_RE.test(trimmed) || THEMATIC_BREAK_LINE_RE.test(trimmed))) {
       anchors.blockEndLineIdx = i
+      anchors.boundaryKind = ANY_HEADING_LINE_RE.test(trimmed) ? 'heading' : 'break'
       break
     }
     if (anchors.statusLineIdx === -1 && STATUS_LINE_RE.test(trimmed)) anchors.statusLineIdx = i

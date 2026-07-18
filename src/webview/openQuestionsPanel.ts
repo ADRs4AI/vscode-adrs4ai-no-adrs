@@ -454,16 +454,21 @@ export class OpenQuestionsPanel {
       const lines = currentContent.split('\n')
       const edit = new vscode.WorkspaceEdit()
 
-      // Search window: from QST heading line (1-indexed → 0-indexed) forward
+      // Scan from the QST heading (1-indexed → 0-indexed) to EOF — real
+      // boundaries (any heading, thematic break, end of file) terminate the
+      // block; there is NO arbitrary line cap. The old 40-line window's cap
+      // doubled as the append fallback's insertion point, and a ~50-line
+      // ORJ question block (caring-form blocking-docket, 2026-07-18,
+      // DEBRIEF-006) got Jérémie's answer spliced mid-sentence into the
+      // recommendation at exactly heading+40. See answerWriteScan.ts.
       const start = currentQuestion.lineStart - 1
-      const end = Math.min(start + 40, lines.length)
 
       // One scan, built from the extractor's own exported regexes — the
       // private near-copy that lived here refused bold-Status questions the
       // extractor itself had surfaced (crossfoot ADR-0030, 2026-07-16) and
       // didn't know handle-form QST boundaries. See answerWriteScan.ts.
-      const { statusLineIdx, ansHeaderLineIdx, fillLineIdx, blockEndLineIdx } =
-        scanAnswerWriteAnchors(lines, start, end)
+      const { statusLineIdx, ansHeaderLineIdx, fillLineIdx, blockEndLineIdx, boundaryKind } =
+        scanAnswerWriteAnchors(lines, start)
 
       // 1. Update status → answered
       if (statusLineIdx >= 0) {
@@ -485,7 +490,7 @@ export class OpenQuestionsPanel {
         // No placeholder — insert after the ANS header line
         const pos = new vscode.Position(ansHeaderLineIdx + 1, 0)
         edit.insert(uri, pos, msg.answerText + '\n')
-      } else if (statusLineIdx >= 0) {
+      } else if (statusLineIdx >= 0 && boundaryKind !== 'window') {
         // Missing-ANS fallback (Lapidary 5, 2026-07-13, specimen 1 — Jérémie
         // hit this hand-answering a grammar seed tonight): a QST block can
         // have a reliable "- Status:" field and no ANS marker or placeholder
