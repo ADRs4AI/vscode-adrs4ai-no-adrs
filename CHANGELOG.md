@@ -8,6 +8,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.19] - 2026-07-18
+
+### Fixed
+- Recommendations and answers with keyword-less attribution — `**Recommendation** (Author): ...` or `**ANS** (Author): ...`, no "by"/"from" — are now parsed in full with the attribution preserved, instead of falling through to unstyled body text.
+
 ## [0.7.18] - 2026-07-16
 
 ### Added
