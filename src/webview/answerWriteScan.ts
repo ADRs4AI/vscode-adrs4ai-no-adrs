@@ -56,6 +56,30 @@ export interface AnswerWriteAnchors {
  * extractor's buildSubsections). */
 const ANY_HEADING_LINE_RE = /^#{1,6}\s+\S/
 
+export interface InsertionPreview {
+  /** Up to `contextSize` lines immediately before the insertion point, in document order. */
+  before: string[]
+  /** Up to `contextSize` lines immediately after (starting AT) the insertion point. */
+  after: string[]
+  insertLineIdx: number
+}
+
+/**
+ * The insertion-preview protocol (Jérémie's own design, dispatched
+ * 2026-07-13, `docs/inbox/2026-07-13-0710-...` — never actually built,
+ * which is exactly why DEBRIEF-006 happened five days later): "show the 6
+ * surrounding lines (3 before / 3 after) with a marker, y/n confirm." Pure
+ * windowing around a single line index — the append-ANS fallback is the
+ * caller that matters (the ONLY insertion whose target is a guess rather
+ * than an exact placeholder/marker match), but the function itself doesn't
+ * know or care which caller it's serving.
+ */
+export function buildInsertionPreview(lines: string[], insertLineIdx: number, contextSize = 3): InsertionPreview {
+  const before = lines.slice(Math.max(0, insertLineIdx - contextSize), insertLineIdx)
+  const after = lines.slice(insertLineIdx, Math.min(lines.length, insertLineIdx + contextSize))
+  return { before, after, insertLineIdx }
+}
+
 export function scanAnswerWriteAnchors(
   lines: string[],
   startIdx: number,

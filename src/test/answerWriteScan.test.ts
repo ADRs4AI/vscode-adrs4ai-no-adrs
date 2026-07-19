@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { scanAnswerWriteAnchors } from '../webview/answerWriteScan'
+import { scanAnswerWriteAnchors, buildInsertionPreview } from '../webview/answerWriteScan'
 import { parseAdr } from '../parser/extractor'
 import { applyAnswerQuestion } from '../mcp/writeOps'
 
@@ -144,6 +144,69 @@ describe('scanAnswerWriteAnchors', () => {
     expect(anchors.statusLineIdx).toBe(2)
     expect(anchors.ansHeaderLineIdx).toBe(4)
     expect(anchors.fillLineIdx).toBe(5)
+  })
+})
+
+describe('buildInsertionPreview (insertion-preview protocol, DEBRIEF-006 prevention)', () => {
+  const lines = [
+    'line0', 'line1', 'line2', 'line3', 'line4', 'line5', 'line6', 'line7', 'line8',
+  ]
+
+  it('the ordinary case: 3 lines before, 3 lines starting at the insertion point', () => {
+    const preview = buildInsertionPreview(lines, 4)
+    expect(preview.before).toEqual(['line1', 'line2', 'line3'])
+    expect(preview.after).toEqual(['line4', 'line5', 'line6'])
+    expect(preview.insertLineIdx).toBe(4)
+  })
+
+  it('near the start of the document: "before" clamps rather than going negative or wrapping', () => {
+    const preview = buildInsertionPreview(lines, 1)
+    expect(preview.before).toEqual(['line0'])
+    expect(preview.after).toEqual(['line1', 'line2', 'line3'])
+  })
+
+  it('at the very start: "before" is empty, not an out-of-bounds slice', () => {
+    const preview = buildInsertionPreview(lines, 0)
+    expect(preview.before).toEqual([])
+    expect(preview.after).toEqual(['line0', 'line1', 'line2'])
+  })
+
+  it('near the end of the document: "after" clamps to whatever remains', () => {
+    const preview = buildInsertionPreview(lines, 8)
+    expect(preview.before).toEqual(['line5', 'line6', 'line7'])
+    expect(preview.after).toEqual(['line8'])
+  })
+
+  it('at EOF (insertLineIdx === lines.length): "after" is empty', () => {
+    const preview = buildInsertionPreview(lines, lines.length)
+    expect(preview.after).toEqual([])
+    expect(preview.before).toEqual(['line6', 'line7', 'line8'])
+  })
+
+  it('contextSize is configurable', () => {
+    const preview = buildInsertionPreview(lines, 4, 1)
+    expect(preview.before).toEqual(['line3'])
+    expect(preview.after).toEqual(['line4'])
+  })
+
+  it('reproduces the actual DEBRIEF-006 shape: previews land squarely inside the recommendation, exactly what the confirm step exists to catch', () => {
+    // The old (buggy) behavior would have inserted at heading+40, landing
+    // inside this exact recommendation sentence. The preview must show
+    // that collision plainly if a caller ever computed the wrong index —
+    // this is the safety net's own acceptance case, not just API plumbing.
+    const block = [
+      '### QST: wave 2 trigger',
+      '- Status: answered',
+      '**Recommendation**: (by Commodore 5) **"This weekend," done from the',
+      'manifest.** It unblocks the entire landing arc (round-3 convergence →',
+      'Builder implementation → the public face), retires the oldest stall.',
+      '',
+      '---',
+    ]
+    const wrongInsertionPoint = 3 // mid-recommendation -- what DEBRIEF-006's bug actually did
+    const preview = buildInsertionPreview(block, wrongInsertionPoint)
+    expect(preview.before.join(' ')).toContain('Recommendation')
+    expect(preview.after.join(' ')).toContain('manifest')
   })
 })
 

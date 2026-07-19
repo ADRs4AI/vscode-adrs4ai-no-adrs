@@ -22,7 +22,7 @@ import type { AdrFile, Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
 import { stripAdrNumberPrefix } from '../parser/adrTitle'
-import { scanAnswerWriteAnchors } from './answerWriteScan'
+import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan'
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
@@ -103,6 +103,8 @@ type WebviewMessage =
       force?: boolean
       /** ADR-0018 Step 3: selects parseAdr vs parseSeed for relocation. */
       sourceKind: 'adr' | 'seed'
+      /** Insertion-preview protocol (DEBRIEF-006): the human has seen the "insertionPreview" context and approved it — proceed with the append-ANS fallback instead of previewing again. */
+      confirmedInsertion?: boolean
     }
   | { type: 'skip' }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
@@ -371,6 +373,7 @@ export class OpenQuestionsPanel {
     fileChecksum: string
     force?: boolean
     sourceKind: 'adr' | 'seed'
+    confirmedInsertion?: boolean
   }): Promise<void> {
     try {
       const uri = vscode.Uri.file(msg.adrPath)
@@ -490,7 +493,7 @@ export class OpenQuestionsPanel {
         // No placeholder — insert after the ANS header line
         const pos = new vscode.Position(ansHeaderLineIdx + 1, 0)
         edit.insert(uri, pos, msg.answerText + '\n')
-      } else if (statusLineIdx >= 0 && boundaryKind !== 'window') {
+      } else if (statusLineIdx >= 0 && boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {
         // Missing-ANS fallback (Lapidary 5, 2026-07-13, specimen 1 — Jérémie
         // hit this hand-answering a grammar seed tonight): a QST block can
         // have a reliable "- Status:" field and no ANS marker or placeholder
@@ -504,6 +507,23 @@ export class OpenQuestionsPanel {
         const author = msg.authorName.trim() || 'Human'
         let insertLineIdx = blockEndLineIdx
         while (insertLineIdx > start && lines[insertLineIdx - 1].trim() === '') insertLineIdx--
+
+        // Insertion-preview protocol (Jérémie's own design, 2026-07-13,
+        // docs/inbox/2026-07-13-0710-...; DEBRIEF-006, 2026-07-18: never
+        // built until now — this insertion point is a COMPUTED GUESS, not
+        // an exact marker match, and the guess once landed mid-sentence in
+        // someone else's recommendation). "confirm" (default): show the
+        // surrounding lines and stop here — the webview re-sends this exact
+        // message with confirmedInsertion:true once the human approves.
+        // "silent": skip the preview, insert immediately (pre-DEBRIEF-006
+        // behavior, now at least boundary-safe). "refuse" already exited
+        // this branch above.
+        if (this.missingAnsBehavior(uri) === 'confirm' && !msg.confirmedInsertion) {
+          const preview = buildInsertionPreview(lines, insertLineIdx)
+          this.panel.webview.postMessage({ type: 'insertionPreview', before: preview.before, after: preview.after, message: msg })
+          return
+        }
+
         const pos = new vscode.Position(insertLineIdx, 0)
         edit.insert(uri, pos, `\n**ANS:** (by ${author})\n${msg.answerText}\n`)
       } else {
@@ -605,6 +625,15 @@ export class OpenQuestionsPanel {
     } catch {
       this.panel.webview.postMessage({ type: 'saveRetryResult', adrPath, saved: false })
     }
+  }
+
+  /**
+   * DEBRIEF-006 / insertion-preview protocol: adrManager.missingAnsBehavior,
+   * resource-scoped so a multi-root workspace can set it per-folder — same
+   * scoping pattern as adrManager.clickOpensIn.
+   */
+  private missingAnsBehavior(uri: vscode.Uri): 'confirm' | 'silent' | 'refuse' {
+    return vscode.workspace.getConfiguration('adrManager', uri).get<'confirm' | 'silent' | 'refuse'>('missingAnsBehavior', 'confirm')
   }
 
   private async openAtLine(adrPath: string, lineNumber: number): Promise<void> {
@@ -962,6 +991,30 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
   border-radius:4px;
   font-size:12px;
 }
+/* Insertion-preview protocol (DEBRIEF-006): reuses the drift-bar look, but
+   the marker/context needs a monospace block instead of a one-line message. */
+.insertion-preview-bar{
+  display:flex;flex-direction:column;gap:8px;
+  margin-top:12px;padding:10px 14px;
+  background:var(--vscode-inputValidation-warningBackground,rgba(220,180,50,.12));
+  border:1px solid var(--vscode-inputValidation-warningBorder,#a9822c);
+  border-radius:4px;
+  font-size:12px;
+}
+.insertion-preview-context{
+  margin:0;padding:8px 10px;
+  background:var(--vscode-textCodeBlock-background,rgba(0,0,0,.15));
+  border-radius:3px;
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-size:11px;line-height:1.5;
+  white-space:pre-wrap;word-break:break-word;
+  max-height:220px;overflow-y:auto;
+}
+.insertion-preview-marker{
+  color:var(--vscode-inputValidation-warningForeground,#a9822c);
+  font-weight:600;
+}
+.insertion-preview-actions{display:flex;gap:8px}
 .hint{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -1154,6 +1207,19 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
     <button class="btn-skip" id="btn-save-now">Save now</button>
     <button class="btn-skip" id="btn-save-dismiss">Dismiss</button>
   </div>
+
+  <!-- Insertion-preview protocol (Jérémie's own design, 2026-07-13;
+       launch-gating per DEBRIEF-006, 2026-07-18): the append-ANS fallback's
+       insertion point is a computed guess, not an exact marker match — show
+       the surrounding lines before writing, never insert blind. -->
+  <div class="insertion-preview-bar" id="insertion-preview-bar" style="display:none">
+    <span>No ANS block found — this will insert a new one here. Check the context below:</span>
+    <pre class="insertion-preview-context" id="insertion-preview-context"></pre>
+    <div class="insertion-preview-actions">
+      <button class="btn-answer" id="btn-insertion-confirm">Insert here</button>
+      <button class="btn-skip" id="btn-insertion-cancel">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <div id="q-overlay">
@@ -1171,6 +1237,10 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 const vscode = acquireVsCodeApi();
 let questions = [], idx = 0;
 let recCollapseThreshold = 0;
+// Insertion-preview protocol (DEBRIEF-006): the exact 'answer' message the
+// panel is waiting to resend with confirmedInsertion:true once the human
+// approves the previewed insertion point, or null when no preview is open.
+let pendingInsertionConfirm = null;
 // Bug report (2026-07-12, Jérémie, temp/0048 dogfooding session): in a repo
 // with concurrent writers, ANY unrelated docs/adr/*.md save elsewhere
 // triggers index.onChange -> sendQuestions() -> a 'questions' push here,
@@ -1552,6 +1622,8 @@ function submit(force) {
   $id('btn-ans').disabled = true;
   $id('err').style.display = 'none';
   $id('drift-bar').style.display = 'none';
+  $id('insertion-preview-bar').style.display = 'none';
+  pendingInsertionConfirm = null;
   const q = questions[idx];
   vscode.postMessage({
     type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart,
@@ -1610,6 +1682,21 @@ $id('btn-drift-hold').addEventListener('click', () => {
   // Draft is already auto-saved — nothing further to do. Just dismiss.
   $id('drift-bar').style.display = 'none';
   $id('btn-ans').disabled = false;
+});
+
+$id('btn-insertion-confirm').addEventListener('click', () => {
+  if (!pendingInsertionConfirm) return;
+  $id('insertion-preview-bar').style.display = 'none';
+  $id('btn-ans').disabled = true;
+  vscode.postMessage(Object.assign({}, pendingInsertionConfirm, { confirmedInsertion: true }));
+  pendingInsertionConfirm = null;
+});
+$id('btn-insertion-cancel').addEventListener('click', () => {
+  // Nothing was written — the draft is untouched, just dismiss and let the
+  // human keep editing or pick a different path.
+  $id('insertion-preview-bar').style.display = 'none';
+  $id('btn-ans').disabled = false;
+  pendingInsertionConfirm = null;
 });
 
 // Persistent save-failure warning (Lapidary 5, 2026-07-16). Tracked
@@ -1707,6 +1794,8 @@ function render() {
   }
   $id('flash').style.display = 'none';
   $id('drift-bar').style.display = 'none';
+  $id('insertion-preview-bar').style.display = 'none';
+  pendingInsertionConfirm = null;
   $id('btn-ans').disabled = false;
   $id('btn-back').disabled = idx === 0;
   $id('err').style.display = 'none';
@@ -1806,6 +1895,18 @@ window.addEventListener('message', e => {
     // choices here are safe.
     $id('btn-ans').disabled = false;
     $id('drift-bar').style.display = 'flex';
+  }
+  if (msg.type === 'insertionPreview') {
+    // Insertion-preview protocol (DEBRIEF-006): no ANS marker/placeholder to
+    // fill — the extension host is about to append a fresh block at a
+    // computed guess, and stopped before writing to show us where. Nothing
+    // has been written yet; the draft is safe either way.
+    $id('btn-ans').disabled = false;
+    pendingInsertionConfirm = msg.message;
+    const marker = '------ inserting here ------';
+    const context = msg.before.join('\\n') + '\\n' + marker + '\\n' + msg.after.join('\\n');
+    $id('insertion-preview-context').textContent = context;
+    $id('insertion-preview-bar').style.display = 'flex';
   }
 });
 </script>

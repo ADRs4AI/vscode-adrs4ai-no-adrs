@@ -234,6 +234,21 @@
           ],
           "description": "Where clicking a question in the sidebar tree takes you. The panel is answerable in place; file access stays one right-click away either way (\"Go to Answer Field in File\")."
         },
+        "adrManager.missingAnsBehavior": {
+          "type": "string",
+          "enum": [
+            "confirm",
+            "silent",
+            "refuse"
+          ],
+          "default": "confirm",
+          "enumDescriptions": [
+            "Preview the 3 lines before/after where a fresh ANS block would be inserted, with a confirm step, before writing.",
+            "Insert the fresh ANS block immediately, no preview (fast, but the insertion point is a computed guess, not an exact marker match).",
+            "Never insert a fresh ANS block automatically — always ask you to answer that question manually in the file."
+          ],
+          "description": "What to do when a question has a recognized Status field but no **ANS:** marker or [Fill this in] placeholder at all — the panel has to append a fresh ANS block rather than fill an exact spot. DEBRIEF-006 (2026-07-18): this insertion point is a computed guess, not an exact match, and a mis-scanned block boundary once spliced an answer into the middle of someone else's recommendation. Default \"confirm\" shows you the surrounding lines before committing."
+        },
         "adrManager.mcpWriteMode": {
           "type": "string",
           "enum": [

@@ -311,7 +311,7 @@ describe('Webview script block syntax', () => {
   // now appends a brand-new ANS block when neither an ANS header nor a
   // placeholder line is found, using Status as the reliable anchor.
   it('writeAnswer appends a fresh ANS block when the question has Status but no ANS marker at all — only at a REAL boundary (DEBRIEF-006 gate)', () => {
-    expect(PANEL_SRC).toContain("} else if (statusLineIdx >= 0 && boundaryKind !== 'window') {")
+    expect(PANEL_SRC).toContain("} else if (statusLineIdx >= 0 && boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {")
     expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}\\n`)')
   })
 
@@ -333,6 +333,55 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain("boundaryKind !== 'window'")
     expect(PANEL_SRC).not.toContain('let blockEndLineIdx')
     expect(PANEL_SRC).not.toContain("startsWith('- Status:')")
+  })
+
+  // Insertion-preview protocol (Jérémie's own design, dispatched 2026-07-13;
+  // launch-gating per DEBRIEF-006's ratification, 2026-07-18): the append-ANS
+  // fallback's insertion point is a computed guess, not an exact marker
+  // match. Before writing, the panel shows the surrounding lines and waits
+  // for confirmation — these run the ACTUAL shipped webview script, not a
+  // description of intended behavior.
+  describe('Insertion-preview protocol (DEBRIEF-006): confirm before the append-ANS fallback writes', () => {
+    const originalAnswer = {
+      type: 'answer', questionId: 'q1', adrPath: '/fake/a.md', lineStart: 10,
+      answerText: 'my answer', authorName: 'Jérémie', draftKey: 'key-1',
+      fileChecksum: 'c1', force: false, sourceKind: 'adr',
+    }
+    const previewMsg = {
+      type: 'insertionPreview',
+      before: ['line1', 'line2', 'line3'],
+      after: ['line4', 'line5', 'line6'],
+      message: originalAnswer,
+    }
+
+    it('shows the before/marker/after context and re-enables the answer button, without writing anything', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      expect(h.element('insertion-preview-bar').style.display).toBe('flex')
+      expect(h.element('btn-ans').disabled).toBe(false)
+      const context = h.element('insertion-preview-context').textContent
+      expect(context).toContain('line3')
+      expect(context).toContain('------ inserting here ------')
+      expect(context).toContain('line4')
+      expect(h.sentMessages).toHaveLength(0)
+    })
+
+    it('"Insert here" resends the original answer message with confirmedInsertion:true, and hides the bar', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      h.click('btn-insertion-confirm')
+      expect(h.element('insertion-preview-bar').style.display).toBe('none')
+      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true })
+    })
+
+    it('Cancel dismisses the preview without sending anything, and re-enables the answer button', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      h.click('btn-insertion-cancel')
+      expect(h.element('insertion-preview-bar').style.display).toBe('none')
+      expect(h.element('btn-ans').disabled).toBe(false)
+      expect(h.sentMessages).toHaveLength(0)
+    })
   })
 
   // DEBRIEF-004 (Jérémie, 2026-07-12, ADR-0025 QST-1): live answer vanished
