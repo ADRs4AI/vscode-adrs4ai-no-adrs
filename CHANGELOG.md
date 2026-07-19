@@ -13,6 +13,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 ### Added
 - **Insertion-preview protocol** (DEBRIEF-006, launch-gating): when the Open Questions panel has to append a brand-new ANS block because a question has no `**ANS:**` marker or placeholder at all, it now shows the 3 lines before and after the computed insertion point — with a `------ inserting here ------` marker — and waits for confirmation before writing. New setting `adrManager.missingAnsBehavior` (`confirm` / `silent` / `refuse`, default `confirm`) controls this per folder.
 
+## [0.7.23] - 2026-07-19
+
+### Changed
+- **Status-authority (ADR-0031, ratified)**: when a question declares a `- Status:` line, that line alone decides whether it's answered — answer text below is a draft until Status flips. This makes *reopening* a question work (edit Status back to `unanswered`), and a model can no longer accidentally close a question by writing plausible prose. Questions with no Status line behave as before. A migration script for long-settled "zombie" questions ships in `scripts/ephemeral/`.
+
 ## [0.7.22] - 2026-07-19
 
 ### Fixed
