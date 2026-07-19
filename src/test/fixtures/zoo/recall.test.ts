@@ -121,6 +121,13 @@ const CORPUS: Record<string, SpecimenTruth> = {
   // recognizable answer field. Genuinely open (no real decision made).
   // Ground truth 1, baseline 0.
   'zoo-012-bold-inline-question-not-a-heading.md': { groundTruth: 1, baselineToday: 0 },
+  // Empty ANS attribution "(by )" (Grafter's 2026-07-14 diagnosis; recurred
+  // 2026-07-19 in HQ ADR-0015 with six questions invisible BEFORE the
+  // dispatched fix shipped — the dispatch-aging lesson). "(by )" leaked into
+  // the answer body and defeated the whole-content placeholder anchoring →
+  // false-answered. Fixed v0.7.21: the empty attribution is consumed by the
+  // marker, the placeholder is seen, both questions recall as open.
+  'zoo-013-empty-ans-attribution-false-answered.md': { groundTruth: 2, baselineToday: 2 },
 }
 
 function listSpecimens(): string[] {

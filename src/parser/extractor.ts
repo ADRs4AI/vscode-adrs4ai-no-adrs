@@ -592,7 +592,19 @@ export function buildSubsections(
 // ---------------------------------------------------------------------------
 
 // Matches: **ANS:** (by Author) or **ANS:** (from Author)
-const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?/;
+// Attribution group is `[^)]*` — ZERO or more — so the empty-attribution
+// scaffold "**ANS:** (by )" (models emit it constantly: the canonical
+// two-line form with the author left blank) matches WITH its parenthetical
+// consumed. Before 2026-07-19 the group required 1+ chars, "(by )" failed
+// the whole optional group, and the literal text "(by )" leaked into
+// answerLines as content — the leading "(" then defeated every
+// whole-content placeholder regex, so `[Fill this in]` questions read as
+// ANSWERED and vanished from the panel. Root-caused by Grafter 5 (HQ,
+// 2026-07-14, sidebar-undercount brief), dispatched same-day class,
+// recurred 2026-07-19 (HQ ADR-0015, six questions invisible) before the
+// fix actually shipped — see DEBRIEF-007 for the dispatch-aging lesson.
+// An empty/keyword-only capture is normalized to "no author" downstream.
+const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\b\s*([^)]*)\))?/;
 // ANS colon-outside-bold with inline attribution (Riddle 5's crossfoot
 // ADR-0029 specimen, 2026-07-14): "**ANS** (by Jérémie): text" — the
 // closing ** lands BEFORE the attribution and colon, mirroring the
@@ -608,7 +620,7 @@ const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\s+([^)]+)\))?/;
 // colon — that structural position is unambiguously attribution (unlike a
 // parenthetical AFTER the marker, which can be content like "(see
 // ADR-14)"; that position stays keyword-required).
-const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:(?:by|from)\s+)?([^)]+)\))?:\s*/;
+const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:(?:by|from)\b\s*)?([^)]*)\))?:\s*/;
 // Matches: - Status: value
 // Bold form ("- **Status**: value" — D2, Zoarium since March, crossfoot
 // ADR-0029 specimen) tolerated alongside plain form; group 1 is always the
@@ -1008,7 +1020,12 @@ export function extractQuestion(
     if (ansMatch || ansColonOutsideMatch) {
       inAnswer = true;
       const matched = ansMatch ?? ansColonOutsideMatch!;
-      answerAuthor = matched[1]?.trim();
+      // Empty or keyword-only attribution — "(by )", "(by)", "(from )" —
+      // normalizes to no author (the scaffold's blank, not a name). The
+      // parenthetical is still CONSUMED by the marker match, which is the
+      // actual fix: "(by )" must never fall through into answer content.
+      const rawAuthor = matched[1]?.trim();
+      answerAuthor = rawAuthor && !/^(?:by|from)$/i.test(rawAuthor) ? rawAuthor : undefined;
       answerLine = absLine;
       // Collect any text on the same line after the ANS marker
       const markerRe = ansMatch ? ANS_INLINE_RE : ANS_COLON_OUTSIDE_RE;

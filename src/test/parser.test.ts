@@ -3158,6 +3158,41 @@ A backend enters only when multi-tenant caching forces it.
     expect(adr.questions[0].rawBodyPost).toBeUndefined()
   })
 
+  it('empty ANS attribution "(by )" is consumed by the marker, never leaked as content — placeholder questions stay OPEN (fixes HQ ADR-0015 ×6, 2026-07-19; Grafter\'s 2026-07-14 diagnosis)', () => {
+    const content = `# ADR-0015: Test
+
+## Questions
+
+### QST-1: Field naming?
+- Status: unanswered
+
+**ANS:** (by )
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0015-test.md')
+    expect(adr.questions[0].isAnswered).toBe(false)
+    expect(adr.questions[0].answer).toBeUndefined()
+  })
+
+  it('"(by)" (no space) and colon-outside "(by ):" variants also normalize to no-author, not content', () => {
+    for (const marker of ['**ANS:** (by)', '**ANS** (by ):']) {
+      const adr = parseAdr(
+        `# ADR-0001: T\n\n## Questions\n\n### QST: X?\n- Status: unanswered\n\n${marker}\n[Fill this in]\n`,
+        '/fake/docs/adr/0001-t.md',
+      )
+      expect(adr.questions[0].isAnswered, marker).toBe(false)
+    }
+  })
+
+  it('an author whose name merely starts with "by" is untouched by the empty-attribution normalization', () => {
+    const adr = parseAdr(
+      '# ADR-0001: T\n\n## Questions\n\n### QST: X?\n- Status: unanswered\n\n**ANS** (Byron): Real answer here.\n',
+      '/fake/docs/adr/0001-t.md',
+    )
+    expect(adr.questions[0].answer?.author).toBe('Byron')
+    expect(adr.questions[0].isAnswered).toBe(true)
+  })
+
   it('recognizes keyword-less ANS attribution in the colon-outside form: "**ANS** (Jérémie): text" (the sweep\'s logged wild pattern)', () => {
     const content = `# ADR-0021: Test
 
