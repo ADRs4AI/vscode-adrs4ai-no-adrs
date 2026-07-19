@@ -595,7 +595,13 @@ describe('parseAdr', () => {
 
     const q1 = adr.questions[0]
     expect(q1.text).toBe('What is the scope?')
-    expect(q1.isAnswered).toBe(true) // has an ANS block even though status says unanswered
+    // STATUS-AUTHORITY (ADR-0031, ratified, implemented 2026-07-19): a
+    // declared 'unanswered' now WINS over the ANS content below it — the
+    // answer is a draft until the author flips Status. This assertion
+    // used to read `toBe(true) // has an ANS block even though status
+    // says unanswered` — the exact sentence the ratified rule outlaws.
+    expect(q1.isAnswered).toBe(false)
+    expect(q1.answer?.text).toBeTruthy() // the draft answer is still captured
     expect(q1.answer?.text).toBe('This is a full replacement.')
     expect(q1.answer?.author).toBe('Jérémie')
 
@@ -2389,6 +2395,51 @@ Some recommendation text.
 // Regression tests: rawBody capture (ADR-0003 / ADR-0008 parsing failures)
 // ---------------------------------------------------------------------------
 
+describe('Status-authority (ADR-0031, ratified by Jérémie, implemented 2026-07-19)', () => {
+  // The rule: a DECLARED `- Status:` line alone decides answered-ness; ANS
+  // content is a draft until the author flips Status. Derived evidence
+  // closes a question only when no Status is declared at all. Blast radius
+  // measured before shipping per Flint's recommendation: 38/431 questions
+  // across 5 repos, mostly March-era zombies (date-cutoff migration per
+  // Jérémie's own ANS in ADR-0031).
+  const qstWith = (status: string | null, ansBody: string) => `# ADR-0001: T
+
+## Questions
+
+### QST: X?
+${status ? `- Status: ${status}\n` : ''}
+**ANS:** (by Jérémie)
+${ansBody}
+`
+
+  describe('Regression tests', () => {
+    it('REOPENING works: declared "unanswered (reopened — ...)" beats the stale answer beneath it (HQ ADR-0015 QST-3, the live trigger)', () => {
+      const adr = parseAdr(
+        qstWith('unanswered (reopened — refinement requested rather than closing)', 'The old answer, kept as a draft.'),
+        '/fake/docs/adr/0001-t.md',
+      )
+      expect(adr.questions[0].isAnswered).toBe(false)
+      expect(adr.questions[0].answer?.text).toBeTruthy() // draft preserved, visible
+    })
+
+    it('declared "answered" (with or without annotation) closes the question', () => {
+      for (const s of ['answered', 'answered 2026-07-19 (registrar implicit)']) {
+        expect(parseAdr(qstWith(s, 'Yes.'), '/f/docs/adr/0001-t.md').questions[0].isAnswered, s).toBe(true)
+      }
+    })
+
+    it('NO declared Status: derived ANS-content evidence still closes (the fallback survives)', () => {
+      const adr = parseAdr(qstWith(null, 'A real answer.'), '/fake/docs/adr/0001-t.md')
+      expect(adr.questions[0].isAnswered).toBe(true)
+    })
+
+    it('no Status + placeholder stays open (unchanged)', () => {
+      const adr = parseAdr(qstWith(null, '[Fill this in]'), '/fake/docs/adr/0001-t.md')
+      expect(adr.questions[0].isAnswered).toBe(false)
+    })
+  })
+})
+
 describe('Regression tests: QST rawBody — content beyond recognized fields', () => {
   it('captures proposed grammar block between field lines and ANS (ADR-0008 pattern)', () => {
     // Bug: lines not matching STATUS/WHY/NEED/RECOMMENDATION/ANS were silently dropped.
@@ -2945,7 +2996,10 @@ ${placeholder}
 [see ADR-0014]
 `
     const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
     expect(adr.questions[0].answer?.text).toBe('[see ADR-0014]')
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
@@ -2962,7 +3016,10 @@ ${placeholder}
 This is pending final review, but our lean is option A.
 `
     const adr = parseAdr(content, '/fake/docs/adr/0011-test.md')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 
@@ -3060,7 +3117,10 @@ ${placeholder}
 _yes, definitely_
 `
     const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
     expect(adr.questions[0].answer?.text).toBe('_yes, definitely_')
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
@@ -3077,7 +3137,10 @@ _yes, definitely_
 (see ADR-0014 for the full argument)
 `
     const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 
@@ -3093,7 +3156,10 @@ _yes, definitely_
 Pending final budget approval, but we lean toward option A.
 `
     const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
     expect(adr.parseWarnings.some(w => w.code === 'NONSTANDARD_FILL_PLACEHOLDER')).toBe(false)
   })
 
@@ -3190,7 +3256,10 @@ A backend enters only when multi-tenant caching forces it.
       '/fake/docs/adr/0001-t.md',
     )
     expect(adr.questions[0].answer?.author).toBe('Byron')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
   })
 
   it('recognizes keyword-less ANS attribution in the colon-outside form: "**ANS** (Jérémie): text" (the sweep\'s logged wild pattern)', () => {
@@ -3204,7 +3273,10 @@ A backend enters only when multi-tenant caching forces it.
 **ANS** (Jérémie): Yes — this exact form recurs in caring-form.
 `
     const adr = parseAdr(content, '/fake/docs/adr/0021-test.md')
-    expect(adr.questions[0].isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(adr.questions[0].answer?.text).toBeTruthy()
     expect(adr.questions[0].answer?.author).toBe('Jérémie')
     expect(adr.questions[0].answer?.text).toContain('recurs in caring-form')
   })
@@ -3374,7 +3446,10 @@ Justification paragraph two.
     expect(q.answer?.text).toContain('I registered crossfoot.tools')
     expect(q.answer?.text).toContain('Follow-up sentence')
     expect(q.answer?.text).toContain('Another sentence')
-    expect(q.isAnswered).toBe(true)
+    // Status-authority (ADR-0031, 2026-07-19): declared 'unanswered' wins;
+    // what this test actually guards is CLASSIFICATION — the content must
+    // be captured as a real (draft) answer, never misread as a placeholder.
+    expect(q.answer?.text).toBeTruthy()
     expect(adr.parseWarnings.some(w => w.code === 'NONCANONICAL_ANS_MARKER')).toBe(true)
   })
 

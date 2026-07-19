@@ -858,6 +858,10 @@ export function extractQuestion(
 ): Question {
   const lines = section.body.split('\n');
   let statusText = 'unanswered';
+  // Whether a `- Status:` line was actually DECLARED in the block (vs the
+  // default above). Load-bearing for Status-authority (below): declared
+  // status is authoritative; the default is not a declaration.
+  let statusDeclared = false;
   let whyAsking: string | undefined;
   let need: string | undefined;
   let recommendation: string | undefined;
@@ -929,6 +933,7 @@ export function extractQuestion(
     // ADR-0012: trim to handle "- Status:  answered " with trailing/leading spaces
     if (statusMatch) {
       statusText = statusMatch[1].trim();
+      statusDeclared = true;
       inRecommendation = false; inWhyAsking = false; inNeed = false;
       if (warnings) {
         if (STATUS_LINE_BOLD_RE.test(line)) {
@@ -1133,7 +1138,18 @@ export function extractQuestion(
   // ADR-0012: Case-insensitive, trimmed comparison — human-typed values like "Answered" should work.
   // Leading-token match (not exact-match) tolerates a trailing annotation
   // ("answered 2026-07-13 (reason)") — see ANSWERED_LEADING_TOKEN_RE.
-  const isAnswered = ANSWERED_LEADING_TOKEN_RE.test(statusText.trim()) || !!answer;
+  // STATUS-AUTHORITY (ADR-0031, ratified by Jérémie "in full"; implemented
+  // 2026-07-19 after the blast-radius measurement Flint's recommendation
+  // required — 38/431 questions across 5 repos flip open, mostly March-era
+  // zombies with the date-cutoff migration Jérémie's ANS proposed): when a
+  // `- Status:` line is DECLARED, it alone decides answered-ness — ANS
+  // content becomes a draft until the author flips Status. Derived
+  // ANS-content evidence closes a question ONLY when no Status is declared
+  // at all. This is what makes REOPENING possible: before this rule, an
+  // explicit "unanswered (reopened — ...)" lost to the stale answer beneath
+  // it (HQ ADR-0015 QST-3, the live specimen that triggered implementation).
+  const declaredAnswered = ANSWERED_LEADING_TOKEN_RE.test(statusText.trim());
+  const isAnswered = statusDeclared ? declaredAnswered : (declaredAnswered || !!answer);
 
   if (recommendationLines.length > 0) {
     // Hard-wrap robustness: join wrapped continuation lines within each
