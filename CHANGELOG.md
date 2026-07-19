@@ -13,6 +13,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 ### Added
 - **Insertion-preview protocol** (DEBRIEF-006, launch-gating): when the Open Questions panel has to append a brand-new ANS block because a question has no `**ANS:**` marker or placeholder at all, it now shows the 3 lines before and after the computed insertion point — with a `------ inserting here ------` marker — and waits for confirmation before writing. New setting `adrManager.missingAnsBehavior` (`confirm` / `silent` / `refuse`, default `confirm`) controls this per folder.
 
+## [0.7.21] - 2026-07-19
+
+### Fixed
+- A question whose ANS block has an empty attribution — `**ANS:** (by )` followed by `[Fill this in]` — is now correctly OPEN. Previously the literal `(by )` text was read as answer content, silently marking the question answered and hiding it from the panel.
+
 ## [0.7.20] - 2026-07-18
 
 ### Fixed
