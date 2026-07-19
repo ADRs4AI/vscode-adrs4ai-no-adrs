@@ -1,0 +1,469 @@
+{
+  "0001-project-specifications.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0002-parser-architecture.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0003-mcp-server-design.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0004-ui-paradigm.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 187,
+      "signalKind": "S4"
+    }
+  ],
+  "0005-claudemd-parser.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0006-brand-color-amber.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0007-status-info-single-source.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0008-deep-link-protocol.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0009-decision-resolution-taxonomy.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0010-open-questions-ux-rich-rendering.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0011-seeds-as-first-class-artifacts.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 121,
+      "signalKind": "S3"
+    }
+  ],
+  "0012-parser-robustness-format-tolerance.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 23,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 37,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 107,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 126,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 209,
+      "signalKind": "S4"
+    }
+  ],
+  "0013-normalizer-format-conformance.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 237,
+      "signalKind": "S4"
+    }
+  ],
+  "0014-constructive-diagnostic-design.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0015-adr-documentation-index.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0016-seed-incomplete-diagnostic.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0017-cross-adr-relationship-vocabulary.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0018-qst-ans-substrate.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0019-multi-recommendation-data-model.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 139,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 175,
+      "signalKind": "S4"
+    }
+  ],
+  "0020-three-layer-diagnostic-pattern.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 53,
+      "signalKind": "S4"
+    }
+  ],
+  "0021-mcp-tool-specification.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0022-shipping-posture.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0023-anti-clobbering-posture-in-the-extension-draft-persistence.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0024-qst-heading-recognition-tolerance.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0025-multi-root-recursive-project-roots.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0026-plausiblemtime-as-parser-primitive-temporal-provenance.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0027-cross-adr-question-queue-as-first-class-artifact.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0028-since-queries-recency-ranking-and-seen-tracking.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0029-open-questions-sidebar-badge-anti-gamification-check.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0030-captioned-references-resolving-question-handles-in-ui.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    }
+  ],
+  "0031-recall-first-question-detection.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 155,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 156,
+      "signalKind": "S4"
+    }
+  ],
+  "0032-format-stability-council-hardening-roundup.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 5,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 46,
+      "signalKind": "S3"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 47,
+      "signalKind": "S4"
+    }
+  ],
+  "DEBRIEF-001-panel-answer-loss-agent-rewrite.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "DEBRIEF-002-positional-first-approximation-silent-false-negative.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "DEBRIEF-003-panel-background-refresh-clobbers-live-typing.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 50,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 64,
+      "signalKind": "S4"
+    }
+  ],
+  "DEBRIEF-004-panel-idx-drift-vanishing-answer.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "DEBRIEF-005-release-tagging-recurs-because-no-mechanism-exists.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "DEBRIEF-006-append-ans-window-cap-splices-recommendation.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "DEBRIEF-007-dispatched-fix-aged-into-recurrence.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "seed-2026-03-07-bug-reports.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 129,
+      "signalKind": "S4"
+    }
+  ],
+  "seed-2026-03-17-secretariat-parser-lossless-adr-editing.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 46,
+      "signalKind": "S4"
+    }
+  ],
+  "seed-2026-03-18-case-studies-on-models-experience-with-extension-feedback-ho.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 25,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 44,
+      "signalKind": "S2"
+    }
+  ],
+  "seed-2026-03-18-sample-query-operation-on-adrs-seek-open-questions.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 84,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 87,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 90,
+      "signalKind": "S2"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 95,
+      "signalKind": "S2"
+    }
+  ],
+  "seed-2026-04-17-dogfood-master-plan.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 104,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 105,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 106,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 107,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 110,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 207,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 218,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 322,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 734,
+      "signalKind": "S4"
+    }
+  ],
+  "seed-2026-07-12-epistemic-programming-lane-doctrine.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ],
+  "seed-2026-07-12-settings-discoverability-and-progressive-configuration.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 6,
+      "signalKind": "S2"
+    }
+  ]
+}

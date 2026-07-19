@@ -29,6 +29,17 @@ export interface HeadingToken extends BaseToken {
 export interface BodyToken extends BaseToken {
   kind: 'body';
   text: string;
+  /**
+   * True when this line sits inside a fenced code block. The tokenizer
+   * already tracks fence state (inFencedCode) to suppress heading detection
+   * in fences (ADR-0005) but discarded it before this field existed — so a
+   * signal scan over body text (ADR-0031's signals.ts) had no way to skip
+   * fenced examples and would false-fire on things like this file's own
+   * ``grep 'Status: unanswered'`` snippets or a pasted diagnostic JSON blob.
+   * Stamped at tokenize time since the fence state already exists in this
+   * loop; never computed by re-scanning later.
+   */
+  inFence: boolean;
 }
 
 export interface HtmlCommentToken extends BaseToken {
@@ -82,18 +93,20 @@ export function tokenize(source: string): Token[] {
         inFencedCode = true;
         fenceChar = fc;
         fenceLen = fl;
-        tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+        // The opening fence line itself reads more naturally as "not yet
+        // inside" for signal purposes (it's the delimiter, not an example).
+        tokens.push({ kind: 'body', text: raw, raw, line: lineNumber, inFence: false });
         continue;
       } else if (fc === fenceChar && fl >= fenceLen) {
         inFencedCode = false;
-        tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+        tokens.push({ kind: 'body', text: raw, raw, line: lineNumber, inFence: true });
         continue;
       }
     }
 
     // Inside a fenced code block — everything is body, no heading detection
     if (inFencedCode) {
-      tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+      tokens.push({ kind: 'body', text: raw, raw, line: lineNumber, inFence: true });
       continue;
     }
 
@@ -125,7 +138,7 @@ export function tokenize(source: string): Token[] {
       continue;
     }
 
-    tokens.push({ kind: 'body', text: raw, raw, line: lineNumber });
+    tokens.push({ kind: 'body', text: raw, raw, line: lineNumber, inFence: false });
   }
 
   return tokens;
