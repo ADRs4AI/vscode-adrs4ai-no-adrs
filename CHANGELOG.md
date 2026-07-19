@@ -13,6 +13,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 ### Added
 - **Insertion-preview protocol** (DEBRIEF-006, launch-gating): when the Open Questions panel has to append a brand-new ANS block because a question has no `**ANS:**` marker or placeholder at all, it now shows the 3 lines before and after the computed insertion point — with a `------ inserting here ------` marker — and waits for confirmation before writing. New setting `adrManager.missingAnsBehavior` (`confirm` / `silent` / `refuse`, default `confirm`) controls this per folder.
 
+## [0.7.22] - 2026-07-19
+
+### Fixed
+- Question headings written as `### QST 1:` (space before the number, as in the template's own "Iteration 1" style) are now recognized as questions with proper ids and anchors, with a fix-it hint toward `QST-1:` — previously they were silently invisible.
+
 ## [0.7.21] - 2026-07-19
 
 ### Fixed
