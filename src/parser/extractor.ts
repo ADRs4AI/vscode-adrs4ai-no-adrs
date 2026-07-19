@@ -103,6 +103,15 @@ const QST_HANDLE_TOLERANT_RE = /^qst-([\p{L}\p{N}](?:[\p{L}\p{N}-]{0,22}[\p{L}\p
 // question must appear (recall-first, ADR-0031 element 1), wearing a
 // model-facing warning about the id instead of vanishing.
 const QST_HANDLE_MALFORMED_RE = /^QST-([^\s:]{1,64}):\s*(.*)$/iu;
+// Space-separated ordinal — "### QST 1: title" (system3 ADR-0046, 2026-07-19:
+// eight questions invisible, zero warnings — matched neither the colon form,
+// the hyphen handle, nor the malformed net, which requires the hyphen). The
+// interpolation source is the template ITSELF: "### Iteration 1 (date)" is
+// space-number, and prose cross-references read "see QST 6" — the author
+// regularized the handle toward the template's own sibling convention.
+// Recalled with full handle semantics (id folded, anchor stable) + a
+// fix-it warning toward the canonical hyphen form.
+const QST_HANDLE_SPACED_RE = /^QST\s+([\p{L}\p{N}](?:[\p{L}\p{N}-]{0,22}[\p{L}\p{N}])?)\s*:\s*(.*)$/iu;
 
 /**
  * NFD-normalize, strip combining marks (diacritics), uppercase, keep only
@@ -320,7 +329,8 @@ function sectionSlug(heading: string): string {
   // than the generic nav-code slug below (and must win: the whole point of
   // an author-chosen id is a stable, predictable anchor, not one derived
   // from title wording that can drift).
-  const handleMatch = heading.match(QST_HANDLE_RE) ?? heading.match(QST_HANDLE_TOLERANT_RE);
+  const handleMatch = heading.match(QST_HANDLE_RE) ?? heading.match(QST_HANDLE_TOLERANT_RE)
+    ?? heading.match(QST_HANDLE_SPACED_RE);
   if (handleMatch) {
     return `qst-${foldQstId(handleMatch[1]).toLowerCase()}`;
   }
@@ -398,6 +408,19 @@ export function buildSection(
       warnings.push({
         code: 'NONCANONICAL_NAV_CODE_HEADING',
         message: `Heading "${heading}" was recognized as a QST handle but "QST" isn't uppercase. Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "QST-${foldQstId(tolerantHandle[1])}: ${tolerantHandle[2].trim()}"`,
+        line: raw.heading.line,
+      })
+    }
+  }
+  // Space-separated ordinal ("### QST 1: title") — full handle semantics,
+  // one fix-it warning. See QST_HANDLE_SPACED_RE's note (system3 ADR-0046).
+  if (!handleMatch) {
+    const spaced = heading.match(QST_HANDLE_SPACED_RE);
+    if (spaced) {
+      handleMatch = spaced;
+      warnings.push({
+        code: 'NONCANONICAL_NAV_CODE_HEADING',
+        message: `Heading "${heading}" was recognized as a QST handle written with a space ("QST ${spaced[1]}:") instead of the canonical hyphen form. Recognized anyway — no data lost, anchor derived from the id — but the canonical form is what other tools (deep links, MCP, grep recipes) expect. SUGGESTED: "QST-${foldQstId(spaced[1])}: ${spaced[2].trim()}"`,
         line: raw.heading.line,
       })
     }
@@ -638,7 +661,11 @@ const STATUS_LINE_BOLD_RE = /^-\s+\*\*Status\*\*:/;
 // BOUNDARY without re-tokenizing; kept beside its heading-text cousins
 // (NAV_CODE_HEADING_TOLERANT_RE / QST_HANDLE_RE) so the definitions can't
 // drift apart. Same export rationale as STATUS_LINE_RE above.
-export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:-[^\s:]{1,64})?\s*:/iu;
+// The id joint accepts hyphen OR whitespace (spaced-ordinal tolerance,
+// system3 ADR-0046) — a boundary false-positive on a prose "QST …:" heading
+// is conservative-safe (clamps a write scan early); a false-negative is the
+// wrong-question-write hazard.
+export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:[-\s][^:]{0,64})?:/iu;
 // Annotated status value (Naturalist's status-with-annotation dialect,
 // ~20 docs across a 1,061-doc survey; crossfoot ADR-0029: "answered
 // 2026-07-13 (registrar implicit — ...)"). isAnswered's exact `=== 'answered'`

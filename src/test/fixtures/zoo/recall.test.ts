@@ -128,6 +128,13 @@ const CORPUS: Record<string, SpecimenTruth> = {
   // false-answered. Fixed v0.7.21: the empty attribution is consumed by the
   // marker, the placeholder is seen, both questions recall as open.
   'zoo-013-empty-ans-attribution-false-answered.md': { groundTruth: 2, baselineToday: 2 },
+  // Space-separated ordinal handles ("### QST 1:") — system3 ADR-0046,
+  // 2026-07-19: eight questions silently dropped with zero warnings (the
+  // form matched no regex, including the malformed net, which requires the
+  // hyphen). The template's own "Iteration 1" convention is the
+  // interpolation source. Fixed v0.7.22: full handle semantics + fix-it
+  // warning; both specimen questions recall as open.
+  'zoo-014-spaced-ordinal-qst-headings.md': { groundTruth: 2, baselineToday: 2 },
 }
 
 function listSpecimens(): string[] {

@@ -62,6 +62,27 @@ describe('QST handle grammar (widened 2026-07-16)', () => {
     })
   })
 
+  describe('Regression tests: spaced-ordinal handles (system3 ADR-0046, 2026-07-19)', () => {
+    it('"### QST 1: title" is recalled with full handle semantics + a fix-it warning — eight of these were invisible with zero warnings', () => {
+      const adr = parseAdr(adrWith('### QST 1: Delivery ledger — where does it live?'), '/fake/docs/adr/9000-x.md')
+      expect(adr.questions).toHaveLength(1)
+      expect(adr.questions[0].qstId).toBe('1')
+      expect(adr.questions[0].slug).toBe('qst-1')
+      const w = adr.parseWarnings.filter(x => x.code === 'NONCANONICAL_NAV_CODE_HEADING')
+      expect(w).toHaveLength(1)
+      expect(w[0].message).toContain('QST-1:')
+    })
+
+    it('a spaced topical id works too, and a prose heading that merely starts with "QST" is not a question', () => {
+      const spaced = parseAdr(adrWith('### QST STATUS-AUTHORITY: spaced topical?'), '/fake/docs/adr/9000-x.md')
+      expect(spaced.questions[0]?.qstId).toBe('STATUS-AUTHORITY')
+      // Multi-word text after "QST " (no immediate colon after one id token)
+      // stays a plain heading — the tolerance is for handles, not prose.
+      const prose = parseAdr(adrWith('### QST considerations for later review'), '/fake/docs/adr/9000-x.md')
+      expect(prose.questions).toHaveLength(0)
+    })
+  })
+
   it('the original lettered/numeric ids are unchanged (pure widening)', () => {
     for (const [heading, id] of [
       ['### QST-A: Lettered?', 'A'],
