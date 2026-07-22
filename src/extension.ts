@@ -27,7 +27,8 @@ import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { CompositeIndex } from './index/compositeIndex'
 import { isAdrBasename, isSeedBasename, isDirectChildOf } from './index/fileGuards'
 import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from './watchers/rootWatcherLifecycle'
-import { AdrTreeProvider } from './views/adrTreeProvider'
+import { AdrTreeProvider, type AdrTreeItem } from './views/adrTreeProvider'
+import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
 import { resolveReference } from './mcp/reference'
@@ -105,6 +106,13 @@ let statusBarSubscription: (() => void) | undefined;
 let diagnosticCollection: vscode.DiagnosticCollection | undefined;
 let treeProvider: AdrTreeProvider | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
+let treeView: vscode.TreeView<AdrTreeItem> | undefined;
+/**
+ * ADR-0029: same dispose-and-resubscribe requirement as
+ * statusBarSubscription (Flint 5's finding, 2026-07-16) — compositeIndex.onChange()
+ * is a one-time subscription against the node instances live at call time.
+ */
+let badgeSubscription: (() => void) | undefined;
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -176,11 +184,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarSubscription = compositeIndex.onChange(updateStatusBarText);
 
   // ── Tree view ────────────────────────────────────────────────────────────
-  const treeView = vscode.window.createTreeView('adrExplorer', {
+  treeView = vscode.window.createTreeView('adrExplorer', {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
   });
   context.subscriptions.push(treeView);
+
+  // ── ADR-0029: Open-Questions sidebar badge ──────────────────────────────
+  // Native ViewBadge only (QST-C, ratified) — no custom color/animation.
+  // Shares the same debounced reindex signal the tree view/status bar
+  // already use (Cairn's RFC Flag 1) — not a fresh subscription.
+  updateBadge();
+  badgeSubscription = compositeIndex.onChange(updateBadge);
 
   // ── Commands ─────────────────────────────────────────────────────────────
   context.subscriptions.push(
@@ -194,6 +209,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // re-parse of already-known roots otherwise (no-workspace edge case).
       if (watcherLifecycle) void watcherLifecycle.requestRefresh();
       else if (compositeIndex) reindexWorkspace(compositeIndex, adrDir);
+    }),
+
+    // "The collapse-all trap" (Jérémie, verbatim, 2026-07-22): "when you
+    // make the mistake of collapsing everything, you have to manually
+    // re-expand it." No native expandAll counterpart to showCollapseAll
+    // exists in the VS Code API — implemented via recursive reveal() with
+    // expand:3 (the API's own cap) over every top-level item, which covers
+    // this tree's actual depth (root -> ADR/seed -> question). A reveal()
+    // failure on any one item degrades gracefully — expand what's
+    // reachable, never surface an error for what's cosmetic.
+    vscode.commands.registerCommand('adrManager.expandAll', async () => {
+      if (!treeProvider || !treeView) return;
+      const topLevel = treeProvider.getChildren();
+      for (const item of topLevel) {
+        try {
+          await treeView.reveal(item, { expand: 3, select: false, focus: false });
+        } catch {
+          // Known VS Code API wrinkle (Lapidary's spec, 2026-07-23 `0320`) — no-op.
+        }
+      }
     }),
 
     vscode.commands.registerCommand('adrManager.showVersion', () => {
@@ -369,6 +404,8 @@ export function deactivate(): void {
   diagnosticsSubscription = undefined;
   statusBarSubscription?.();
   statusBarSubscription = undefined;
+  badgeSubscription?.();
+  badgeSubscription = undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,15 +429,58 @@ async function reindexWorkspace(composite: CompositeIndex, adrDirRel: string): P
   }
 }
 
-/** Aggregate ADR count + open-question count across every discovered root. */
+/**
+ * ADR-0029 QST-E: which sources currently count toward the open-question
+ * aggregate — read unscoped (workspace-wide), since the badge/status bar
+ * are single workspace-global surfaces, not tied to one root's resource
+ * scope. Missing keys default to included (no speculative "master off"
+ * setting — the per-source booleans already provide an implicit all-off
+ * state per the ratified Decision).
+ */
+function badgeInclusion(): SourceInclusion {
+  const cfg = vscode.workspace.getConfiguration('adrManager');
+  const inclusion: SourceInclusion = {};
+  for (const source of QUESTION_SOURCES) inclusion[source.key] = cfg.get<boolean>(`badge.include.${source.key}`, true);
+  return inclusion;
+}
+
+/** Aggregate ADR count + open-question count across every discovered root, respecting badge.include.* (one computation, shared with the badge and tree header — Cairn's swap). */
 function updateStatusBarText(): void {
   if (!statusBarItem || !compositeIndex) return;
   const adrCount = compositeIndex.allAdrs().length;
-  const openCount = compositeIndex.allAdrs()
-    .flatMap(a => a.questions)
-    .filter(q => !q.isAnswered).length
-    + compositeIndex.allSeeds().flatMap(s => s.questions).filter(q => !q.isAnswered).length;
+  const openCount = aggregateOpenQuestionCount(compositeIndex.walk(), badgeInclusion());
   statusBarItem.text = `$(file-text) ADRs: ${adrCount}${openCount > 0 ? ` | ? ${openCount}` : ''}`;
+}
+
+/** Count of files currently carrying at least one diagnostic — DiagnosticCollection only holds entries for URIs with a non-empty diagnostics array, so this is exactly "files with parse warnings." */
+function countFilesWithDiagnostics(collection: vscode.DiagnosticCollection): number {
+  let count = 0;
+  collection.forEach(() => { count++; });
+  return count;
+}
+
+/**
+ * ADR-0029: the sidebar/Activity Bar badge. Native `ViewBadge` only (QST-C,
+ * ratified) — plain numeral, no custom color escalation, no animation; the
+ * badge inherits the user's theme color by construction. Tooltip discloses
+ * parse health as a separate, default-on setting (Lapidary's fold addendum,
+ * 2026-07-12 `2130`) — "N open questions · M files with parse warnings" —
+ * so a confident wrong number can't silently license inattention
+ * (DEBRIEF-002's class, applied to the one surface designed to be trusted
+ * without checking).
+ */
+function updateBadge(): void {
+  if (!treeView || !compositeIndex) return;
+  const count = aggregateOpenQuestionCount(compositeIndex.walk(), badgeInclusion());
+  if (count === 0) { treeView.badge = undefined; return; }
+
+  let tooltip = `${count} open question${count === 1 ? '' : 's'}`;
+  const cfg = vscode.workspace.getConfiguration('adrManager');
+  if (cfg.get<boolean>('badge.showParseHealth', true) && diagnosticCollection) {
+    const warnFiles = countFilesWithDiagnostics(diagnosticCollection);
+    if (warnFiles > 0) tooltip += ` · ${warnFiles} file${warnFiles === 1 ? '' : 's'} with parse warnings`;
+  }
+  treeView.badge = { value: count, tooltip };
 }
 
 /**
@@ -468,6 +548,10 @@ function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefine
   statusBarSubscription?.();
   statusBarSubscription = compositeIndex.onChange(updateStatusBarText);
   updateStatusBarText();
+  // Same re-subscribe requirement as statusBarSubscription just above.
+  badgeSubscription?.();
+  badgeSubscription = compositeIndex.onChange(updateBadge);
+  updateBadge();
   treeProvider?.setComposite(compositeIndex);
 }
 

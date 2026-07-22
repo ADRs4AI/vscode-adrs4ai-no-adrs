@@ -73,6 +73,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adrManager.expandAll",
+        "title": "Expand All",
+        "category": "ADR Manager",
+        "icon": "$(expand-all)"
+      },
+      {
         "command": "adrManager.showVersion",
         "title": "Show Version",
         "category": "ADR Manager"
@@ -147,6 +153,11 @@
           "command": "adrManager.refresh",
           "when": "view == adrExplorer",
           "group": "navigation@5"
+        },
+        {
+          "command": "adrManager.expandAll",
+          "when": "view == adrExplorer",
+          "group": "navigation@6"
         }
       ],
       "view/item/context": [
@@ -248,6 +259,24 @@
             "Never insert a fresh ANS block automatically — always ask you to answer that question manually in the file."
           ],
           "description": "What to do when a question has a recognized Status field but no **ANS:** marker or [Fill this in] placeholder at all — the panel has to append a fresh ANS block rather than fill an exact spot. DEBRIEF-006 (2026-07-18): this insertion point is a computed guess, not an exact match, and a mis-scanned block boundary once spliced an answer into the middle of someone else's recommendation. Default \"confirm\" shows you the surrounding lines before committing."
+        },
+        "adrManager.badge.include.adr": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "ADR-0029: include ADR questions in the sidebar badge's open-question count. Defaulting all sources on gives an implicit \"badge off\" when every source is disabled — no separate master toggle."
+        },
+        "adrManager.badge.include.seed": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "ADR-0029: include seed questions in the sidebar badge's open-question count."
+        },
+        "adrManager.badge.showParseHealth": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "ADR-0029 (fold addendum, 2026-07-12): the sidebar badge's tooltip discloses parse health alongside the open-question count — \"N open questions · M files with parse warnings\" — so a confident number can't silently license inattention. The tooltip only appears on hover (pull, not push), so this is on by default; turn it off if you'd rather have models attend to parse warnings exclusively."
         },
         "adrManager.mcpWriteMode": {
           "type": "string",

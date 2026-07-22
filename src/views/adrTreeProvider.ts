@@ -39,6 +39,7 @@ import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
 import { stripAdrNumberPrefix } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 import { pathFragmentFor } from './rootPathFragment'
+import { openQuestionCountForNode, QUESTION_SOURCES, type SourceInclusion } from '../index/questionSource'
 
 // ---------------------------------------------------------------------------
 // Tree item types
@@ -436,8 +437,21 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     return items
   }
 
+  /**
+   * ADR-0029 QST-E: reads through the same QuestionSource aggregation the
+   * badge and status bar use, respecting `adrManager.badge.include.<key>`
+   * per source — one computation, three consumers, so the tree header can
+   * never silently disagree with the count they show.
+   */
   private openQuestionCountFor(node: RootNode): number {
-    return node.adrs.openQuestionCount + node.seeds.allOpenQuestions().length
+    return openQuestionCountForNode(node, this.badgeInclusion(node))
+  }
+
+  private badgeInclusion(node: RootNode): SourceInclusion {
+    const cfg = vscode.workspace.getConfiguration('adrManager', vscode.Uri.file(node.path))
+    const inclusion: SourceInclusion = {}
+    for (const source of QUESTION_SOURCES) inclusion[source.key] = cfg.get<boolean>(`badge.include.${source.key}`, true)
+    return inclusion
   }
 
   private getAdrGroupChildren(node: RootNode): AdrTreeItem[] {
