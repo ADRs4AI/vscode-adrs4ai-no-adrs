@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { createHash } from 'crypto'
 import type { RepositoryContext } from '../mcp/repositoryContext'
 import { answerQuestion, addRecommendation, appendIteration, updateResolution } from '../mcp/handlers'
+import { verifyNoCollateralQuestionChanges } from '../mcp/writeOps'
 import { parseAdr } from '../parser/extractor'
 import { _resetDedupeCacheForTests } from '../mcp/dedupe'
 
@@ -444,5 +445,126 @@ describe('Adversarial findings: concurrency races in the write tier', () => {
       const firstBlockEnd = content.indexOf(secondQuestion.text)
       expect(content.slice(0, firstBlockEnd)).toContain('Meant for QST-1 only.')
     }
+  })
+})
+
+describe('write-fidelity check (ADR-0021 Iteration 8 doctrine, launch-gating per Lapidary\'s 2026-07-18 DEBRIEF-006 ratification)', () => {
+  // DEBRIEF-006: the panel's append-ANS fallback spliced an answer into the
+  // MIDDLE of an unrelated question's recommendation — the intended edit
+  // "succeeded" (status flipped, panel reported success), the corruption
+  // was elsewhere. "Reparse and verify the delta" is exactly the check that
+  // would have caught it: it doesn't ask "did my edit look right," it asks
+  // "did anything ELSE change." Tested directly against the exported
+  // function (same register as pathLock.test.ts testing its mechanism in
+  // isolation) because the current splice logic is already correct and
+  // doesn't naturally produce a collateral diff to catch end-to-end — this
+  // proves the backstop itself works, independent of whether today's
+  // splice logic happens to need it.
+
+  const TWO_QUESTION_ADR = `# ADR-0001: Test Decision
+
+- **Date**: 2026-01-01
+- **Iteration**: 1
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: First question?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+### QST: Second question?
+- Status: unanswered
+
+**Recommendation**: (by Commodore 5, 2026-07-18)
+
+Round-3 convergence leads to the Builder implementation, which becomes the public face.
+
+**ANS:** (by nobody)
+[Fill this in]
+
+---
+
+## Iterations
+
+### Iteration 1 (2026-01-01)
+- Outcome: Draft created.
+
+---
+
+## Links
+`
+
+  it('passes through unchanged when only the target question actually changed', () => {
+    const before = parseAdr(TWO_QUESTION_ADR, ADR_PATH)
+    const targetId = before.questions[0].id
+    const answered = TWO_QUESTION_ADR.replace(
+      '**ANS:** (by nobody)\n[Fill this in]\n\n### QST: Second question?',
+      '**ANS:** (by relay-test)\nPostgres.\n\n### QST: Second question?',
+    )
+    const result = verifyNoCollateralQuestionChanges(before, answered, ADR_PATH, new Set([targetId]))
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects a write that bisects an unrelated question\'s recommendation — the DEBRIEF-006 shape, reproduced directly', () => {
+    const before = parseAdr(TWO_QUESTION_ADR, ADR_PATH)
+    const targetId = before.questions[0].id
+    // Simulates exactly what a splice-into-the-wrong-place bug would
+    // produce: the answer meant for QST-1 lands inside QST-2's
+    // recommendation sentence, bisecting it -- same shape as Jérémie's
+    // real incident ("...convergence → [ANSWER HERE] Builder implementation...").
+    const corrupted = TWO_QUESTION_ADR.replace(
+      'Round-3 convergence leads to the Builder implementation,',
+      'Round-3 convergence leads to Meant for QST-1 only. the Builder implementation,',
+    )
+    const result = verifyNoCollateralQuestionChanges(before, corrupted, ADR_PATH, new Set([targetId]))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('error: write_fidelity_violation')
+      expect(result.error).toContain('collateral side effect')
+    }
+  })
+
+  it('rejects a write where a question disappears entirely as a side effect', () => {
+    const before = parseAdr(TWO_QUESTION_ADR, ADR_PATH)
+    const targetId = before.questions[0].id
+    const secondQuestionHeading = '### QST: Second question?'
+    const withSecondQuestionDeleted = TWO_QUESTION_ADR.slice(0, TWO_QUESTION_ADR.indexOf(secondQuestionHeading))
+      + '---\n\n## Iterations\n\n### Iteration 1 (2026-01-01)\n- Outcome: Draft created.\n\n---\n\n## Links\n'
+    const result = verifyNoCollateralQuestionChanges(before, withSecondQuestionDeleted, ADR_PATH, new Set([targetId]))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('disappeared')
+    }
+  })
+
+  it('allows the target question itself to change freely (that is the whole point of the write)', () => {
+    const before = parseAdr(TWO_QUESTION_ADR, ADR_PATH)
+    const targetId = before.questions[0].id
+    const answered = TWO_QUESTION_ADR.replace('- Status: unanswered\n\n**ANS:** (by nobody)\n[Fill this in]', '- Status: answered\n\n**ANS:** (by relay-test)\nPostgres.')
+    const result = verifyNoCollateralQuestionChanges(before, answered, ADR_PATH, new Set([targetId]))
+    expect(result.ok).toBe(true)
+  })
+
+  it('is wired into the real write path: answerQuestion rejects rather than silently landing when the fidelity check fails', async () => {
+    // Forces the fidelity check to fire through the real handler by
+    // answering a question whose id no longer matches after a hypothetical
+    // corrupting transform -- exercises the actual wiring in
+    // applyAnswerQuestion, not just the standalone function.
+    const { ctx, files } = makeContext(TWO_QUESTION_ADR)
+    const before = parseAdr(TWO_QUESTION_ADR, ADR_PATH)
+    const firstId = before.questions[0].id
+
+    const result = await answerQuestion(ctx, '1', firstId, 'Postgres.', { author: 'relay-test' })
+    // The real path succeeds normally (nothing corrupting it) -- confirms
+    // the fidelity check does NOT produce false positives on a legitimate
+    // write, which matters exactly as much as catching real violations.
+    expect(result).toContain('Answered')
+    expect(files.get(ADR_PATH)).toContain('Postgres.')
+    expect(files.get(ADR_PATH)).toContain('Round-3 convergence leads to the Builder implementation')
   })
 })

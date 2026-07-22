@@ -465,7 +465,7 @@ export async function updateResolution(
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
-    const result = applyUpdateResolution(currentContent, resolution, note)
+    const result = applyUpdateResolution(currentContent, resolved.adr.path, resolution, note)
     if (!result.ok) return result.error
 
     await ctx.writeFile(resolved.adr.path, result.newContent)

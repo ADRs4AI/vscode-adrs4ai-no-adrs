@@ -20,12 +20,72 @@
 // `/^- Status:/` copy here couldn't see, which left Status un-flipped on
 // bold-form files (the D2 write-back class) even when the answer wrote fine.
 import { parseAdr, STATUS_LINE_RE } from '../parser/extractor'
-import type { AdrIteration } from '../parser/types'
+import type { AdrIteration, AdrFile, Question } from '../parser/types'
 import { findSectionForQuestion } from './reference'
 
 export type WriteResult =
   | { ok: true; newContent: string; diff: string }
   | { ok: false; error: string }
+
+// ---------------------------------------------------------------------------
+// Write-fidelity check — ADR-0021 Iteration 8 doctrine, step 4: "parse
+// fresh → anchor on extents → splice only → reparse and verify the delta."
+// Launch-gating per Lapidary's 2026-07-18 ratification of DEBRIEF-006's
+// escalation: "a doctrine that predicts an incident but isn't enforced is a
+// prophecy, not a defense." DEBRIEF-006's mechanism — a scan cap silently
+// splicing an answer into an unrelated question's recommendation — is
+// exactly the shape this catches: the *intended* edit succeeded (the tool
+// reported success), the corruption was elsewhere. A check that only asks
+// "did my own edit look right" never sees it; this re-parses what the
+// write actually produced and asks "did anything ELSE change."
+// ---------------------------------------------------------------------------
+
+function questionFingerprint(q: Question): string {
+  return JSON.stringify({
+    text: q.text,
+    statusText: q.statusText,
+    isAnswered: q.isAnswered,
+    recommendation: q.recommendation ?? null,
+    recommendations: (q.recommendations ?? []).map((r) => ({ author: r.author ?? null, text: r.text })),
+    answer: q.answer ? { text: q.answer.text, author: q.answer.author ?? null } : null,
+  })
+}
+
+/**
+ * Reparses `newContent` and verifies every question NOT in `allowedToChange`
+ * is byte-for-byte identical (text/status/recommendations/answer) to its
+ * pre-write state. Returns the reparsed AdrFile on success so callers don't
+ * pay for a third parse, or a collateral-diff error naming exactly which
+ * question moved and how — never a bare "write rejected."
+ */
+export function verifyNoCollateralQuestionChanges(
+  before: AdrFile,
+  newContent: string,
+  adrPath: string,
+  allowedToChange: Set<string>,
+): { ok: true; after: AdrFile } | { ok: false; error: string } {
+  const after = parseAdr(newContent, adrPath)
+  const beforeById = new Map(before.questions.map((q) => [q.id, q]))
+  const afterById = new Map(after.questions.map((q) => [q.id, q]))
+
+  for (const [id, beforeQ] of beforeById) {
+    if (allowedToChange.has(id)) continue
+    const afterQ = afterById.get(id)
+    if (!afterQ) {
+      return {
+        ok: false,
+        error: `error: write_fidelity_violation\nmessage: question "${id}" disappeared from ${adrPath} as a side effect of this write — rejected before touching disk.`,
+      }
+    }
+    if (questionFingerprint(beforeQ) !== questionFingerprint(afterQ)) {
+      return {
+        ok: false,
+        error: `error: write_fidelity_violation\nmessage: question "${id}" changed unexpectedly as a collateral side effect of this write (DEBRIEF-006 class) — rejected before touching disk. This operation should only have changed a different question.`,
+      }
+    }
+  }
+  return { ok: true, after }
+}
 
 const ANS_HEADER_RE = /^\*\*ANS:\*\*/
 const FILL_PLACEHOLDER_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
@@ -97,7 +157,11 @@ export function applyAnswerQuestion(
   const afterSnippet = [newLines[ansHeaderLineIdx], answerText].join('\n')
   const diff = `- ${beforeSnippet.replace(/\n/g, '\\n')}\n+ ${afterSnippet.replace(/\n/g, '\\n')}`
 
-  return { ok: true, newContent: newLines.join('\n'), diff }
+  const newContent = newLines.join('\n')
+  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set([questionId]))
+  if (!fidelity.ok) return { ok: false, error: fidelity.error }
+
+  return { ok: true, newContent, diff }
 }
 
 /** Add a recommendation — append semantics (recommendations stack; ANS stays singular). */
@@ -133,7 +197,11 @@ export function applyAddRecommendation(
   const newLines = [...lines.slice(0, ansHeaderLineIdx), ...block, ...lines.slice(ansHeaderLineIdx)]
   const diff = `+ ${block.join('\\n')}`
 
-  return { ok: true, newContent: newLines.join('\n'), diff }
+  const newContent = newLines.join('\n')
+  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set([questionId]))
+  if (!fidelity.ok) return { ok: false, error: fidelity.error }
+
+  return { ok: true, newContent, diff }
 }
 
 /** Append an iteration entry — the number is computed server-side (MAX+1), never trusted from a caller. */
@@ -178,7 +246,12 @@ export function applyAppendIteration(
   const newLines = [...lines.slice(0, insertAt), ...bodyLines, ...lines.slice(insertAt)]
   const diff = `+ ${bodyLines.join('\\n')}`
 
-  return { ok: true, newContent: newLines.join('\n'), diff, iterationNumber: nextNumber }
+  const newContent = newLines.join('\n')
+  // No question should change at all from an iteration append.
+  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set())
+  if (!fidelity.ok) return { ok: false, error: fidelity.error }
+
+  return { ok: true, newContent, diff, iterationNumber: nextNumber }
 }
 
 export type ResolutionType = 'consensus' | 'fiat' | 'unresolved' | 'forked' | 'contested'
@@ -187,6 +260,7 @@ const VALID_RESOLUTIONS: ResolutionType[] = ['consensus', 'fiat', 'unresolved', 
 /** Update the ADR's Resolution header field — required Resolution Note for fiat/contested, per ADR-0009. */
 export function applyUpdateResolution(
   currentContent: string,
+  adrPath: string,
   resolution: string,
   note: string | undefined,
 ): WriteResult {
@@ -227,5 +301,11 @@ export function applyUpdateResolution(
     return { ok: false, error: 'Could not find a "- **Status**:" header line to anchor the Resolution field to.' }
   }
 
-  return { ok: true, newContent: newLines.join('\n'), diff: `+ ${newFieldLines.join('\\n')}` }
+  const newContent = newLines.join('\n')
+  // A header-field edit should never touch any question either.
+  const beforeAdr = parseAdr(currentContent, adrPath)
+  const fidelity = verifyNoCollateralQuestionChanges(beforeAdr, newContent, adrPath, new Set())
+  if (!fidelity.ok) return { ok: false, error: fidelity.error }
+
+  return { ok: true, newContent, diff: `+ ${newFieldLines.join('\\n')}` }
 }
