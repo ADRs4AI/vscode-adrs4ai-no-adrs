@@ -8,6 +8,12 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.26] - 2026-07-22
+
+### Added
+- **Sidebar badge** (ADR-0029): the Activity Bar icon now shows your open-question count, native VS Code badge styling (no custom color or animation). Tooltip discloses "N open questions · M files with parse warnings" so a confident number is never trusted blind. Configurable per source — `adrManager.badge.include.adr` / `.seed` — and the tooltip's parse-health line can be turned off with `adrManager.badge.showParseHealth`.
+- **Expand All** button in the sidebar's title bar, beside Collapse All — re-expanding a tree you accidentally collapsed no longer requires doing it node by node.
+
 ## [0.7.25] - 2026-07-22
 
 ### Changed
