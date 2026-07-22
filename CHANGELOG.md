@@ -13,6 +13,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 ### Added
 - **Insertion-preview protocol** (DEBRIEF-006, launch-gating): when the Open Questions panel has to append a brand-new ANS block because a question has no `**ANS:**` marker or placeholder at all, it now shows the 3 lines before and after the computed insertion point — with a `------ inserting here ------` marker — and waits for confirmation before writing. New setting `adrManager.missingAnsBehavior` (`confirm` / `silent` / `refuse`, default `confirm`) controls this per folder.
 
+## [0.7.24] - 2026-07-22
+
+### Fixed
+- Open Follow-up questions' `- Why deferring:` field — part of the template since the beginning — is now extracted and shown in the panel's question context, instead of being silently invisible outside the raw file.
+
 ## [0.7.23] - 2026-07-19
 
 ### Changed
