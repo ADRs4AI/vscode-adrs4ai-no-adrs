@@ -170,7 +170,10 @@ export class OpenQuestionsPanel {
     const workingDir = workspaceRoot
       ? path.join(workspaceRoot, adrDirRel, '.working')
       : path.join(os.tmpdir(), 'adr-drafts-no-workspace')
-    this.draftStore = new DraftStore(workingDir)
+    // adrPath portability (Loftsman/ios-client RFC, ruled by Lapidary
+    // 2026-07-22 `2140`): passing workspaceRoot turns on write-canonical +
+    // heal-on-save for the committed drafts.json's adrPath field.
+    this.draftStore = new DraftStore(workingDir, workspaceRoot)
     if (this.draftStore.quarantinedFiles.length > 0) {
       // CATCH 1 (write-adversary): a corrupt drafts.json/drafts-archive.json
       // was found and quarantined (renamed aside, never deleted) rather than

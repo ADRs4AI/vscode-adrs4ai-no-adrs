@@ -15,11 +15,19 @@
  * see docs/inbox/2026-07-07-2018-quarry-to-fitter-three-catches-in-the-
  * shipped-draft-store.md. All timestamps are still caller-supplied so this
  * class stays deterministic and unit-testable.
+ *
+ * adrPath portability (2026-07-22, Loftsman/ios-client RFC `1951`, ruled by
+ * Lapidary `2140`): `adrPath` is stable contract, repo-relative. See
+ * adrPathPortability.ts for the read-tolerant resolver used by any future
+ * caller that needs to turn a stored (possibly still-legacy-absolute) entry
+ * back into a real file path; this class's own job is only the write side —
+ * canonicalize at every persist, so the vault heals through ordinary use.
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
 import { normalizeQuestionText } from './draftKey'
+import { toRepoRelative } from './adrPathPortability'
 
 export interface DraftRecord {
   key: string
@@ -61,10 +69,22 @@ export class DraftStore {
    */
   readonly quarantinedFiles: string[] = []
 
-  constructor(private readonly workingDir: string) {
+  /**
+   * `workspaceRoot`, when provided, turns on adrPath portability (Loftsman
+   * RFC, ruled by Lapidary 2026-07-22 `2140`): every persisted active-set
+   * entry's `adrPath` is canonicalized to repo-relative, POSIX-separated
+   * form — write canonical, heal opportunistically. Omitted (e.g. existing
+   * tests, or no open workspace) preserves the exact prior behavior of
+   * storing whatever the caller passed, verbatim.
+   */
+  constructor(private readonly workingDir: string, private readonly workspaceRoot?: string) {
     this.draftsPath = path.join(workingDir, 'drafts.json')
     this.archivePath = path.join(workingDir, 'drafts-archive.json')
     this.reload()
+  }
+
+  private canonicalAdrPath(adrPath: string): string {
+    return this.workspaceRoot ? toRepoRelative(adrPath, this.workspaceRoot) : adrPath
   }
 
   // ---------------------------------------------------------------------------
@@ -224,7 +244,12 @@ export class DraftStore {
     const history = sameQuestion
       ? [...existing!.history, existing!.draftText].slice(-MAX_HISTORY)
       : []
-    this.drafts.set(key, { key, adrPath, adrNumber, questionText, draftText, updatedAt: now, history, totalOccurrences })
+    // Write canonical (adrPath portability): store repo-relative form
+    // regardless of what the caller passed — heals a legacy absolute value
+    // the moment this key is touched again, no migration script needed.
+    this.drafts.set(key, {
+      key, adrPath: this.canonicalAdrPath(adrPath), adrNumber, questionText, draftText, updatedAt: now, history, totalOccurrences,
+    })
     this.persistDrafts()
     if (existing && !sameQuestion) this.persistArchive()
   }
@@ -276,7 +301,10 @@ export class DraftStore {
     const history = target
       ? [...target.history, target.draftText, ...existing.history].slice(-MAX_HISTORY)
       : existing.history
-    this.drafts.set(newKey, { ...existing, key: newKey, updatedAt: now, history })
+    // Same heal-opportunistically treatment as save() — reattach also
+    // persists the active set, so it's another chance to canonicalize a
+    // still-legacy adrPath without a dedicated migration pass.
+    this.drafts.set(newKey, { ...existing, key: newKey, adrPath: this.canonicalAdrPath(existing.adrPath), updatedAt: now, history })
     this.persistDrafts()
   }
 }

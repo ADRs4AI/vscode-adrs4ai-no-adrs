@@ -210,6 +210,64 @@ describe('DraftStore', () => {
     expect(store.get(oldKey)).toBeUndefined()
     expect(store.get(newKey)?.draftText).toBe('My answer')
   })
+
+  // adrPath portability — Loftsman (ios-client) RFC 2026-07-22 `1951`, ruled
+  // by Lapidary `2140`: drafts.json is committed and travels between
+  // machines, so a machine-local absolute path inside it was always a
+  // latent cross-machine bug. Write canonical (repo-relative), heal
+  // opportunistically (any entry touched by a save rewrites its own path).
+  describe('adrPath portability (write canonical, heal opportunistically)', () => {
+    it('a workspaceRoot-aware store canonicalizes an absolute adrPath to repo-relative on save', () => {
+      const workspaceRoot = path.join(dir, 'repo')
+      const store = new DraftStore(dir, workspaceRoot)
+      const key = computeDraftKey('3', 'Which database?', 0)
+      const absolutePath = path.join(workspaceRoot, 'docs', 'adr', '0003-db.md')
+      store.save(key, absolutePath, 3, 'Which database?', 'Postgres.', '2026-07-06T20:00:00Z')
+      expect(store.get(key)?.adrPath).toBe('docs/adr/0003-db.md')
+    })
+
+    it('without a workspaceRoot, adrPath is stored verbatim — exact prior behavior, unchanged', () => {
+      const store = new DraftStore(dir)
+      const key = computeDraftKey('3', 'Which database?', 0)
+      store.save(key, '/fake/0003.md', 3, 'Which database?', 'Postgres.', '2026-07-06T20:00:00Z')
+      expect(store.get(key)?.adrPath).toBe('/fake/0003.md')
+    })
+
+    it('heal-on-save: a pre-existing entry with a legacy absolute adrPath (as real committed drafts.json files carry today) is rewritten to relative the next time its key is saved', () => {
+      const workspaceRoot = path.join(dir, 'repo')
+      const key = computeDraftKey('3', 'Which database?', 0)
+      // Simulate a drafts.json committed before this migration shipped.
+      fs.writeFileSync(path.join(dir, 'drafts.json'), JSON.stringify([{
+        key, adrPath: path.join(workspaceRoot, 'docs', 'adr', '0003-db.md'), adrNumber: 3,
+        questionText: 'Which database?', draftText: 'Old draft', updatedAt: '2026-07-01T00:00:00Z',
+        history: [], totalOccurrences: 1,
+      }]))
+
+      const store = new DraftStore(dir, workspaceRoot)
+      expect(store.get(key)?.adrPath).toBe(path.join(workspaceRoot, 'docs', 'adr', '0003-db.md')) // not yet healed — untouched load
+
+      store.save(key, path.join(workspaceRoot, 'docs', 'adr', '0003-db.md'), 3, 'Which database?', 'New draft', '2026-07-06T20:00:00Z')
+      expect(store.get(key)?.adrPath).toBe('docs/adr/0003-db.md') // healed by the touch
+    })
+
+    it('reattach() also heals a still-legacy adrPath carried forward to the new key', () => {
+      const workspaceRoot = path.join(dir, 'repo')
+      const store = new DraftStore(dir, workspaceRoot)
+      const oldKey = computeDraftKey('3', 'Which database?', 0)
+      const newKey = computeDraftKey('3', 'Which database engine?', 0)
+      // Save without a workspaceRoot-derivable path first isn't representable
+      // via save() (it would canonicalize immediately) — write the legacy
+      // shape directly to disk, as a pre-migration entry would look.
+      fs.writeFileSync(path.join(dir, 'drafts.json'), JSON.stringify([{
+        key: oldKey, adrPath: path.join(workspaceRoot, 'docs', 'adr', '0003-db.md'), adrNumber: 3,
+        questionText: 'Which database?', draftText: 'My answer', updatedAt: '2026-07-06T20:00:00Z',
+        history: [], totalOccurrences: 1,
+      }]))
+
+      store.reattach(oldKey, newKey, '2026-07-06T20:10:00Z')
+      expect(store.get(newKey)?.adrPath).toBe('docs/adr/0003-db.md')
+    })
+  })
 })
 
 describe('textSimilarity + bestReattachCandidate', () => {
