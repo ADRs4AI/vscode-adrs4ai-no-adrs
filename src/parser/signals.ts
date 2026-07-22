@@ -105,6 +105,15 @@ export function candidateSignals(tokens: Token[]): Signal[] {
 export function looseSignals(tokens: Token[]): Signal[] {
   const signals: Signal[] = [...candidateSignals(tokens)];
 
+  // Preamble exclusion (2026-07-22, fixture perfection pass): the document
+  // header's own metadata block — `- **Status**: Draft` etc., before the
+  // first ## section — is NOT question territory, and S2 firing on it was
+  // the census's single largest noise class (63 of the original 75 triaged
+  // snapshot entries, plus 5 of 6 findings on the perfectly-canonical
+  // fixture workspace). A question signal below needs a section to live in;
+  // the preamble structurally cannot hold a QST.
+  const firstSectionLine = tokens.find(t => t.kind === 'heading' && t.level >= 2)?.line ?? 0;
+
   for (const token of tokens) {
     if (token.kind === 'heading') {
       if (Q_NUMBERED_HEADING_RE.test(token.raw) && !QST_HEADING_LINE_RE.test(token.raw)) {
@@ -116,7 +125,7 @@ export function looseSignals(tokens: Token[]): Signal[] {
     if (token.kind !== 'body' || token.inFence) continue;
     const text = token.text;
 
-    if (STATUS_LINE_RE.test(text)) {
+    if (STATUS_LINE_RE.test(text) && token.line > firstSectionLine) {
       signals.push({ kind: 'S2', line: token.line, raw: token.raw });
     }
     if (ANS_MARKER_LOOSE_RE.test(text.trim())) {

@@ -76,7 +76,7 @@ But two things nag at me. First, a household sharing one pantry means concurrent
 
 ## Decision
 
-*(Pending — both questions above are open. This ADR stays Draft until ANS blocks are filled and a Decision section is written.)*
+*(Both questions above are open — this ADR stays Draft until the ANS blocks are filled and a Decision section is written.)*
 
 ---
 

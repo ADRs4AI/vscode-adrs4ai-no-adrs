@@ -1,9 +1,9 @@
-# Search: Naive LIKE Queries Over Recipe Titles
+# ADR-0004: Search — Naive LIKE Queries Over Recipe Titles
 
-* Status: Superseded
-* Deciders: Ren Okafor
-* Date: 2026-04-02
-* Superseded by: ADR-0005
+- **Date**: 2026-04-02
+- **Status**: Superseded
+- **Superseded by**: ADR-0005
+- **Deciders**: Ren Okafor
 
 ## Context and Problem Statement
 
