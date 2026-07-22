@@ -167,6 +167,8 @@ export interface Question {
   /** True if statusText is 'answered' or an answer block was found */
   isAnswered: boolean;
   whyAsking?: string;
+  /** The Open Follow-ups subtype's deferral reason (`- Why deferring:`) — the template's own field, extracted since v0.7.24 (Loftsman's catch). */
+  whyDeferring?: string;
   need?: string;
   recommendation?: string;
   /**

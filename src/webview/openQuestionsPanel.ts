@@ -36,6 +36,7 @@ interface WebviewQuestion {
   id: string
   text: string
   whyAsking?: string
+  whyDeferring?: string
   need?: string
   recommendation?: string
   /** ADR-0019: recommendation blocks, source order, each attributed. */
@@ -245,6 +246,7 @@ export class OpenQuestionsPanel {
           id: q.id,
           text: q.text,
           whyAsking: q.whyAsking,
+          whyDeferring: q.whyDeferring,
           need: q.need,
           recommendation: q.recommendation,
           recommendations: q.recommendations,
@@ -1760,7 +1762,7 @@ function render() {
     $id('ctx-details').style.display = 'none';
   }
 
-  const ctx = [q.whyAsking, q.need ? '**Need:** ' + q.need : null].filter(Boolean).join('\\n\\n');
+  const ctx = [q.whyAsking, q.whyDeferring ? '**Why deferring:** ' + q.whyDeferring : null, q.need ? '**Need:** ' + q.need : null].filter(Boolean).join('\\n\\n');
   if (ctx) { $id('why').style.display = 'block'; $id('why').innerHTML = renderMarkdown(ctx); }
   else { $id('why').style.display = 'none'; }
 

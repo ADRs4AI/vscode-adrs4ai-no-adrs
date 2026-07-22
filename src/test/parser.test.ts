@@ -2395,6 +2395,35 @@ Some recommendation text.
 // Regression tests: rawBody capture (ADR-0003 / ADR-0008 parsing failures)
 // ---------------------------------------------------------------------------
 
+describe('Open Follow-ups subtype fields (Loftsman/ios-client catch, 2026-07-20)', () => {
+  describe('Regression tests', () => {
+    it('`- Why deferring:` is structurally extracted — the template\'s own second QST subtype no longer loses its deferral reason (fixes ios-client dossier regression)', () => {
+      // The template (collab-adr-lean.md, ## Open Follow-ups) has always
+      // spec'd this field; the parser only ever knew `Why asking:`. Every
+      // Follow-up QST ecosystem-wide lost its "why" in every structured view.
+      const content = `# ADR-0014: T
+
+## Open Follow-ups
+
+### QST: \`adrPath\` — what does cross-surface identity mean?
+- Status: unresolved
+- Why deferring: genuinely needs the vscode crew's input on drafts.json's
+  schema, not a unilateral mobile-side decision.
+
+**ANS:** [Fill when resolved; or link to the ADR that resolved it]
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0014-t.md')
+      const q = adr.questions[0]
+      expect(q.whyDeferring).toContain('genuinely needs the vscode crew')
+      expect(q.whyDeferring).toContain('unilateral mobile-side decision') // continuation line joined
+      expect(q.rawBody ?? '').not.toContain('Why deferring') // extracted, not leaked
+      // The subtype's own status vocabulary: declared "unresolved" = open
+      // under Status-authority.
+      expect(q.isAnswered).toBe(false)
+    })
+  })
+})
+
 describe('Status-authority (ADR-0031, ratified by Jérémie, implemented 2026-07-19)', () => {
   // The rule: a DECLARED `- Status:` line alone decides answered-ness; ANS
   // content is a draft until the author flips Status. Derived evidence

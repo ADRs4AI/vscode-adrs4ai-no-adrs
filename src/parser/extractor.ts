@@ -675,6 +675,13 @@ export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:[-\s][^:]{0,64})?:/iu;
 const ANSWERED_LEADING_TOKEN_RE = /^answered\b/i;
 // Matches: - Why asking: value
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
+// Matches: - Why deferring: value — the template's OWN second QST subtype
+// (## Open Follow-ups, collab-adr-lean.md lines 167-176) used this field
+// from the start and the parser never learned it: every Follow-up QST in
+// the ecosystem lost its stated deferral reason in every structured view
+// (Loftsman/ios-client, 2026-07-20 — found via a Jérémie regression
+// report on the mobile dossier). A spec field, not a tolerance.
+const WHY_DEFERRING_RE = /^-\s+Why deferring:\s+(.+)$/;
 // Matches: - Need: value
 const NEED_RE = /^-\s+Need:\s+(.+)$/;
 // Matches the legacy form (**My recommendation**: text, ADR-0002 Iteration 3),
@@ -863,6 +870,7 @@ export function extractQuestion(
   // status is authoritative; the default is not a declaration.
   let statusDeclared = false;
   let whyAsking: string | undefined;
+  let whyDeferring: string | undefined;
   let need: string | undefined;
   let recommendation: string | undefined;
   let answer: QuestionAnswer | undefined;
@@ -889,6 +897,7 @@ export function extractQuestion(
   // A continuation line starts with whitespace (2-space indent) and is not a new
   // bullet field or block element. Join with ' ' (space) since it's word-wrapping.
   let inWhyAsking = false;
+  let inWhyDeferring = false;
   let inNeed = false;
   const answerLines: string[] = [];
   const recommendationLines: string[] = [];
@@ -924,6 +933,10 @@ export function extractQuestion(
       if (isContinuation) { whyAsking = (whyAsking ?? '') + ' ' + line; continue; }
       inWhyAsking = false; // fall through to process this line normally
     }
+    if (inWhyDeferring) {
+      if (isContinuation) { whyDeferring = (whyDeferring ?? '') + ' ' + line; continue; }
+      inWhyDeferring = false; // fall through
+    }
     if (inNeed) {
       if (isContinuation) { need = (need ?? '') + ' ' + line; continue; }
       inNeed = false; // fall through
@@ -955,7 +968,10 @@ export function extractQuestion(
     }
 
     const whyMatch = line.match(WHY_ASKING_RE);
-    if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; inWhyAsking = true; inNeed = false; continue; }
+    if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; inWhyAsking = true; inNeed = false; inWhyDeferring = false; continue; }
+
+    const whyDeferringMatch = line.match(WHY_DEFERRING_RE);
+    if (whyDeferringMatch) { whyDeferring = whyDeferringMatch[1].trim(); inRecommendation = false; inWhyDeferring = true; inWhyAsking = false; inNeed = false; continue; }
 
     const needMatch = line.match(NEED_RE);
     if (needMatch) { need = needMatch[1].trim(); inRecommendation = false; inNeed = true; inWhyAsking = false; continue; }
@@ -1215,6 +1231,7 @@ export function extractQuestion(
     statusText,
     isAnswered,
     whyAsking,
+    whyDeferring,
     need,
     recommendation,
     recommendations,
