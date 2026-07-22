@@ -4,7 +4,7 @@ All notable changes to the **ADRs for AI** extension are recorded here, loosely 
 
 This file starts at **v0.5.0** — the first release built from a rebuilt, in-sync `dist/` bundle after several months of the compiled output drifting from source. Development before that point was real (the sidebar, the Open Questions panel, seeds, deep links, ADR Commit all predate it) but wasn't versioned in a way worth reconstructing here; v0.5.0 is where this project's own version numbers became trustworthy.
 
-Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-004) are referenced by name below rather than smoothed over — see `docs/adr/DEBRIEF-*.md` for the full write-up of each. Keeping a public record of what broke and how it was found is part of what this extension is for.
+Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) are referenced by name below rather than smoothed over — see `docs/adr/DEBRIEF-*.md` for the full write-up of each, including the ones not tied to a single version (DEBRIEF-002, a data-scoping bug; DEBRIEF-005, a release-process gap). Keeping a public record of what broke and how it was found is part of what this extension is for.
 
 ---
 
@@ -12,11 +12,6 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ### Changed
 - `docs/adr/.working/drafts.json`'s `adrPath` field is now repo-relative rather than a machine-local absolute path — the committed file travels between machines (and, for the ios-client mobile companion, to a surface with no local git checkout at all) by design, so an absolute path inside it was a latent cross-machine bug. Existing entries still written in the old absolute form are read tolerantly and rewritten to the new form the next time they're touched — no migration script, no flag day.
-
-## [0.7.21] - 2026-07-18
-
-### Added
-- **Insertion-preview protocol** (DEBRIEF-006, launch-gating): when the Open Questions panel has to append a brand-new ANS block because a question has no `**ANS:**` marker or placeholder at all, it now shows the 3 lines before and after the computed insertion point — with a `------ inserting here ------` marker — and waits for confirmation before writing. New setting `adrManager.missingAnsBehavior` (`confirm` / `silent` / `refuse`, default `confirm`) controls this per folder.
 
 ## [0.7.24] - 2026-07-22
 
@@ -35,8 +30,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ## [0.7.21] - 2026-07-19
 
+### Added
+- **Insertion-preview protocol** (DEBRIEF-006, launch-gating): when the Open Questions panel has to append a brand-new ANS block because a question has no `**ANS:**` marker or placeholder at all, it now shows the 3 lines before and after the computed insertion point — with a `------ inserting here ------` marker — and waits for confirmation before writing. New setting `adrManager.missingAnsBehavior` (`confirm` / `silent` / `refuse`, default `confirm`) controls this per folder.
+
 ### Fixed
-- A question whose ANS block has an empty attribution — `**ANS:** (by )` followed by `[Fill this in]` — is now correctly OPEN. Previously the literal `(by )` text was read as answer content, silently marking the question answered and hiding it from the panel.
+- **DEBRIEF-007**: a question whose ANS block has an empty attribution — `**ANS:** (by )` followed by `[Fill this in]` — is now correctly OPEN. Previously the literal `(by )` text was read as answer content, silently marking the question answered and hiding it from the panel.
 
 ## [0.7.20] - 2026-07-18
 
