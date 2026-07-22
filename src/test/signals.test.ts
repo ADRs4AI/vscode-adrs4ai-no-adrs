@@ -149,9 +149,9 @@ describe('signals.ts — precision guard (zoo-002)', () => {
     expect(candidateSignals(tokens)).toEqual([]);
   });
 
-  it('the loose tier still fires on the header\'s own "- **Status**: Draft" metadata line — documented noise (§4), not a bug: the loose tier cannot distinguish an ADR-level Status field from a QST-block one, and over-flagging to the census/model is the correct failure direction per the charter', () => {
+  it('the loose tier NO LONGER fires on the header\'s own "- **Status**: Draft" metadata line — the preamble exclusion (2026-07-22 fixture perfection pass) retired what this test used to document as expected noise: a question signal needs a section to live in, and the preamble structurally cannot hold a QST. This was the census\'s single largest noise class (63 of 75 snapshot entries).', () => {
     const content = readFileSync(resolve(ZOO_DIR, 'zoo-002-decision-style-no-qsts.md'), 'utf8');
     const tokens = tokenize(content);
-    expect(looseSignals(tokens)).toEqual([{ kind: 'S2', line: 5, raw: '- **Status**: Draft' }]);
+    expect(looseSignals(tokens)).toEqual([]);
   });
 });
