@@ -8,6 +8,11 @@ Three of this project's public incident debriefs (DEBRIEF-002 through DEBRIEF-00
 
 ---
 
+## [0.7.25] - 2026-07-22
+
+### Changed
+- `docs/adr/.working/drafts.json`'s `adrPath` field is now repo-relative rather than a machine-local absolute path — the committed file travels between machines (and, for the ios-client mobile companion, to a surface with no local git checkout at all) by design, so an absolute path inside it was a latent cross-machine bug. Existing entries still written in the old absolute form are read tolerantly and rewritten to the new form the next time they're touched — no migration script, no flag day.
+
 ## [0.7.21] - 2026-07-18
 
 ### Added
