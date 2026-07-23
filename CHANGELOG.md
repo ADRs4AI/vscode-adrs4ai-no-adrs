@@ -19,6 +19,12 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 ### Changed
 - `docs/adr/.working/drafts.json`'s `adrPath` field is now repo-relative rather than a machine-local absolute path — the committed file travels between machines (and, for the ios-client mobile companion, to a surface with no local git checkout at all) by design, so an absolute path inside it was a latent cross-machine bug. Existing entries still written in the old absolute form are read tolerantly and rewritten to the new form the next time they're touched — no migration script, no flag day.
 
+## [0.7.25] - 2026-07-22
+
+### Fixed
+- Markdown emphasis on keywords no longer defeats recognition, as a class: `- Status: **answered**`, `_accepted_`, document-level `**Withdrawn**`, and bold/code-wrapped placeholders (`**pending**`, `` `tbd` ``) all read as their bare tokens, with a fix-it hint.
+- A recommendation with its own structured sub-headings (`**Why**:`, numbered points) is no longer cut off at the first one — an attributed recommendation block runs to its real end (the ANS marker, a new recommendation, or the question's boundary).
+
 ## [0.7.24] - 2026-07-22
 
 ### Fixed
