@@ -14,6 +14,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 - Markdown emphasis on keywords no longer defeats recognition, as a class: `- Status: **answered**`, `_accepted_`, document-level `**Withdrawn**`, and bold/code-wrapped placeholders (`**pending**`, `` `tbd` ``) all read as their bare tokens, with a fix-it hint.
 - A recommendation with its own structured sub-headings (`**Why**:`, numbered points) is no longer cut off at the first one — an attributed recommendation block runs to its real end (the ANS marker, a new recommendation, or the question's boundary).
 
+## [0.7.28] - 2026-07-22
+
+### Fixed
+- **Expand All now actually works.** It had been a 100%-silent no-op since shipping: VS Code's `reveal()` API requires the tree provider to implement `getParent` and to give items stable identities — the provider had neither, so every reveal failed and the command's own error-swallowing hid it. Tree items now carry stable tree-wide ids and the provider implements `getParent`; found by Jérémie testing it live between GIF takes.
+
 ## [0.7.26] - 2026-07-22
 
 ### Added
