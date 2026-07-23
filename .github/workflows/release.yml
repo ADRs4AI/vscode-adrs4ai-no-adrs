@@ -98,23 +98,60 @@ jobs:
           Or install directly from the [releases page](https://github.com/${REPO}/releases/tag/${VERSION}).
           EOF
 
+      - name: Extract CHANGELOG entry
+        # Jérémie's actual ask (2026-07-23-0105 correction, ADR-0033
+        # withdrawal note): "it's just in GitHub, in the release message."
+        # Every release before this pointed at the same hardcoded generic
+        # description ("Navigate and manage Architectural Decision
+        # Records..."), verbatim, on all 27+ releases — this pulls the
+        # authored `## [X.Y.Z]` section from CHANGELOG.md instead. Hard
+        # failure (not a silent fallback to the generic text) if a tag
+        # lands with no matching entry: `just release` already refuses to
+        # ship without one locally, so reaching CI without one means that
+        # guard was bypassed, and this is the last place left to catch it.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Escape dots for awk's dynamic-regex context — "ver" is spliced
+          # into a regex string, where an unescaped "." matches ANY
+          # character, not a literal dot (harmless today, since no two
+          # version headings could plausibly collide, but this project
+          # doesn't ship "harmless today" imprecision when it's free to fix).
+          # Double backslash, not single: awk's -v assignment runs its own
+          # escape-sequence processing on the value BEFORE the regex engine
+          # ever sees it, so a single "\." would have its backslash
+          # stripped and silently revert to the wildcard-dot bug.
+          VERSION_RE=$(echo "$VERSION" | sed 's/\./\\\\./g')
+          awk -v ver="$VERSION_RE" '
+            $0 ~ "^## \\[" ver "\\] -" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > changelog-entry.md
+          if [ ! -s changelog-entry.md ]; then
+            echo "::error::No CHANGELOG.md entry found for version $VERSION (expected a '## [$VERSION] - YYYY-MM-DD' heading)"
+            exit 1
+          fi
+          cat changelog-entry.md
+
+      - name: Build release notes
+        run: |
+          VSIX="${{ steps.package.outputs.vsix }}"
+          {
+            echo "## ADRs for AI ${{ github.ref_name }}"
+            echo
+            cat changelog-entry.md
+            echo
+            echo "### Install"
+            echo
+            echo "Download \`${VSIX}\` from the assets below and run:"
+            echo
+            echo '```bash'
+            echo "code --install-extension ${VSIX}"
+            echo '```'
+          } > release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.package.outputs.vsix }}
           generate_release_notes: true
-          body: |
-            ## ADRs for AI ${{ github.ref_name }}
-
-            Navigate and manage Architectural Decision Records for human-AI collaboration (collab-adr-lean format).
-
-            ### Install
-
-            Download `${{ steps.package.outputs.vsix }}` from the assets below and run:
-
-            ```bash
-            code --install-extension ${{ steps.package.outputs.vsix }}
-            ```
-
-            ---
-            *Built from tag `${{ github.ref_name }}` · ${{ steps.test.outputs.passed }} tests passing*
+          body_path: release-notes.md
