@@ -2424,6 +2424,78 @@ describe('Open Follow-ups subtype fields (Loftsman/ios-client catch, 2026-07-20)
   })
 })
 
+describe('Emphasis-robust keywords + attributed-rec sub-fields (Jérémie reports, 2026-07-22)', () => {
+  describe('Regression tests', () => {
+    it('"- Status: **answered** (…)" reads as answered — emphasis never defeats the keyword (caring-form ADR-0052:207)', () => {
+      // Under Status-authority the declared status is sovereign, which made
+      // this WORSE than before: an emphatically-answered question stayed
+      // open forever, no derived rescue. Class fix: stripInlineEmphasis at
+      // every keyword-comparison site.
+      for (const marker of ['**answered**', '_answered_', '`answered`', '**answered** (Surveyor disposition 2026-07-07)']) {
+        const adr = parseAdr(
+          `# ADR-0052: T\n\n## Questions\n\n### QST: P23 + P24 registration?\n- Status: ${marker}\n\n**ANS:** (by Surveyor)\nBoth registered active.\n`,
+          '/fake/docs/adr/0052-t.md',
+        )
+        expect(adr.questions[0].isAnswered, marker).toBe(true)
+        expect(adr.parseWarnings.some(w => w.code === 'EMPHASIZED_STATUS_VALUE'), marker).toBe(true)
+      }
+    })
+
+    it('document-level "**Withdrawn**"/"**Accepted**" status values read as their bare tokens', () => {
+      const adr = parseAdr('# ADR-0033: T\n\n- **Status**: **Accepted**\n- **Deciders**: J\n\n## Context\n\nX.\n', '/fake/docs/adr/0033-t.md')
+      expect(adr.status).toBe('Accepted')
+      expect(adr.parseWarnings.some(w => w.code === 'UNKNOWN_STATUS')).toBe(false)
+    })
+
+    it('bold and code placeholder wrappers peel ("**pending**", "`tbd`") — the N-layer generalization', () => {
+      for (const ph of ['**pending**', '`tbd`', '**_(pending)_**']) {
+        const adr = parseAdr(
+          `# ADR-0001: T\n\n## Questions\n\n### QST: X?\n- Status: unanswered\n\n**ANS:**\n${ph}\n`,
+          '/fake/docs/adr/0001-t.md',
+        )
+        expect(adr.questions[0].isAnswered, ph).toBe(false)
+      }
+    })
+
+    it('an attributed recommendation OWNS its "**Why**:" sub-fields — no beheading at bold-key lines (system3 ADR-0045, Sophist 4.5)', () => {
+      const content = `# ADR-0045: T
+
+## Questions
+
+### QST: System operations pattern — how to handle BYPASSRLS?
+- Status: unanswered
+
+**Recommendation** (by Sophist 4.5, 2026-07-22):
+
+**Option C for the valve; Option A for migrations.**
+
+**Why**:
+
+1. **Valve context**: Option C is the natural fit for Workers.
+2. **Migration context**: Option A is cleaner via prisma migrate deploy.
+
+**ANS:** (by Jérémie)
+[Fill this in]
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0045-t.md')
+      const rec = adr.questions[0].recommendations![0]
+      expect(rec.author).toBe('Sophist 4.5, 2026-07-22')
+      expect(rec.text).toContain('Option C for the valve')
+      expect(rec.text).toContain('**Why**:')
+      expect(rec.text).toContain('Migration context')
+      expect(adr.questions[0].rawBodyPost ?? '').not.toContain('Valve context')
+      // And the ANS marker still terminates the block.
+      expect(adr.questions[0].isAnswered).toBe(false)
+    })
+
+    it('the legacy single-paragraph form still stops at "**Caveat**:" — ADR-0010 greediness guard preserved', () => {
+      const content = `# ADR-0001: T\n\n## Questions\n\n### QST: X?\n- Status: unanswered\n\n**My recommendation**: Do the thing.\n\n**Caveat**: This should not be swallowed.\n\n**ANS:**\n[Fill this in]\n`
+      const adr = parseAdr(content, '/fake/docs/adr/0001-t.md')
+      expect(adr.questions[0].recommendation ?? '').not.toContain('Caveat')
+    })
+  })
+})
+
 describe('Status-authority (ADR-0031, ratified by Jérémie, implemented 2026-07-19)', () => {
   // The rule: a DECLARED `- Status:` line alone decides answered-ness; ANS
   // content is a draft until the author flips Status. Derived evidence

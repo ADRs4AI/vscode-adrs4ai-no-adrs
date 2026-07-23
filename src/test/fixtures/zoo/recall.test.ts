@@ -135,6 +135,13 @@ const CORPUS: Record<string, SpecimenTruth> = {
   // interpolation source. Fixed v0.7.22: full handle semantics + fix-it
   // warning; both specimen questions recall as open.
   'zoo-014-spaced-ordinal-qst-headings.md': { groundTruth: 2, baselineToday: 2 },
+  // Emphasized status keyword ("- Status: **answered** (…)") — caring-form
+  // ADR-0052 line 207, 2026-07-22. The leading-token check saw literal
+  // asterisks; under Status-authority the declared status is sovereign, so
+  // an emphatically-answered question showed OPEN forever. Fixed v0.7.25
+  // (stripInlineEmphasis at every keyword site): both questions read
+  // answered → 0 open, and that IS the ground truth.
+  'zoo-015-emphasized-status-value.md': { groundTruth: 0, baselineToday: 0 },
 }
 
 function listSpecimens(): string[] {

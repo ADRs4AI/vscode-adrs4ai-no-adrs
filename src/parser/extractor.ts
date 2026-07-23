@@ -255,7 +255,19 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
         break;
       }
       case 'status': {
-        result.status = value;
+        // Emphasis-robust enum (same class as the QST-level fix): a
+        // document Status of "**Accepted**" is Accepted. Stripped before
+        // the KNOWN check and before storage, so downstream consumers
+        // (statusEmoji, filters) key on the bare token.
+        const cleanedStatus = stripInlineEmphasis(value);
+        if (cleanedStatus !== value) {
+          result.warnings.push({
+            code: 'EMPHASIZED_STATUS_VALUE',
+            message: `ADR status "${value}" uses Markdown emphasis on the keyword. Recognized anyway (read as "${cleanedStatus}"). SUGGESTED: "- **Status**: ${cleanedStatus}"`,
+            line: token.line,
+          });
+        }
+        result.status = cleanedStatus;
         // INTENTIONALLY strict: do NOT add prefix-match tolerance here.
         // Even a "short" annotation like "Accepted (updated)" pollutes the status
         // taxonomy and sends the wrong signal — that ad-hoc annotations in the
@@ -264,10 +276,10 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
         // values and guides models toward structured alternatives (**Awaiting**:,
         // **Scope Remaining**:, etc.) instead of silently accepting them.
         // See: seed-2026-03-18-case-studies-on-models-experience-with-extension-feedback-ho.md
-        if (!KNOWN_STATUS_VALUES.includes(value)) {
+        if (!KNOWN_STATUS_VALUES.includes(cleanedStatus)) {
           result.warnings.push({
             code: 'UNKNOWN_STATUS',
-            message: `ADR status "${value}" is not a recognized value. Known statuses: ${KNOWN_STATUS_VALUES.join(', ')}.`,
+            message: `ADR status "${cleanedStatus}" is not a recognized value. Known statuses: ${KNOWN_STATUS_VALUES.join(', ')}.`,
             line: token.line,
           });
         }
@@ -673,6 +685,23 @@ export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:[-\s][^:]{0,64})?:/iu;
 // Leading-token match: the value must START with the canonical token
 // (word boundary), tolerating trailing annotation for display.
 const ANSWERED_LEADING_TOKEN_RE = /^answered\b/i;
+
+/**
+ * Markdown-emphasis robustness for KEYWORDS (Jérémie's ruling, 2026-07-22,
+ * caring-form ADR-0052: "- Status: **answered** (…)" read as open because
+ * the leading-token check saw literal asterisks — "we should be robust to
+ * formatting on the keyword. **accepted**, _accepted_ etc. should all be
+ * accepted"). This is a CLASS, not an instance: everywhere the grammar
+ * compares a token or enum value, authors will eventually emphasize it,
+ * because emphasis is how Markdown authors express "this word is load-
+ * bearing" — the exact words we're matching. One shared normalizer,
+ * applied at every keyword-comparison site (question status, document
+ * status, and via the wrapper-peeler for placeholders) — never at content
+ * sites, where asterisks are data.
+ */
+export function stripInlineEmphasis(text: string): string {
+  return text.replace(/[*_`]/g, '').replace(/\s{2,}/g, ' ').trim();
+}
 // Matches: - Why asking: value
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
 // Matches: - Why deferring: value — the template's OWN second QST subtype
@@ -809,10 +838,25 @@ export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pe
 export function stripPlaceholderWrapper(text: string): { inner: string; wrapped: boolean } {
   let s = text.trim();
   let wrapped = false;
-  const italic = s.match(/^([*_])(.+)\1$/);
-  if (italic) { s = italic[2].trim(); wrapped = true; }
-  const paren = s.match(/^\((.+)\)$/);
-  if (paren) { s = paren[1].trim(); wrapped = true; }
+  // N-layer peel (generalized 2026-07-22 with the emphasis-robustness
+  // class fix — originally two fixed layers, italic then paren, which
+  // missed bold ("**pending**") and code ("`tbd`") wrappers entirely, and
+  // any composition deeper than one of each). Wrappers compose in any
+  // order; peel until fixpoint.
+  const LAYERS: Array<[RegExp, number]> = [
+    [/^\*\*(.+)\*\*$/, 1],   // bold
+    [/^([*_])(.+)\1$/, 2],   // italic (either marker)
+    [/^`(.+)`$/, 1],          // inline code
+    [/^\((.+)\)$/, 1],        // parens
+  ];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [re, idx] of LAYERS) {
+      const m = s.match(re);
+      if (m) { s = m[idx].trim(); wrapped = true; changed = true; }
+    }
+  }
   return { inner: s, wrapped };
 }
 
@@ -945,8 +989,19 @@ export function extractQuestion(
     const statusMatch = line.match(STATUS_LINE_RE);
     // ADR-0012: trim to handle "- Status:  answered " with trailing/leading spaces
     if (statusMatch) {
-      statusText = statusMatch[1].trim();
+      const rawStatus = statusMatch[1].trim();
+      // Emphasis-robust keyword (ADR-0052 specimen): "**answered** (…)"
+      // must read as answered. Stored stripped — comparisons and display
+      // both want the words, not the styling.
+      statusText = stripInlineEmphasis(rawStatus);
       statusDeclared = true;
+      if (warnings && statusText !== rawStatus) {
+        warnings.push({
+          code: 'EMPHASIZED_STATUS_VALUE',
+          message: `Status value "${rawStatus}" uses Markdown emphasis on the keyword. Recognized anyway (read as "${statusText}") — no data lost — but tools key on the bare token. SUGGESTED: "- Status: ${statusText}"`,
+          line: absLine,
+        });
+      }
       inRecommendation = false; inWhyAsking = false; inNeed = false;
       if (warnings) {
         if (STATUS_LINE_BOLD_RE.test(line)) {
@@ -1046,8 +1101,16 @@ export function extractQuestion(
         if (recSpansParagraphs) { recommendationLines.push(''); continue; }
         inRecommendation = false; pastRecommendation = true; continue;
       }
-      // Stop at any new **Key**: block that isn't the ANS marker
-      if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
+      // Stop at any new **Key**: block that isn't the ANS marker — but ONLY
+      // for the legacy single-paragraph form. An ATTRIBUTED block (protocol
+      // or inline-attribution — recSpansParagraphs) owns its own structured
+      // sub-fields: system3 ADR-0045 (Sophist 4.5, 2026-07-22) organized a
+      // recommendation as pick + "**Why**:" + numbered items, and the
+      // ADR-0010-era bold-key stop beheaded it at "**Why**:", orphaning the
+      // entire justification as unstyled body. The greediness ADR-0010
+      // guarded against is a legacy-form problem; an attributed block ends
+      // at ANS, a new Recommendation marker, or the block's own extent.
+      if (!recSpansParagraphs && /^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
         inRecommendation = false; pastRecommendation = true;
         /* fall through — process this line normally */
       } else if (/^\*\*ANS:\*\*/.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
