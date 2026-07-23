@@ -33,12 +33,14 @@
  */
 
 import * as vscode from 'vscode'
+import * as path from 'path'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { CompositeIndex, RootNode } from '../index/compositeIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
 import { stripAdrNumberPrefix } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 import { pathFragmentFor } from './rootPathFragment'
+import { stableTreeItemId } from './treeItemIdentity'
 import { openQuestionCountForNode, QUESTION_SOURCES, type SourceInclusion } from '../index/questionSource'
 
 // ---------------------------------------------------------------------------
@@ -125,6 +127,13 @@ export class AdrTreeItem extends vscode.TreeItem {
     const label = AdrTreeItem.makeLabel(opts)
     super(label, collapsible)
 
+    // Stable identity across getChildren() calls. reveal() (expand-all) can
+    // only match an element to a rendered node through this — the provider
+    // recreates item objects on every call, so without an explicit id there
+    // is no identity for VS Code to match on and reveal() fails on every
+    // item. Must be unique tree-wide (duplicate ids are a rendering error).
+    this.id = AdrTreeItem.makeStableId(opts)
+
     this.kind = opts.kind
     this.adr = opts.adr
     this.question = opts.question
@@ -175,6 +184,23 @@ export class AdrTreeItem extends vscode.TreeItem {
     if (opts.kind === 'root' && opts.rootNode) {
       this.resourceUri = vscode.Uri.file(opts.rootNode.path)
     }
+  }
+
+  /** Unique tree-wide, stable across rebuilds — the pure mapping lives in
+   *  treeItemIdentity.ts so its uniqueness properties are unit-testable
+   *  behind the vscode-import wall. N=1 group items carry no rootNode —
+   *  their bare `kind:` form is still unique because there is only one such
+   *  group in an N=1 tree. Question ids are container-scoped, so the
+   *  container path prefix keeps them unique across files. */
+  private static makeStableId(opts: AdrTreeItemOpts): string {
+    return stableTreeItemId({
+      kind: opts.kind,
+      rootNodePath: opts.rootNode?.path,
+      adrPath: opts.adr?.path,
+      seedPath: opts.seed?.path,
+      questionContainerPath: opts.question?.adrPath,
+      questionId: opts.question?.id,
+    })
   }
 
   private static makeCollapsible(opts: AdrTreeItemOpts): vscode.TreeItemCollapsibleState {
@@ -380,6 +406,77 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
 
   getTreeItem(element: AdrTreeItem): vscode.TreeItem {
     return element
+  }
+
+  /**
+   * Required by `TreeView.reveal()` — the expand-all command is a chain of
+   * reveals, and VS Code walks this to locate each element's ancestry.
+   * Items are recreated per call; identity is carried by the stable
+   * `AdrTreeItem.id`, so returning a *fresh* parent object with the right
+   * id is sufficient and correct.
+   */
+  getParent(element: AdrTreeItem): AdrTreeItem | undefined {
+    const nodes = Array.from(this.composite.walk())
+    const multiRoot = nodes.length > 1
+    const workspaceRoot = this.composite.root.path
+
+    const rootItemFor = (node: RootNode | undefined): AdrTreeItem | undefined => {
+      if (!multiRoot || !node) return undefined
+      return new AdrTreeItem({
+        kind: 'root',
+        rootNode: node,
+        pathFragment: pathFragmentFor(node, workspaceRoot),
+        openCount: this.openQuestionCountFor(node),
+      })
+    }
+
+    // Deepest discovered root whose path prefixes p — mirrors the walker's
+    // own containment semantics (nested roots resolve to the nearest one).
+    const nodeContaining = (p: string): RootNode | undefined => {
+      let best: RootNode | undefined
+      for (const n of nodes) {
+        if (p === n.path || p.startsWith(n.path + path.sep)) {
+          if (!best || n.path.length > best.path.length) best = n
+        }
+      }
+      return best
+    }
+
+    switch (element.kind) {
+      case 'root':
+        return undefined
+      case 'open-questions-header':
+      case 'adr-group':
+      case 'seed-group':
+        return rootItemFor(element.rootNode)
+      case 'adr': {
+        if (!element.adr) return undefined
+        const node = nodeContaining(element.adr.path)
+        const count = node ? node.adrs.allAdrs().filter(a => !a.isSeed).length : 0
+        return new AdrTreeItem({ kind: 'adr-group', count, rootNode: multiRoot ? node : undefined })
+      }
+      case 'seed': {
+        if (!element.seed) return undefined
+        const node = nodeContaining(element.seed.path)
+        return new AdrTreeItem({ kind: 'seed-group', count: node?.seeds.size ?? 0, rootNode: multiRoot ? node : undefined })
+      }
+      case 'question': {
+        const containerPath = element.question?.adrPath
+        if (!containerPath) return undefined
+        const node = nodeContaining(containerPath)
+        const adr = node?.adrs.allAdrs().find(a => a.path === containerPath)
+        if (adr) {
+          return new AdrTreeItem({
+            kind: 'adr',
+            adr,
+            collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+          })
+        }
+        const seed = node?.seeds.allSeeds().find(s => s.path === containerPath)
+        if (seed) return new AdrTreeItem({ kind: 'seed', seed })
+        return undefined
+      }
+    }
   }
 
   getChildren(element?: AdrTreeItem): AdrTreeItem[] {
