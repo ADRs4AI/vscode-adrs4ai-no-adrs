@@ -14,6 +14,14 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 - Markdown emphasis on keywords no longer defeats recognition, as a class: `- Status: **answered**`, `_accepted_`, document-level `**Withdrawn**`, and bold/code-wrapped placeholders (`**pending**`, `` `tbd` ``) all read as their bare tokens, with a fix-it hint.
 - A recommendation with its own structured sub-headings (`**Why**:`, numbered points) is no longer cut off at the first one — an attributed recommendation block runs to its real end (the ANS marker, a new recommendation, or the question's boundary).
 
+## [0.7.29] - 2026-07-23
+
+### Fixed
+- Answering a question whose ANS block already holds an unconfirmed draft (open under Status-authority, e.g. legacy ADRs where Status was never flipped) now **replaces** the draft cleanly instead of prepending onto it — and on the compact `**ANS:** (by X) text…` one-line form, no longer destroys the draft's first line.
+
+### Added
+- When a question is open but carries an existing draft answer, the panel **prefills the answer box with it** ("Existing draft answer loaded — edit if needed, then Answer to confirm & close") — confirming a legacy draft becomes read, maybe edit, Cmd+Enter, and you can never type blind against invisible content.
+
 ## [0.7.28] - 2026-07-22
 
 ### Fixed
