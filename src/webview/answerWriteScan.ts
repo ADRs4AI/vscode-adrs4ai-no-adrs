@@ -16,12 +16,11 @@
  * questions the machinery then can't serve (the 0620 composition rule).
  */
 
-import { STATUS_LINE_RE } from '../parser/extractor'
+import { STATUS_LINE_RE, ANS_INLINE_RE } from '../parser/extractor'
 
 /** Thematic break — same boundary set as extractor.ts's THEMATIC_BREAK_RE. */
 const THEMATIC_BREAK_LINE_RE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/
 
-const ANS_HEADER_LINE_RE = /^\*\*ANS:\*\*/
 const FILL_PLACEHOLDER_LINE_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
 
 export interface AnswerWriteAnchors {
@@ -115,7 +114,11 @@ export function scanAnswerWriteAnchors(
       break
     }
     if (anchors.statusLineIdx === -1 && STATUS_LINE_RE.test(trimmed)) anchors.statusLineIdx = i
-    if (anchors.ansHeaderLineIdx === -1 && ANS_HEADER_LINE_RE.test(trimmed)) anchors.ansHeaderLineIdx = i
+    // LAST-wins (dialogue layering, system3 ADR-0033): the write target is
+    // the CURRENT slot — the last ANS marker in the block — never the
+    // first layer of a Q&A history. fill resets with each new marker so a
+    // placeholder is only honored under the marker it belongs to.
+    if (ANS_INLINE_RE.test(trimmed)) { anchors.ansHeaderLineIdx = i; anchors.fillLineIdx = -1 }
     if (
       anchors.fillLineIdx === -1 &&
       anchors.ansHeaderLineIdx !== -1 &&

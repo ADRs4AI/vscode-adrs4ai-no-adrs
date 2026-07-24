@@ -202,6 +202,69 @@ ${sameLineAns.join('\n')}
   })
 })
 
+describe('Regression tests: dialogue layering — answers stack, writes target the LAST slot (system3 ADR-0033, 2026-07-24)', () => {
+  // Minimized from the real specimen: rec -> ANS (Jérémie's hold) ->
+  // "Recommendation (updated)" -> "ANS (to the updated recommendation)"
+  // empty slot at EOF. Before this class landed, everything after the first
+  // ANS was swallowed into one blob (the panel showed a truncated "Hold —"
+  // as THE answer), Herald's updated recommendation was invisible, and a
+  // panel submit would have replaced the entire dialogue.
+  const DIALOGUE = `# ADR 0033: Team completism
+
+## Status meta
+
+### QST: The stated promotion trigger has fired — design now, hold, or fold?
+- Status: unanswered (added by the 2026-07-09 ORJ tour)
+
+**Recommendation**: (by Herald 5, 2026-07-09)
+
+**B — hold with the concrete trigger.**
+
+**ANS:** (by Jérémie Lumbroso — given in chat 2026-07-14, transcribed by Herald 5)
+Hold — "I'd like to put the Team completism a bit on hold, and tackle it as
+the last standing thing for full sync."
+
+**Recommendation (updated)**: (by Herald 5, 2026-07-24)
+
+**Your hold stands unchanged — but it's time to stop letting time-windowed analytics expire.**
+
+Recommend a ~20-line ride-along snapshot. This stops the bleeding while the hold holds.
+
+**ANS (to the updated recommendation):** (by Jérémie Lumbroso)
+`
+
+  it('the dialogue parses as layers: 2 recommendations (qualifier captured), 1 real answer, current answer = the OPEN slot (undefined)', () => {
+    const adr = parseAdr(DIALOGUE, '/fake/docs/adr/0033-t.md')
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(false) // declared unanswered; awaiting ANS-2
+    expect(q.recommendations).toHaveLength(2)
+    expect(q.recommendations![1].text).toContain('stops the bleeding')
+    expect(q.answers).toHaveLength(1)
+    expect(q.answers![0].text).toContain('last standing thing for full sync')
+    expect(q.answer).toBeUndefined() // last layer is the empty re-ask slot
+  })
+
+  it('the write anchors on the LAST ANS marker — the open slot, never the history', () => {
+    const lines = DIALOGUE.split('\n')
+    const start = lines.findIndex(l => l.startsWith('### QST:'))
+    const anchors = scanAnswerWriteAnchors(lines, start)
+    expect(lines[anchors.ansHeaderLineIdx]).toContain('to the updated recommendation')
+  })
+
+  it('applyAnswerQuestion fills the open slot and leaves the whole dialogue history intact', () => {
+    const adr = parseAdr(DIALOGUE, '/fake/docs/adr/0033-t.md')
+    const result = applyAnswerQuestion(DIALOGUE, '/fake/docs/adr/0033-t.md', adr.questions[0].id, 'Approved — ship the ride-along snapshot; the hold stands.', 'Jérémie')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.newContent).toContain('Approved — ship the ride-along snapshot')
+      // Every prior layer survives byte-for-byte intact:
+      expect(result.newContent).toContain('last standing thing for full sync')
+      expect(result.newContent).toContain('stops the bleeding while the hold holds')
+      expect(result.newContent).toContain('**B — hold with the concrete trigger.**')
+    }
+  })
+})
+
 describe('buildInsertionPreview (insertion-preview protocol, DEBRIEF-006 prevention)', () => {
   const lines = [
     'line0', 'line1', 'line2', 'line3', 'line4', 'line5', 'line6', 'line7', 'line8',

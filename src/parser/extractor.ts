@@ -639,7 +639,13 @@ export function buildSubsections(
 // recurred 2026-07-19 (HQ ADR-0015, six questions invisible) before the
 // fix actually shipped — see DEBRIEF-007 for the dispatch-aging lesson.
 // An empty/keyword-only capture is normalized to "no author" downstream.
-const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\b\s*([^)]*)\))?/;
+// Marker QUALIFIER (2026-07-24, system3 ADR-0033 dialogue specimen): the
+// wild layers Q&A rounds — "**ANS (to the updated recommendation):** (by
+// Jérémie)" / "**Recommendation (updated)**: (by Herald 5)". The
+// parenthetical INSIDE/beside the bold keyword is a qualifier (labels the
+// round), positionally distinct from the attribution parenthetical. In all
+// three markers: group 1 = qualifier, group 2 = attribution.
+export const ANS_INLINE_RE = /^\*\*ANS(?:\s*\(([^)]*)\))?:\*\*\s*(?:\((?:by|from)\b\s*([^)]*)\))?/;
 // ANS colon-outside-bold with inline attribution (Riddle 5's crossfoot
 // ADR-0029 specimen, 2026-07-14): "**ANS** (by Jérémie): text" — the
 // closing ** lands BEFORE the attribution and colon, mirroring the
@@ -655,7 +661,7 @@ const ANS_INLINE_RE = /^\*\*ANS:\*\*\s*(?:\((?:by|from)\b\s*([^)]*)\))?/;
 // colon — that structural position is unambiguously attribution (unlike a
 // parenthetical AFTER the marker, which can be content like "(see
 // ADR-14)"; that position stays keyword-required).
-const ANS_COLON_OUTSIDE_RE = /^\*\*ANS\*\*\s*(?:\((?:(?:by|from)\b\s*)?([^)]*)\))?:\s*/;
+const ANS_COLON_OUTSIDE_RE = /^\*\*ANS(?:\s*\(([^)]*)\))?\*\*\s*(?:\((?:(?:by|from)\b\s*)?([^)]*)\))?:\s*/;
 // Matches: - Status: value
 // Bold form ("- **Status**: value" — D2, Zoarium since March, crossfoot
 // ADR-0029 specimen) tolerated alongside plain form; group 1 is always the
@@ -729,7 +735,7 @@ const NEED_RE = /^-\s+Need:\s+(.+)$/;
 // between-bold-and-colon position rule as ANS_COLON_OUTSIDE_RE above; the
 // captured attribution drives extent parity (recSpansParagraphs) exactly
 // like the by/from form, per the v0.7.10 lesson.
-const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)\*\*(?:\s*\((?:(?:by|from)\s+)?([^)]+)\))?:\s*(.*)/;
+const RECOMMENDATION_RE = /^\*\*(?:My recommendation|Recommendation)(?:\s+\(([^)]+)\))?\*\*(?:\s*\((?:(?:by|from)\s+)?([^)]+)\))?:\s*(.*)/;
 // Protocol-form label lines carry only an attribution: "(by Fable 5, 2026-06-10)"
 // or "(from Sonnet 4.6)". Their body spans blank lines (paragraphs), unlike
 // legacy single-paragraph prose.
@@ -944,6 +950,17 @@ export function extractQuestion(
   let inWhyDeferring = false;
   let inNeed = false;
   const answerLines: string[] = [];
+  // Dialogue layering (system3 ADR-0033, 2026-07-24): a QST block can hold
+  // MULTIPLE answer rounds interleaved with updated recommendations
+  // (rec -> ANS -> "Recommendation (updated)" -> "ANS (to the updated
+  // recommendation)" ...). Each ANS marker starts a LAYER; a layer ends at
+  // the next ANS or Recommendation marker. `answers` keeps the real
+  // layers in order; `answer` (singular, back-compat) is the CURRENT
+  // verdict: the last layer if real, undefined if the last layer is an
+  // empty/placeholder slot (a re-ask awaiting its answer — which also
+  // makes derived answered-ness correctly false for statusless files).
+  const answerLayers: { qualifier?: string; author?: string; text: string; line: number; isReal: boolean }[] = [];
+  let answerQualifier: string | undefined;
   const recommendationLines: string[] = [];
   // ADR-0019: index into recommendationLines where each new
   // **Recommendation**:/**My recommendation**: block starts, so the flat
@@ -953,19 +970,61 @@ export function extractQuestion(
   // protocol form (attribution-only first line), the marker's source line,
   // and an inline attribution captured directly off the marker line itself
   // (see inlineAttribution note at RECOMMENDATION_RE).
-  const recommendationBlockMeta: { protocolForm: boolean; line: number; inlineAttribution?: string }[] = [];
+  const recommendationBlockMeta: { protocolForm: boolean; line: number; inlineAttribution?: string; qualifier?: string }[] = [];
   const rawBodyLinesPre: string[] = [];
   const rawBodyLinesPost: string[] = [];
   let answerAuthor: string | undefined;
   let answerLine: number | undefined;
+
+  // Classify + close the current answer layer (placeholder logic identical
+  // to the historical single-answer path — one classifier, N layers).
+  const finalizeAnswerLayer = (): void => {
+    if (answerLine === undefined) return;
+    while (answerLines.length > 0) {
+      const last = answerLines[answerLines.length - 1].trim();
+      if (last === '---' || last === '') answerLines.pop();
+      else break;
+    }
+    const answerText = answerLines.join('\n').trim();
+    const isCanonicalPlaceholder = PLACEHOLDER_CANONICAL_RE.test(answerText);
+    const isSynonymPlaceholder = !isCanonicalPlaceholder &&
+      (PLACEHOLDER_SYNONYM_RE.test(answerText) || PLACEHOLDER_EMPTY_RE.test(answerText));
+    const strippedAnswer = stripPlaceholderWrapper(answerText);
+    const isWrappedPlaceholder = !isCanonicalPlaceholder && !isSynonymPlaceholder &&
+      strippedAnswer.wrapped && PLACEHOLDER_LEXICON_RE.test(strippedAnswer.inner);
+    if ((isSynonymPlaceholder || isWrappedPlaceholder) && warnings) {
+      warnings.push({
+        code: 'NONSTANDARD_FILL_PLACEHOLDER',
+        message: `The QST heading and structure here are correct — the placeholder text just isn't the canonical one. "${answerText}" was recognized as an unanswered placeholder (not a real answer), but the canonical form is "[Fill this in]" on its own line after "**ANS:**". SUGGESTED: **ANS:**\n[Fill this in]`,
+        line: answerLine,
+      });
+    }
+    const isReal = !!answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder;
+    answerLayers.push({ qualifier: answerQualifier, author: answerAuthor, text: answerText, line: answerLine, isReal });
+    answerLines.length = 0;
+    answerQualifier = undefined;
+    answerAuthor = undefined;
+    answerLine = undefined;
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     const absLine = section.lineStart + i + 1;
 
     if (inAnswer) {
-      answerLines.push(lines[i]);
-      continue;
+      // A new ANS marker or a Recommendation marker ends the current layer
+      // (an attributed block ends at the next attributed block — the same
+      // rule recommendations follow). Anything else belongs to the layer.
+      if (ANS_INLINE_RE.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
+        finalizeAnswerLayer();
+        inAnswer = false; // fall through to the ANS-start handler below
+      } else if (RECOMMENDATION_RE.test(line) || RECOMMENDATION_BULLET_RE.test(line)) {
+        finalizeAnswerLayer();
+        inAnswer = false; // fall through — the rec handlers below take it
+      } else {
+        answerLines.push(lines[i]);
+        continue;
+      }
     }
 
     // Multi-line field continuation: an indented line (starts with whitespace)
@@ -1040,8 +1099,9 @@ export function extractQuestion(
       // Each marker also opens a new block boundary (see recommendations[] below).
       inRecommendation = true;
       recommendationBlockStarts.push(recommendationLines.length);
-      const inlineAttribution = recMatch[1]?.trim();
-      const firstLine = recMatch[2].trim();
+      const recQualifier = recMatch[1]?.trim();
+      const inlineAttribution = recMatch[2]?.trim();
+      const firstLine = recMatch[3].trim();
       recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
       // Rec-extent escape (Lapidary 5, 2026-07-13, inbox-alchemy ADR-0022
       // specimen): v0.7.5's inline-attribution tolerance ("**Recommendation**
@@ -1055,7 +1115,7 @@ export function extractQuestion(
       // possibly multi-paragraph recommendation as the protocol form's own
       // attribution line — extent parity, not just form tolerance.
       recSpansParagraphs = recProtocolForm || !!inlineAttribution;
-      recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine, inlineAttribution });
+      recommendationBlockMeta.push({ protocolForm: recProtocolForm, line: absLine, inlineAttribution, qualifier: recQualifier });
       if (firstLine) recommendationLines.push(firstLine);
       continue;
     }
@@ -1110,10 +1170,10 @@ export function extractQuestion(
       // entire justification as unstyled body. The greediness ADR-0010
       // guarded against is a legacy-form problem; an attributed block ends
       // at ANS, a new Recommendation marker, or the block's own extent.
-      if (!recSpansParagraphs && /^\*\*[A-Z][^*]+\*\*:/.test(line) && !/^\*\*ANS:\*\*/.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
+      if (!recSpansParagraphs && /^\*\*[A-Z][^*]+\*\*:/.test(line) && !ANS_INLINE_RE.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
         inRecommendation = false; pastRecommendation = true;
         /* fall through — process this line normally */
-      } else if (/^\*\*ANS:\*\*/.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
+      } else if (ANS_INLINE_RE.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
         // The colon-outside-bold ANS form ("**ANS** (by X): text") has no
         // "**:" immediately after the bold span, so the bold-key check above
         // never fires for it either — without this explicit check it fell
@@ -1135,7 +1195,8 @@ export function extractQuestion(
       // normalizes to no author (the scaffold's blank, not a name). The
       // parenthetical is still CONSUMED by the marker match, which is the
       // actual fix: "(by )" must never fall through into answer content.
-      const rawAuthor = matched[1]?.trim();
+      answerQualifier = matched[1]?.trim() || undefined;
+      const rawAuthor = matched[2]?.trim();
       answerAuthor = rawAuthor && !/^(?:by|from)$/i.test(rawAuthor) ? rawAuthor : undefined;
       answerLine = absLine;
       // Collect any text on the same line after the ANS marker
@@ -1145,7 +1206,7 @@ export function extractQuestion(
       if (ansColonOutsideMatch && warnings) {
         warnings.push({
           code: 'NONCANONICAL_ANS_MARKER',
-          message: `ANS marker "${line.trim().slice(0, 60)}${line.trim().length > 60 ? '…' : ''}" was recognized, but written with the colon outside the bold span ("**ANS**${matched[1] ? ' (by ' + matched[1] + ')' : ''}:") instead of the canonical "**ANS:**${matched[1] ? ' (by ' + matched[1] + ')' : ''}" form. Recognized anyway — no data lost. SUGGESTED: "**ANS:**${matched[1] ? ' (by ' + matched[1] + ')' : ''}"`,
+          message: `ANS marker "${line.trim().slice(0, 60)}${line.trim().length > 60 ? '…' : ''}" was recognized, but written with the colon outside the bold span instead of the canonical "**ANS:**${matched[2] ? ' (by ' + matched[2] + ')' : ''}" form. Recognized anyway — no data lost. SUGGESTED: "**ANS:**${matched[2] ? ' (by ' + matched[2] + ')' : ''}"`,
           line: absLine,
         });
       }
@@ -1179,40 +1240,15 @@ export function extractQuestion(
   const rawBody = rawBodyLinesPre.length > 0 ? unwrapListItems(rawBodyLinesPre).join('\n') : undefined
   const rawBodyPost = rawBodyLinesPost.length > 0 ? unwrapListItems(rawBodyLinesPost).join('\n') : undefined
 
-  if (answerLines.length > 0) {
-    // Strip trailing horizontal rules and blank lines (--- separators between sections
-    // are included in the section body and leak into the answer text)
-    while (answerLines.length > 0) {
-      const last = answerLines[answerLines.length - 1].trim();
-      if (last === '---' || last === '') answerLines.pop();
-      else break;
-    }
-    const answerText = answerLines.join('\n').trim();
-    // ADR-0012: Tolerant placeholder matching — treat "[Fill this in]" variants as no-answer.
-    const isCanonicalPlaceholder = PLACEHOLDER_CANONICAL_RE.test(answerText);
-    // D9.4: a non-canonical stock token ("[unanswered]" etc.) is ALSO not a
-    // real answer, but — unlike the canonical form — it's a deviation worth
-    // surfacing: the model structured the QST correctly, it just reached
-    // for the wrong bracketed word. Never silent (Postel + DMA).
-    const isSynonymPlaceholder = !isCanonicalPlaceholder &&
-      (PLACEHOLDER_SYNONYM_RE.test(answerText) || PLACEHOLDER_EMPTY_RE.test(answerText));
-    // D9.4 morphology #4: bracket-free, italic/paren-wrapped stock words
-    // ("_(pending)_", "(pending)", "*(TBD)*", "_todo_") — see
-    // PLACEHOLDER_LEXICON_RE/stripPlaceholderWrapper() above.
-    const strippedAnswer = stripPlaceholderWrapper(answerText);
-    const isWrappedPlaceholder = !isCanonicalPlaceholder && !isSynonymPlaceholder &&
-      strippedAnswer.wrapped && PLACEHOLDER_LEXICON_RE.test(strippedAnswer.inner);
-    if ((isSynonymPlaceholder || isWrappedPlaceholder) && warnings) {
-      warnings.push({
-        code: 'NONSTANDARD_FILL_PLACEHOLDER',
-        message: `The QST heading and structure here are correct — the placeholder text just isn't the canonical one. "${answerText}" was recognized as an unanswered placeholder (not a real answer), but the canonical form is "[Fill this in]" on its own line after "**ANS:**". SUGGESTED: **ANS:**\n[Fill this in]`,
-        line: answerLine,
-      });
-    }
-    if (answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder) {
-      answer = { text: answerText, author: answerAuthor, line: answerLine! };
-    }
+  finalizeAnswerLayer();
+  const realLayers = answerLayers.filter(l => l.isReal);
+  const lastLayer = answerLayers[answerLayers.length - 1];
+  if (lastLayer?.isReal) {
+    answer = { text: lastLayer.text, author: lastLayer.author, line: lastLayer.line };
   }
+  const answers = realLayers.length > 0
+    ? realLayers.map(l => ({ qualifier: l.qualifier, author: l.author, text: l.text, line: l.line }))
+    : undefined;
 
   // ADR-0012: Case-insensitive, trimmed comparison — human-typed values like "Answered" should work.
   // Leading-token match (not exact-match) tolerates a trailing annotation
@@ -1301,6 +1337,7 @@ export function extractQuestion(
     rawBody,
     rawBodyPost,
     answer,
+    answers,
     adrNumber,
     adrPath,
     lineStart: section.lineStart,

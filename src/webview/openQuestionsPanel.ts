@@ -1571,6 +1571,18 @@ function toggleExpandField() {
 }
 $id('expand-field').addEventListener('click', e => { e.preventDefault(); toggleExpandField(); });
 
+// Draft-vs-file swap (delegated: the link is re-created per render)
+$id('draft-restored').addEventListener('click', e => {
+  if (!(e.target && e.target.id === 'load-file-answer')) return;
+  e.preventDefault();
+  const q = questions[idx];
+  if (!q || !q.existingAnswer) return;
+  $id('ans').value = q.existingAnswer;
+  $id('ans').dispatchEvent(new Event('input')); // autosave takes the swap as the new draft
+  $id('draft-restored').textContent = 'File answer loaded — edit if needed, then Answer to confirm & close';
+  $id('ans').focus();
+});
+
 $id('btn-ans').addEventListener('click', submit);
 $id('open-in-file').addEventListener('click', e => {
   e.preventDefault();
@@ -1835,7 +1847,19 @@ function render() {
     if (q.draftText) {
       $id('ans').value = q.draftText;
       const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
-      $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
+      // Draft-vs-file coexistence (Jérémie's clobber report, 2026-07-24): a
+      // stale two-word vault draft silently SHADOWED the file's real answer
+      // and replaced it on submit. In-progress drafts still win the prefill
+      // (the vault protects live typing — the DEBRIEF-001/003/004 lineage),
+      // but the shadowing is now VISIBLE with a one-click swap. Nothing is
+      // silently preferred in either direction.
+      if (q.existingAnswer && q.existingAnswer !== q.draftText) {
+        $id('draft-restored').innerHTML = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '') +
+          ' · the file also holds an existing answer (' + q.existingAnswer.length + ' chars) — ' +
+          '<a id="load-file-answer" role="button" style="cursor:pointer">load file answer instead</a>';
+      } else {
+        $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
+      }
       $id('draft-restored').style.display = 'block';
     } else if (q.existingAnswer) {
       // Status-authority draft state (Jérémie's ask, 2026-07-23, elenchus

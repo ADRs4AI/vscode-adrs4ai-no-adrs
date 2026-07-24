@@ -19,7 +19,7 @@
 // consumers") — it tolerates the bold `- **Status**:` form the private
 // `/^- Status:/` copy here couldn't see, which left Status un-flipped on
 // bold-form files (the D2 write-back class) even when the answer wrote fine.
-import { parseAdr, STATUS_LINE_RE } from '../parser/extractor'
+import { parseAdr, STATUS_LINE_RE, ANS_INLINE_RE } from '../parser/extractor'
 import type { AdrIteration, AdrFile, Question } from '../parser/types'
 import { findSectionForQuestion } from './reference'
 
@@ -87,7 +87,6 @@ export function verifyNoCollateralQuestionChanges(
   return { ok: true, after }
 }
 
-const ANS_HEADER_RE = /^\*\*ANS:\*\*/
 const FILL_PLACEHOLDER_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
 
 /**
@@ -135,7 +134,8 @@ export function applyAnswerQuestion(
   for (let i = start; i < end; i++) {
     const trimmed = lines[i].trim()
     if (STATUS_LINE_RE.test(trimmed) && statusLineIdx === -1) statusLineIdx = i
-    if (ANS_HEADER_RE.test(trimmed) && ansHeaderLineIdx === -1) ansHeaderLineIdx = i
+    // LAST-wins + fill reset (dialogue layering — see answerWriteScan.ts)
+    if (ANS_INLINE_RE.test(trimmed)) { ansHeaderLineIdx = i; fillLineIdx = -1 }
     if (FILL_PLACEHOLDER_RE.test(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
   }
 
@@ -196,7 +196,7 @@ export function applyAddRecommendation(
   let ansHeaderLineIdx = -1
   for (let i = start; i < end; i++) {
     const trimmed = lines[i].trim()
-    if (ANS_HEADER_RE.test(trimmed)) { ansHeaderLineIdx = i; break }
+    if (ANS_INLINE_RE.test(trimmed)) { ansHeaderLineIdx = i; break }
   }
   if (ansHeaderLineIdx === -1) {
     return { ok: false, error: `Could not find a **ANS:** block near line ${question.lineStart} in ${adrPath} to insert the recommendation before — this question may use a non-standard format.` }

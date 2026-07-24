@@ -8,6 +8,13 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.32] - 2026-07-24
+
+### Added
+- **Answer dialogues parse as layers**: a question holding multiple Q&A rounds — answer, then `**Recommendation (updated)**:`, then `**ANS (to the updated recommendation):**` — now yields every recommendation and every answer round separately (with their round labels), instead of one truncated blob. An empty trailing ANS slot reads as "re-asked, awaiting" — the question stays open with its history intact.
+- **Answering writes into the latest slot only** — the dialogue history is never replaced by a new answer, in both the panel and the MCP write path.
+- When a local draft and an existing file answer both exist, the panel says so and offers **"load file answer instead"** — nothing is silently preferred in either direction (fixes a stale two-word draft silently shadowing, then replacing, a full file answer).
+
 ## [0.7.31] - 2026-07-24
 
 ### Added

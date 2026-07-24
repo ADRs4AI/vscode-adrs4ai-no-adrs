@@ -185,6 +185,16 @@ export interface Question {
    *  the recommendation's blank-line stop and before **ANS:**. */
   rawBodyPost?: string;
   answer?: QuestionAnswer;
+  /**
+   * Dialogue layering (system3 ADR-0033, 2026-07-24): all REAL answer
+   * rounds, in document order, each optionally qualified ("to the updated
+   * recommendation") and attributed. `answer` above stays the CURRENT
+   * verdict — the last layer when real, undefined when the last layer is
+   * an empty/placeholder slot (a re-ask awaiting its answer). Renderers
+   * show `answer` prominently and may collapse earlier layers, mirroring
+   * the stacked-recommendations display.
+   */
+  answers?: { qualifier?: string; author?: string; text: string; line: number }[];
   adrNumber: number;
   adrPath: string;
   /** Line number of the ### QST: heading */
