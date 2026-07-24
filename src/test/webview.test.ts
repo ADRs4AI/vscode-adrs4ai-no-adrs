@@ -94,6 +94,18 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('.recommendation.rec-recent{')
   })
 
+  it('expand-field affordance: link on the hint line, class toggle on the SAME textarea, Cmd+Shift+E (system3 ADR-0017 case study, 2026-07-24)', () => {
+    const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+    const script = match![1]
+    expect(PANEL_SRC).toMatch(/id="expand-field"/)
+    expect(PANEL_SRC).toContain('textarea.expanded{')
+    expect(script).toContain('function toggleExpandField()')
+    expect(script).toContain("classList.toggle('expanded')")
+    // Same element grows — value/cursor/draft autosave untouched; no
+    // second editor surface that could fork the draft.
+    expect(script).not.toContain('createElement(\'textarea\')')
+  })
+
   it('ADR-0023: auto-saves a draft (debounced) on textarea input', () => {
     const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
     const script = match![1]

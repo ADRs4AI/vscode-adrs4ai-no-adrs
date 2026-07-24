@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.31] - 2026-07-24
+
+### Added
+- **Expand field ⤢** link on the answer box's hint line (and Cmd+Shift+E): grows the field to fill most of the panel, so a long existing answer-thread — the system3 case where a 6,900-character discussion read as "unanswered" through a small box — is readable and editable in place. Same field, same draft; toggle back with Collapse ⤡.
+
 ## [0.7.30] - 2026-07-24
 
 ### Added

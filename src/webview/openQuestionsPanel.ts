@@ -993,6 +993,19 @@ textarea{
   line-height:1.6;resize:vertical;outline:none;
 }
 textarea:focus{border-color:var(--vscode-focusBorder)}
+/* Expand-field affordance (Jérémie, 2026-07-24, system3 ADR-0017 case
+   study: a 6,900-char answer-thread in a 110px porthole reads as absence —
+   "by rendering it at all, it would inform me that this is not an
+   'unanswered' question but one of the most complex threads"). Expanded
+   mode grows the SAME element (value, cursor, drafts untouched) to fill
+   most of the panel viewport. */
+textarea.expanded{min-height:70vh;height:70vh}
+.hint{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.hint .expand-link{
+  cursor:pointer;text-decoration:none;white-space:nowrap;
+  color:var(--vscode-textLink-foreground);
+}
+.hint .expand-link:hover{text-decoration:underline}
 /* ADR-0023: draft restored indicator — grey, never red (penn-cv 039 It.5) */
 .draft-restored{
   font-size:11px;
@@ -1201,7 +1214,7 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
   <div class="draft-restored" id="draft-restored" style="display:none"></div>
-  <div class="hint">Cmd+Enter to submit · Skip to come back later</div>
+  <div class="hint"><span>Cmd+Enter to submit · Skip to come back later</span><a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a></div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
@@ -1541,7 +1554,22 @@ $id('author').addEventListener('input', () => {
 // Cmd/Ctrl+Enter submits
 $id('ans').addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'e' || e.key === 'E')) { e.preventDefault(); toggleExpandField(); }
 });
+
+// Expand-field affordance (system3 ADR-0017 case study): grow the SAME
+// textarea — value, cursor, draft autosave all untouched — so a long
+// existing thread (6,900 chars in that specimen) is readable in place
+// instead of glimpsed through a 110px porthole. Toggle survives question
+// navigation deliberately: if you expanded to read one long thread, the
+// next long thread is probably why you're here.
+function toggleExpandField() {
+  const ta = $id('ans');
+  const expanded = ta.classList.toggle('expanded');
+  $id('expand-field').textContent = expanded ? 'Collapse field ⤡' : 'Expand field ⤢';
+  ta.focus();
+}
+$id('expand-field').addEventListener('click', e => { e.preventDefault(); toggleExpandField(); });
 
 $id('btn-ans').addEventListener('click', submit);
 $id('open-in-file').addEventListener('click', e => {
