@@ -46,11 +46,25 @@ export interface DraftRecord {
    * different physical question than the one this draft was written for.
    */
   totalOccurrences: number
+  /**
+   * Provenance (Jérémie, 2026-07-24, the clobber matrix's multi-window
+   * square): which surface wrote this draft — 'panel' (typed in the Open
+   * Questions dialog), 'file-prefill' (loaded/swapped from the file's
+   * existing answer), 'mobile', 'mcp', ... Free-form by design; renderers
+   * display it, the vault never interprets it.
+   */
+  source?: string
 }
 
 export interface ArchivedDraftRecord extends DraftRecord {
   archivedAt: string
-  reason: 'promoted' | 'replaced'
+  /**
+   * 'clobbered' (2026-07-24, the solemn promise — ADR-0023): this content
+   * was overwritten by a save whose author had NEVER SEEN it (compare-and-
+   * swap mismatch, e.g. two Open Questions windows racing). Marked
+   * distinctly so it is never mistaken for ordinary typing history.
+   */
+  reason: 'promoted' | 'replaced' | 'clobbered'
 }
 
 const MAX_HISTORY = 10
@@ -232,6 +246,7 @@ export class DraftStore {
     draftText: string,
     now: string,
     totalOccurrences = 1,
+    opts: { source?: string; expectedPrevText?: string } = {},
   ): void {
     this.reload()
     const existing = this.drafts.get(key)
@@ -239,6 +254,27 @@ export class DraftStore {
 
     if (existing && !sameQuestion) {
       this.archive.push({ ...existing, archivedAt: now, reason: 'replaced' })
+    }
+
+    // The solemn promise (ADR-0023, 2026-07-24): whenever a save would
+    // destroy same-question content its author never saw — detected by
+    // compare-and-swap, no heuristics: the caller declares what it thinks
+    // it is replacing (expectedPrevText), and a mismatch means another
+    // window/surface wrote in between — the about-to-be-clobbered content
+    // is archived FIRST, marked 'clobbered', never folded into typing
+    // history. The save still proceeds (the vault never loses either
+    // side); surfaces build their keep/update/diff UX on top of this
+    // guarantee, but the guarantee itself lives here, beneath every
+    // surface, including ones not written yet.
+    let clobberBackedUp = false
+    if (
+      existing && sameQuestion &&
+      opts.expectedPrevText !== undefined &&
+      existing.draftText !== opts.expectedPrevText &&
+      existing.draftText !== draftText
+    ) {
+      this.archive.push({ ...existing, archivedAt: now, reason: 'clobbered' })
+      clobberBackedUp = true
     }
 
     const history = sameQuestion
@@ -249,9 +285,10 @@ export class DraftStore {
     // the moment this key is touched again, no migration script needed.
     this.drafts.set(key, {
       key, adrPath: this.canonicalAdrPath(adrPath), adrNumber, questionText, draftText, updatedAt: now, history, totalOccurrences,
+      ...(opts.source ? { source: opts.source } : {}),
     })
     this.persistDrafts()
-    if (existing && !sameQuestion) this.persistArchive()
+    if ((existing && !sameQuestion) || clobberBackedUp) this.persistArchive()
   }
 
   /**

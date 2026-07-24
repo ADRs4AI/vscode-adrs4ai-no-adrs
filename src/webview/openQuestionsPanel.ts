@@ -114,7 +114,7 @@ type WebviewMessage =
     }
   | { type: 'skip' }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
-  | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string; totalOccurrences: number }
+  | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string; totalOccurrences: number; prevDraftText?: string }
   | { type: 'refreshRequest' }
   | { type: 'ready' }
   /** Persistent save-failure warning (Lapidary 5, 2026-07-16): "Save now" retry. */
@@ -360,6 +360,12 @@ export class OpenQuestionsPanel {
         this.draftStore.save(
           msg.draftKey, msg.adrPath, msg.adrNumber, msg.questionText, msg.draftText,
           new Date().toISOString(), msg.totalOccurrences,
+          // Provenance + the CAS clobber fence (ADR-0023's solemn promise):
+          // prevDraftText is what THIS window believes it is replacing —
+          // a vault mismatch means another window/surface wrote in
+          // between, and the vault archives that content marked
+          // 'clobbered' before accepting this save.
+          { source: 'panel', expectedPrevText: msg.prevDraftText },
         )
         break
       case 'refreshRequest':
@@ -1301,6 +1307,7 @@ let pendingInsertionConfirm = null;
 // the selection). Track which question's draftKey is currently shown so
 // render() can tell "new question, restore is correct" apart from "same
 // question, a page repaint, leave the live textarea alone."
+let lastSentDraftText = undefined;
 let loadedFileChecksum = null;
 let loadedExistingAnswer = '';
 let lastShownDraftKey;
@@ -1748,7 +1755,9 @@ $id('ans').addEventListener('input', () => {
     vscode.postMessage({
       type: 'draft', draftKey: q.draftKey, adrPath: q.adrPath, adrNumber: q.adrNumber,
       questionText: q.text, draftText: val, totalOccurrences: q.totalOccurrences,
+      prevDraftText: lastSentDraftText,
     });
+    lastSentDraftText = val;
     $id('draft-flash').style.display = 'inline-flex';
     setTimeout(() => { $id('draft-flash').style.display = 'none'; }, 900);
   }, 500);
@@ -1897,6 +1906,7 @@ function render() {
       $id('draft-restored').style.display = 'none';
     }
     lastShownDraftKey = q.draftKey;
+    lastSentDraftText = $id('ans').value; // '' is an opinion: 'I loaded an empty slot' — the CAS fence needs it
     loadedFileChecksum = q.fileChecksum;
     loadedExistingAnswer = q.existingAnswer || '';
   } else if (q.fileChecksum !== loadedFileChecksum && (q.existingAnswer || '') !== loadedExistingAnswer) {

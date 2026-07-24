@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.34] - 2026-07-24
+
+### Added
+- **The solemn promise**: whenever a draft save would overwrite same-question content its author never saw (two Open Questions windows racing, or any future surface), the overwritten content is archived first, marked `clobbered` — distinct from typing history, never lost. Detection is compare-and-swap (each save declares what it believes it's replacing), so there are no heuristics to be wrong. Drafts also record their provenance (`source`: panel, file-prefill, mobile, …).
+
 ## [0.7.33] - 2026-07-24
 
 ### Added

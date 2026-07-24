@@ -25,6 +25,45 @@ import { parseAdr } from '../parser/extractor'
 // draftKey.ts
 // ---------------------------------------------------------------------------
 
+describe("Regression tests: the solemn promise — clobber-with-marked-backup (multi-window square, 2026-07-24)", () => {
+  // Jérémie's principle, verbatim: "WHENEVER we DO clobber, we do so with a
+  // backup — importantly, this saved backup should be marked as 'clobbered'
+  // so it isn't mistaken as typing history." Detection is compare-and-swap:
+  // the caller declares expectedPrevText; a vault mismatch means another
+  // window/surface wrote in between.
+  it("a CAS-mismatched save archives the unseen content marked 'clobbered' — never folded into typing history", async () => {
+    const os = await import('node:os'); const fs = await import('node:fs'); const path = await import('node:path')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clobber-'))
+    const { DraftStore } = await import('../drafts/draftStore')
+    const store = new DraftStore(dir)
+    const K = '/repo/docs/adr/0001-x.md::abc::0'
+    // Window A types a long draft.
+    store.save(K, '/repo/docs/adr/0001-x.md', 1, 'Q?', 'window A long careful draft', '2026-07-24T10:00:00Z', 1, { source: 'panel', expectedPrevText: undefined })
+    // Window B — which loaded BEFORE A saved, into an empty box (its honest
+    // declaration is expectedPrevText: '') — saves two words.
+    store.save(K, '/repo/docs/adr/0001-x.md', 1, 'Q?', 'two words', '2026-07-24T10:01:00Z', 1, { source: 'panel', expectedPrevText: '' })
+    const clobbered = store.allArchived().filter(a => a.reason === 'clobbered')
+    expect(clobbered).toHaveLength(1)
+    expect(clobbered[0].draftText).toBe('window A long careful draft')
+    // The winning save still landed (the vault never loses either side).
+    expect(store.get(K)?.draftText).toBe('two words')
+    // Provenance recorded.
+    expect(store.get(K)?.source).toBe('panel')
+  })
+
+  it('an ordinary typing continuation (CAS matches) stays in history, NOT the clobber archive', async () => {
+    const os = await import('node:os'); const fs = await import('node:fs'); const path = await import('node:path')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clobber-'))
+    const { DraftStore } = await import('../drafts/draftStore')
+    const store = new DraftStore(dir)
+    const K = '/repo/docs/adr/0001-x.md::abc::0'
+    store.save(K, '/repo/docs/adr/0001-x.md', 1, 'Q?', 'hello', '2026-07-24T10:00:00Z', 1, { source: 'panel' })
+    store.save(K, '/repo/docs/adr/0001-x.md', 1, 'Q?', 'hello world', '2026-07-24T10:00:01Z', 1, { source: 'panel', expectedPrevText: 'hello' })
+    expect(store.allArchived().filter(a => a.reason === 'clobbered')).toHaveLength(0)
+    expect(store.get(K)?.history).toContain('hello')
+  })
+})
+
 describe('normalizeQuestionText', () => {
   it('trims, collapses whitespace, and lowercases', () => {
     expect(normalizeQuestionText('  What   is the  Scope?  ')).toBe('what is the scope?')
