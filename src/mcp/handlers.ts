@@ -33,6 +33,14 @@ function bracket(ref: string): string {
 export interface ProjectOverviewOptions {
   includeSeeds?: boolean
   tokenBudget?: number
+  /** ISO timestamp of when the corpus was scanned. Caller-supplied (the
+   * server process knows its own scan time; handlers.ts stays pure/no-Date). */
+  scannedAt?: string
+  /** Server/parser version — identical calls can differ across time not
+   * because the corpus drifted but because the reader (parser) did; see
+   * elenchus's 2026-07-23 feedback (68→65 delta traced to v0.7.27's
+   * emphasis-robust status parsing, not corpus change). */
+  serverVersion?: string
 }
 
 /**
@@ -57,6 +65,7 @@ export function projectOverview(ctx: RepositoryContext, options: ProjectOverview
   lines.push(
     `${adrs.length} ADRs, ${seeds.length} seeds — ${openQuestionTotal} open questions across ${adrsWithOpenQuestions.length} ADRs`,
   )
+  lines.push(`scanned_at: ${options.scannedAt ?? '[unset]'} | version: ${options.serverVersion ?? '[unset]'}`)
 
   lines.push('--- adrs ---')
   for (const adr of adrs) {

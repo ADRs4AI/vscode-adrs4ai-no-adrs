@@ -169,6 +169,19 @@ describe('projectOverview (Tier 0)', () => {
     expect(result).toContain('0 seeds')
   })
 
+  it('stamps scanned_at and version when supplied, so identical corpora read at different times/versions are distinguishable (elenchus 2026-07-23: a 68->65 delta was the parser changing, not the corpus — nothing in the output said so)', () => {
+    const result = projectOverview(makeMockContext([makeAdr()]), {
+      scannedAt: '2026-07-23T22:00:00.000Z',
+      serverVersion: '0.7.27',
+    })
+    expect(result).toContain('scanned_at: 2026-07-23T22:00:00.000Z | version: 0.7.27')
+  })
+
+  it('marks scanned_at/version as [unset] rather than omitting them when the caller does not supply them', () => {
+    const result = projectOverview(makeMockContext([makeAdr()]))
+    expect(result).toContain('scanned_at: [unset] | version: [unset]')
+  })
+
   it('sorts ADRs by number regardless of index insertion order', () => {
     const adrs = [makeAdr({ number: 9, title: 'Ninth' }), makeAdr({ number: 2, title: 'Second' })]
     const result = projectOverview(makeMockContext(adrs))

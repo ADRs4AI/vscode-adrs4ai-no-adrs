@@ -32,6 +32,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import * as path from 'path'
+import * as fs from 'fs'
 import { CompositeIndex } from '../index/compositeIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import {
@@ -50,17 +51,40 @@ function text(value: string) {
   return { content: [{ type: 'text' as const, text: value }] }
 }
 
+// Read from the package alongside this file rather than a bundled JSON
+// import — this file ships as a single portable CJS bundle (dist/mcp-server.js)
+// and the repo's package.json is its only reliable version source at runtime.
+// Falls back to 'unknown' rather than throwing: a missing version stamp is
+// far less harmful than a server that won't start.
+function readServerVersion(): string {
+  try {
+    const pkgPath = path.join(__dirname, '..', 'package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+    return typeof pkg.version === 'string' ? pkg.version : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 async function main() {
   const workspaceRoot = path.resolve(process.argv[2] ?? process.env.ADR_WORKSPACE_ROOT ?? '.')
   const adrDirRel = process.env.ADR_DIR_REL ?? 'docs/adr'
+  const serverVersion = readServerVersion()
 
   const composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
+  // Scan happens once, here, at startup — there is no per-call refresh yet
+  // (elenchus feedback 2026-07-23, Catch 1: ADRs committed mid-session are
+  // invisible until restart). scannedAt captures *when* this snapshot was
+  // taken so a stale read is at least detectable, even though it isn't yet
+  // preventable — the harder fix (mtime-based rescan or a refresh_corpus
+  // tool) is still open.
+  const scannedAt = new Date().toISOString()
   // CompositeIndex already exposes allAdrs()/allSeeds() aggregated across
   // every discovered root — the adapter's IndexSource shape needs nothing
   // more, so this is a direct pass-through, not a new integration.
   const ctx = createRepositoryContextAdapter(composite)
 
-  const server = new McpServer({ name: 'adrs-for-ai', version: '1.0.0' })
+  const server = new McpServer({ name: 'adrs-for-ai', version: serverVersion })
 
   server.registerTool(
     'project_overview',
@@ -68,7 +92,8 @@ async function main() {
       description: 'Pre-linearized project map: one row per ADR, one row per seed, summary line first. Call this at session start.',
       inputSchema: { include_seeds: z.boolean().optional() },
     },
-    async ({ include_seeds }) => text(projectOverview(ctx, { includeSeeds: include_seeds })),
+    async ({ include_seeds }) =>
+      text(projectOverview(ctx, { includeSeeds: include_seeds, scannedAt, serverVersion })),
   )
 
   server.registerTool(
