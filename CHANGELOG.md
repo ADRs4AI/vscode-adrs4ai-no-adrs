@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.30] - 2026-07-24
+
+### Added
+- Right-click a multi-root sidebar entry → **Exclude This Root** — writes the exact relative path into `docs/adr/.settings/roots.json`'s `block` list (never a glob), with a preview of the resulting file contents before anything is written, and a one-shot "Undo" toast right after. The edit is the documentation of the config, the same way `.working/` already is.
+
 ## [0.7.27] - 2026-07-22
 
 ### Fixed
