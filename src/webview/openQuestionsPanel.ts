@@ -82,6 +82,8 @@ interface WebviewQuestion {
   fileChecksum: string
   /** ADR-0023: restored draft text, if a draft exists for this question's key. */
   draftText?: string
+  /** The existing (unconfirmed) answer text when the question is OPEN under Status-authority but its ANS block holds a real draft — prefilled into the textarea so replacement is never blind. */
+  existingAnswer?: string
   /** ADR-0023: ISO timestamp the draft was last saved, for the "draft restored" indicator. */
   draftSavedAt?: string
 }
@@ -264,6 +266,7 @@ export class OpenQuestionsPanel {
           totalOccurrences: total,
           fileChecksum: opts.checksum,
           draftText: draft?.draftText,
+          existingAnswer: !q.isAnswered && q.answer ? q.answer.text : undefined,
           draftSavedAt: draft?.updatedAt,
           sourceKind: opts.sourceKind,
           groupSortKey: opts.groupSortKey,
@@ -475,7 +478,7 @@ export class OpenQuestionsPanel {
       // private near-copy that lived here refused bold-Status questions the
       // extractor itself had surfaced (crossfoot ADR-0030, 2026-07-16) and
       // didn't know handle-form QST boundaries. See answerWriteScan.ts.
-      const { statusLineIdx, ansHeaderLineIdx, fillLineIdx, blockEndLineIdx, boundaryKind } =
+      const { statusLineIdx, ansHeaderLineIdx, fillLineIdx, blockEndLineIdx, boundaryKind, ansContentEndLineIdx } =
         scanAnswerWriteAnchors(lines, start)
 
       // 1. Update status → answered
@@ -495,9 +498,24 @@ export class OpenQuestionsPanel {
       if (fillLineIdx >= 0) {
         edit.replace(uri, lineRange(doc, fillLineIdx), msg.answerText)
       } else if (ansHeaderLineIdx >= 0) {
-        // No placeholder — insert after the ANS header line
-        const pos = new vscode.Position(ansHeaderLineIdx + 1, 0)
-        edit.insert(uri, pos, msg.answerText + '\n')
+        // No placeholder — the ANS block already holds REAL content (under
+        // Status-authority this is the normal shape of an open question
+        // carrying a draft: elenchus legacy, all six waitlist QSTs). The
+        // write REPLACES the entire existing answer extent [ansHeader,
+        // ansContentEnd) with the canonical two-line block — replace
+        // semantics, "a QST has exactly one current answer." The old
+        // insert-after-header path PREPENDED the new answer onto the old
+        // one, and on the same-line ANS form ("**ANS:** (by X) text…") the
+        // header rewrite destroyed the old answer's first line (Jérémie,
+        // 2026-07-23). Blind loss is prevented one step earlier: the
+        // existing draft is prefilled into the textarea (existingAnswer),
+        // so what's being replaced was on screen when Answer was pressed.
+        const author = msg.authorName.trim() || 'Human'
+        const replaceRange = new vscode.Range(
+          new vscode.Position(ansHeaderLineIdx, 0),
+          doc.lineAt(Math.max(ansHeaderLineIdx, ansContentEndLineIdx - 1)).range.end,
+        )
+        edit.replace(uri, replaceRange, `**ANS:** (by ${author})\n${msg.answerText}`)
       } else if (statusLineIdx >= 0 && boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {
         // Missing-ANS fallback (Lapidary 5, 2026-07-13, specimen 1 — Jérémie
         // hit this hand-answering a grammar seed tonight): a QST block can
@@ -1790,6 +1808,15 @@ function render() {
       $id('ans').value = q.draftText;
       const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
       $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
+      $id('draft-restored').style.display = 'block';
+    } else if (q.existingAnswer) {
+      // Status-authority draft state (Jérémie's ask, 2026-07-23, elenchus
+      // legacy): the question is OPEN but its ANS block already holds a
+      // real draft answer awaiting the Status flip. Prefill it so nothing
+      // is ever typed blind against invisible content — confirming a
+      // legacy draft becomes read, maybe edit, Answer.
+      $id('ans').value = q.existingAnswer;
+      $id('draft-restored').textContent = 'Existing draft answer loaded from the file — edit if needed, then Answer to confirm & close';
       $id('draft-restored').style.display = 'block';
     } else {
       $id('ans').value = '';

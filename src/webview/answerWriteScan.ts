@@ -45,6 +45,18 @@ export interface AnswerWriteAnchors {
    * sentence. A cap is a search budget, not a place in the document.
    */
   boundaryKind: 'heading' | 'break' | 'eof' | 'window'
+  /**
+   * Exclusive end of the EXISTING answer's content: blockEndLineIdx trimmed
+   * back over trailing blank lines. When an ANS block already holds a real
+   * draft answer (the normal state under Status-authority for a question
+   * awaiting its flip), a new write must REPLACE [ansHeaderLineIdx,
+   * ansContentEndLineIdx) — never insert inside it. Elenchus legacy
+   * incident (Jérémie, 2026-07-23): the old insert-after-header path
+   * prepended his new answer onto the existing one, and on the same-line
+   * ANS form ("**ANS:** (by X) text…") the header rewrite destroyed the
+   * old answer's first line outright.
+   */
+  ansContentEndLineIdx: number
 }
 
 /**
@@ -92,6 +104,7 @@ export function scanAnswerWriteAnchors(
     fillLineIdx: -1,
     blockEndLineIdx: end,
     boundaryKind: end === lines.length ? 'eof' : 'window',
+    ansContentEndLineIdx: end,
   }
 
   for (let i = startIdx; i < end; i++) {
@@ -109,6 +122,10 @@ export function scanAnswerWriteAnchors(
       FILL_PLACEHOLDER_LINE_RE.test(trimmed)
     ) anchors.fillLineIdx = i
   }
+
+  let contentEnd = anchors.blockEndLineIdx
+  while (contentEnd > startIdx && (lines[contentEnd - 1] ?? '').trim() === '') contentEnd--
+  anchors.ansContentEndLineIdx = contentEnd
 
   return anchors
 }

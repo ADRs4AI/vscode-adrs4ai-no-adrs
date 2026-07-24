@@ -147,11 +147,20 @@ export function applyAnswerQuestion(
 
   const newLines = [...lines]
   if (statusLineIdx >= 0) newLines[statusLineIdx] = '- Status: answered'
-  newLines[ansHeaderLineIdx] = `**ANS:** (by ${author})`
   if (fillLineIdx >= 0) {
+    newLines[ansHeaderLineIdx] = `**ANS:** (by ${author})`
     newLines[fillLineIdx] = answerText
   } else {
-    newLines.splice(ansHeaderLineIdx + 1, 0, answerText)
+    // The ANS block holds REAL content (a draft under Status-authority) —
+    // REPLACE its whole extent, per the documented replace semantics ("a
+    // QST has exactly one current answer"). The old insert-after-header
+    // path prepended the new answer onto the existing one, and on the
+    // same-line ANS form ("**ANS:** (by X) text…") the header rewrite
+    // destroyed the old answer's first line (elenchus legacy, 2026-07-23 —
+    // panel twin fixed in the same pass).
+    let contentEnd = end
+    while (contentEnd > ansHeaderLineIdx + 1 && (newLines[contentEnd - 1] ?? '').trim() === '') contentEnd--
+    newLines.splice(ansHeaderLineIdx, contentEnd - ansHeaderLineIdx, `**ANS:** (by ${author})`, answerText)
   }
 
   const afterSnippet = [newLines[ansHeaderLineIdx], answerText].join('\n')

@@ -147,6 +147,61 @@ describe('scanAnswerWriteAnchors', () => {
   })
 })
 
+describe('Regression tests: replace-extent for existing draft answers (elenchus legacy, 2026-07-23)', () => {
+  // Status-authority's normal open-with-draft state: `- Status: unanswered`
+  // + a real answer awaiting the flip. Submitting from the panel used to
+  // insert-after-header (PREPENDING the new answer onto the old), and on
+  // the same-line ANS form the header rewrite destroyed the old answer's
+  // first line. The scan now exposes the existing answer's extent so both
+  // write paths REPLACE it whole.
+  const sameLineAns = [
+    '### QST: When does auto-promotion happen?',
+    '- Status: unanswered',
+    '',
+    '**ANS:** (by Jérémie) Option A. When a student cancels a sign up,',
+    'garbage collect by checking the Tier 1 waitlist.',
+    '',
+    '---',
+    '',
+    '### QST: Next question?',
+  ]
+
+  it('ansContentEndLineIdx spans the whole existing answer (same-line form + wrapped continuation), trimmed of trailing blanks', () => {
+    const anchors = scanAnswerWriteAnchors(sameLineAns, 0)
+    expect(anchors.ansHeaderLineIdx).toBe(3)
+    expect(anchors.ansContentEndLineIdx).toBe(5) // exclusive: header + continuation line
+    expect(sameLineAns[anchors.ansContentEndLineIdx - 1]).toContain('Tier 1 waitlist')
+    expect(anchors.boundaryKind).toBe('break')
+  })
+
+  it('writeOps replace semantics: the old draft is replaced whole — never prepended, never half-destroyed', () => {
+    const content = `# ADR 0005: Waitlist mechanics
+
+## Questions
+
+${sameLineAns.join('\n')}
+- Status: unanswered
+
+**ANS:**
+[Fill this in]
+`
+    const adr = parseAdr(content, '/fake/docs/adr/0005-waitlist.md')
+    const q1 = adr.questions[0]
+    const result = applyAnswerQuestion(content, '/fake/docs/adr/0005-waitlist.md', q1.id, 'Confirmed: Option A, garbage-collect on cancel.', 'Jérémie')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.newContent).toContain('Confirmed: Option A, garbage-collect on cancel.')
+      // The old draft is GONE from the block — replaced, not prepended-to.
+      expect(result.newContent).not.toContain('When a student cancels a sign up')
+      expect(result.newContent).not.toContain('garbage collect by checking')
+      // Exactly one ANS block remains in the question, canonical form.
+      expect(result.newContent).toContain('**ANS:** (by Jérémie)\nConfirmed: Option A')
+      // The next question is untouched (fidelity).
+      expect(result.newContent).toContain('[Fill this in]')
+    }
+  })
+})
+
 describe('buildInsertionPreview (insertion-preview protocol, DEBRIEF-006 prevention)', () => {
   const lines = [
     'line0', 'line1', 'line2', 'line3', 'line4', 'line5', 'line6', 'line7', 'line8',
