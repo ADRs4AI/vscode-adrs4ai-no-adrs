@@ -25,6 +25,23 @@
 // (two files, both "0016", same namespace) before re-running this script.
 // Second run confirmed the fix: distinct filenames in the candidate list,
 // correct message for the same-namespace case.
+//
+// Re-run (2026-07-23/24): reused to validate the scanned_at/version stamp
+// added to project_overview after elenchus's first real feedback (Lapidary
+// inbox 2620, Gadfly's mcp-feedback.md entry) reported an unexplained
+// 68->65 open-question delta between two runs a day apart, same 53-ADR
+// count. Diagnosed by checking out the extractor at 24c34b3^ and 24c34b3
+// (v0.7.27's emphasis-robust status parsing) and diffing project_overview's
+// output against the real corpus at both revisions: exactly 3 questions
+// flip open->answered (legacy/0018-email-module-encapsulation.md's
+// "- Status: **answered**" lines, the exact zoo-015 class), zero newly
+// opened -- confirming the delta was the parser changing, not the corpus.
+// This run's output now stamps that fact directly: "scanned_at:
+// 2026-07-24T03:13:50.597Z | version: 0.7.28" -- real timestamp, real
+// running package version (previously hardcoded '1.0.0' in the McpServer
+// constructor, silently wrong the whole time). Corpus-refresh itself
+// (mtime rescan / refresh_corpus tool, elenchus's Catch 1) is still open --
+// this only makes staleness/version-drift detectable, not prevented.
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
