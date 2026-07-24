@@ -236,7 +236,11 @@ export class AdrTreeItem extends vscode.TreeItem {
       return `ADR-${num}: ${title}`
     }
     if (opts.kind === 'question' && opts.question) {
-      return `? ${opts.question.text}`
+      // Backticks are markup, not content — tree labels can't render code
+      // spans, so strip them rather than display literal backquotes
+      // (Jérémie, 2026-07-24; the panel renders them properly per the
+      // renderMarkdownInQuestionTitles setting).
+      return `? ${opts.question.text.replace(/`/g, '')}`
     }
     if (opts.kind === 'open-questions-header') {
       const c = opts.count ?? 0

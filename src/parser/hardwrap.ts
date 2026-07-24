@@ -125,3 +125,34 @@ export function unwrapParagraphs(lines: string[]): string[] {
   flush();
   return output;
 }
+
+/**
+ * Full-surface unwrap ("fully un-hard-wrap an ADR" — Jérémie, 2026-07-24,
+ * system3 ADR-0049: recommendations were unwrapped but options, the ADR
+ * context box, and other prose surfaces still rendered a terminal's
+ * line-fold). Composes the two primitives with structure guards: list
+ * items join per unwrapListItems; prose lines join per unwrapParagraphs;
+ * headings, blockquotes, tables, thematic breaks stand alone; fenced code
+ * is never touched (a wrap inside a fence is content, not folding).
+ */
+export function unwrapMarkdownish(lines: string[]): string[] {
+  const listJoined = unwrapListItems(lines);
+  const output: string[] = [];
+  let buffer: string[] = [];
+  let inFence = false;
+  const flush = () => {
+    if (buffer.length > 0) { output.push(joinSoftWrappedLines(buffer)); buffer = []; }
+  };
+  const STRUCTURAL_RE = /^(#{1,6}\s|>|\|)/;
+  const THEMATIC_RE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+  for (const line of listJoined) {
+    const t = line.trim();
+    if (/^(```|~~~)/.test(t)) { flush(); inFence = !inFence; output.push(line); continue; }
+    if (inFence) { flush(); output.push(line); continue; }
+    if (t === '') { flush(); output.push(''); continue; }
+    if (matchListItem(line) || STRUCTURAL_RE.test(t) || THEMATIC_RE.test(t)) { flush(); output.push(line); continue; }
+    buffer.push(line);
+  }
+  flush();
+  return output;
+}

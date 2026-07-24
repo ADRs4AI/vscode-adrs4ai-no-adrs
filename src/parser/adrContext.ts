@@ -21,6 +21,7 @@
  */
 
 import type { AdrFile, AdrSection } from './types'
+import { unwrapMarkdownish } from './hardwrap'
 
 /**
  * Canonical template sections that are boilerplate, not context, even when
@@ -71,7 +72,9 @@ export function computeAdrContext(adr: AdrFile): string | undefined {
   const sections = contextSections(adr)
   if (sections.length === 0) return undefined
   return sections
-    .map(s => `## ${s.heading}\n\n${s.body}`)
+    // Full-surface hard-wrap robustness (2026-07-24): the context box
+    // renders prose — a terminal's line-fold must not survive into it.
+    .map(s => `## ${s.heading}\n\n${unwrapMarkdownish(s.body.split('\n')).join('\n')}`)
     .join('\n\n---\n\n')
     .trim() || undefined
 }

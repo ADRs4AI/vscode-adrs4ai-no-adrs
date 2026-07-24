@@ -228,6 +228,11 @@
           "default": "Sonnet 4.6 (1M)",
           "description": "The AI model name used in new ADR templates (e.g., 'Sonnet 4.6 (1M)', 'Claude Opus 4.6')."
         },
+        "adrManager.renderMarkdownInQuestionTitles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render inline Markdown (`code`, **bold**, _italic_) in question titles in the Open Questions panel. Titles in the sidebar tree always show plain text (backticks stripped)."
+        },
         "adrManager.clickNavigatesTo": {
           "type": "string",
           "enum": [

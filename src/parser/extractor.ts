@@ -12,7 +12,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import { KNOWN_STATUS_VALUES, requiresScopeRemaining } from './statusInfo'
 import { tokenize, extractRawSections, type RawSection, type Token } from './tokenizer'
-import { unwrapListItems, unwrapParagraphs } from './hardwrap'
+import { unwrapListItems, unwrapParagraphs, unwrapMarkdownish } from './hardwrap'
 import type {
   AdrFile,
   AdrFormat,
@@ -1237,8 +1237,8 @@ export function extractQuestion(
   // Rejoining wrapped list items HERE, at extraction time, means every
   // downstream consumer (panel, MCP, future ones) sees already-normalized
   // markdown, not a renderer-specific patch.
-  const rawBody = rawBodyLinesPre.length > 0 ? unwrapListItems(rawBodyLinesPre).join('\n') : undefined
-  const rawBodyPost = rawBodyLinesPost.length > 0 ? unwrapListItems(rawBodyLinesPost).join('\n') : undefined
+  const rawBody = rawBodyLinesPre.length > 0 ? unwrapMarkdownish(rawBodyLinesPre).join('\n') : undefined
+  const rawBodyPost = rawBodyLinesPost.length > 0 ? unwrapMarkdownish(rawBodyLinesPost).join('\n') : undefined
 
   finalizeAnswerLayer();
   const realLayers = answerLayers.filter(l => l.isReal);
