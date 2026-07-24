@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.33] - 2026-07-24
+
+### Added
+- The "file also holds an existing answer" banner now shows the file's **save time**, and if the file's answer changes **while you're editing**, a banner appears — "the file changed while you were editing (saved HH:MM) — load new file answer · keep my editing" — without ever touching your in-progress text. The submit-time drift fence's protection, moved up to edit time; the clobber-coexistence matrix is recorded in ADR-0023.
+
 ## [0.7.32] - 2026-07-24
 
 ### Added

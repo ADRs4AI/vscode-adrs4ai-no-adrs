@@ -15,6 +15,7 @@
 import * as vscode from 'vscode'
 import { execSync } from 'child_process'
 import * as crypto from 'crypto'
+import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import type { CompositeIndex } from '../index/compositeIndex'
@@ -84,6 +85,8 @@ interface WebviewQuestion {
   draftText?: string
   /** The existing (unconfirmed) answer text when the question is OPEN under Status-authority but its ANS block holds a real draft — prefilled into the textarea so replacement is never blind. */
   existingAnswer?: string
+  /** File mtime (ms) at push time — renders as the existing answer's save time and dates edit-time drift banners. */
+  fileMtime?: number
   /** ADR-0023: ISO timestamp the draft was last saved, for the "draft restored" indicator. */
   draftSavedAt?: string
 }
@@ -267,6 +270,7 @@ export class OpenQuestionsPanel {
           fileChecksum: opts.checksum,
           draftText: draft?.draftText,
           existingAnswer: !q.isAnswered && q.answer ? q.answer.text : undefined,
+          fileMtime: statMtimeMs(q.adrPath),
           draftSavedAt: draft?.updatedAt,
           sourceKind: opts.sourceKind,
           groupSortKey: opts.groupSortKey,
@@ -734,6 +738,14 @@ function extractHumanNames(adrs: AdrFile[]): string[] {
 // ---------------------------------------------------------------------------
 // Utility: get the full range of a line in a document
 // ---------------------------------------------------------------------------
+
+const mtimeCache = new Map<string, number>()
+function statMtimeMs(p: string): number | undefined {
+  // Cached per push-cycle would be ideal; a plain cache with overwrite on
+  // every call is fine — statSync is cheap and correctness (freshest mtime
+  // on each push) matters more than the microseconds saved.
+  try { const m = fs.statSync(p).mtimeMs; mtimeCache.set(p, m); return m } catch { return mtimeCache.get(p) }
+}
 
 function lineRange(doc: vscode.TextDocument, lineIdx: number): vscode.Range {
   const line = doc.lineAt(lineIdx)
@@ -1289,6 +1301,8 @@ let pendingInsertionConfirm = null;
 // the selection). Track which question's draftKey is currently shown so
 // render() can tell "new question, restore is correct" apart from "same
 // question, a page repaint, leave the live textarea alone."
+let loadedFileChecksum = null;
+let loadedExistingAnswer = '';
 let lastShownDraftKey;
 // Discards stale/out-of-order 'questions' pushes (Problem 2, panel-submit-
 // no-refresh-bug seed): with multiple sessions writing docs/adr/*.md
@@ -1573,12 +1587,20 @@ $id('expand-field').addEventListener('click', e => { e.preventDefault(); toggleE
 
 // Draft-vs-file swap (delegated: the link is re-created per render)
 $id('draft-restored').addEventListener('click', e => {
+  const q = questions[idx];
+  if (e.target && e.target.id === 'keep-editing') {
+    e.preventDefault();
+    if (q) { loadedFileChecksum = q.fileChecksum; loadedExistingAnswer = q.existingAnswer || ''; }
+    $id('draft-restored').style.display = 'none';
+    return;
+  }
   if (!(e.target && e.target.id === 'load-file-answer')) return;
   e.preventDefault();
-  const q = questions[idx];
   if (!q || !q.existingAnswer) return;
   $id('ans').value = q.existingAnswer;
   $id('ans').dispatchEvent(new Event('input')); // autosave takes the swap as the new draft
+  loadedFileChecksum = q.fileChecksum;
+  loadedExistingAnswer = q.existingAnswer || '';
   $id('draft-restored').textContent = 'File answer loaded — edit if needed, then Answer to confirm & close';
   $id('ans').focus();
 });
@@ -1855,7 +1877,7 @@ function render() {
       // silently preferred in either direction.
       if (q.existingAnswer && q.existingAnswer !== q.draftText) {
         $id('draft-restored').innerHTML = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '') +
-          ' · the file also holds an existing answer (' + q.existingAnswer.length + ' chars) — ' +
+          ' · the file also holds an existing answer (' + q.existingAnswer.length + ' chars' + (q.fileMtime ? ', saved ' + new Date(q.fileMtime).toLocaleTimeString() : '') + ') — ' +
           '<a id="load-file-answer" role="button" style="cursor:pointer">load file answer instead</a>';
       } else {
         $id('draft-restored').textContent = 'Draft restored' + (savedAt ? ' (saved ' + savedAt + ')' : '');
@@ -1868,13 +1890,27 @@ function render() {
       // is ever typed blind against invisible content — confirming a
       // legacy draft becomes read, maybe edit, Answer.
       $id('ans').value = q.existingAnswer;
-      $id('draft-restored').textContent = 'Existing draft answer loaded from the file — edit if needed, then Answer to confirm & close';
+      $id('draft-restored').textContent = 'Existing draft answer loaded from the file' + (q.fileMtime ? ' (saved ' + new Date(q.fileMtime).toLocaleTimeString() + ')' : '') + ' — edit if needed, then Answer to confirm & close';
       $id('draft-restored').style.display = 'block';
     } else {
       $id('ans').value = '';
       $id('draft-restored').style.display = 'none';
     }
     lastShownDraftKey = q.draftKey;
+    loadedFileChecksum = q.fileChecksum;
+    loadedExistingAnswer = q.existingAnswer || '';
+  } else if (q.fileChecksum !== loadedFileChecksum && (q.existingAnswer || '') !== loadedExistingAnswer) {
+    // Edit-time drift (Jérémie, 2026-07-24, the clobber matrix's last
+    // square): the FILE's answer changed while this question is on screen.
+    // Never touch the textarea (DEBRIEF-003/004: live typing is sacred) —
+    // surface a banner with the file's new save time and an explicit
+    // reload choice. 'Keep my editing' re-arms the check for the NEXT
+    // change rather than nagging on every background push.
+    $id('draft-restored').innerHTML = '⚠ The file changed while you were editing' +
+      (q.fileMtime ? ' (saved ' + new Date(q.fileMtime).toLocaleTimeString() + ')' : '') + ' — ' +
+      '<a id="load-file-answer" role="button" style="cursor:pointer">load new file answer</a> · ' +
+      '<a id="keep-editing" role="button" style="cursor:pointer">keep my editing</a>';
+    $id('draft-restored').style.display = 'block';
   }
   $id('flash').style.display = 'none';
   $id('drift-bar').style.display = 'none';
