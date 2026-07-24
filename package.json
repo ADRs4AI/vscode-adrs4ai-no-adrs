@@ -100,6 +100,11 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.excludeRoot",
+        "title": "Exclude This Root",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.openQuestionsPanel",
         "title": "Answer Open Questions",
         "category": "ADR Manager",
@@ -185,6 +190,11 @@
           "command": "adrManager.goToAnswerInFile",
           "when": "view == adrExplorer && viewItem == question",
           "group": "2_navigate@2"
+        },
+        {
+          "command": "adrManager.excludeRoot",
+          "when": "view == adrExplorer && viewItem == root",
+          "group": "1_actions@1"
         }
       ]
     },

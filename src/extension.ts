@@ -29,6 +29,8 @@ import { isAdrBasename, isSeedBasename, isDirectChildOf } from './index/fileGuar
 import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from './watchers/rootWatcherLifecycle'
 import { AdrTreeProvider, type AdrTreeItem } from './views/adrTreeProvider'
 import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
+import { addBlockEntry, removeBlockEntry, relativeRootPath } from './index/rootsConfigWriter'
+import type { RootNode } from './index/compositeIndex'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
 import { resolveReference } from './mcp/reference'
@@ -250,6 +252,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
       copyDeepLink(item);
+    }),
+
+    vscode.commands.registerCommand('adrManager.excludeRoot', async (item) => {
+      if (item?.rootNode) await excludeRoot(item.rootNode);
     }),
 
     vscode.languages.registerDocumentLinkProvider({ language: 'markdown' }, new AdrDocumentLinkProvider()),
@@ -1092,4 +1098,60 @@ function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void
     vscode.env.clipboard.writeText(ref);
     vscode.window.showInformationMessage(`Copied deep link: ${ref}`);
   }
+}
+
+/**
+ * ADR-0025 Decision 1 mechanism 2, "Exclude this root" (Jérémie's design,
+ * 2026-07-24 `0710`): "that's how things are discoverable, by making the
+ * edit an option, like we did with .working." Only reachable on a `root`-
+ * kind tree item, which only exists in the multi-root (N>1) case — there is
+ * always at least one root left after excluding.
+ *
+ * Consent-surface preview before writing (house doctrine, same "never write
+ * blind" discipline as the insertion-preview protocol): the modal shows the
+ * exact relative path and the resulting file contents before anything is
+ * written. Undo is a one-shot toast rather than a "shown-but-excluded
+ * ghost" tree item — the latter isn't representable: an excluded root is
+ * invisible to root discovery itself, so the composite index has no node
+ * left to render as a ghost.
+ */
+async function excludeRoot(node: RootNode): Promise<void> {
+  const workspaceRoot = compositeIndex?.root.path;
+  if (!workspaceRoot) return;
+
+  const cfg = vscode.workspace.getConfiguration('adrManager');
+  const adrDirRel = cfg.get<string>('adrDirectory', 'docs/adr');
+  const settingsDir = path.join(workspaceRoot, adrDirRel, '.settings');
+  const rootsJsonPath = path.join(settingsDir, 'roots.json');
+  const relPath = relativeRootPath(node.path, workspaceRoot);
+
+  const readCurrentText = (): string | undefined =>
+    fs.existsSync(rootsJsonPath) ? fs.readFileSync(rootsJsonPath, 'utf-8') : undefined;
+
+  const proposed = addBlockEntry(readCurrentText(), relPath);
+  if (!proposed.changed) {
+    vscode.window.showInformationMessage(`"${node.namespace}" is already excluded.`);
+    return;
+  }
+
+  const choice = await vscode.window.showWarningMessage(
+    `Exclude "${node.namespace}" from ADR Explorer?`,
+    {
+      modal: true,
+      detail: `Adds the exact path "${relPath}" to ${adrDirRel}/.settings/roots.json's block list (no globs — an exact path can't silently match the wrong thing). The file stays committed and auditable; this root won't reappear until the entry is removed.\n\nNew file contents:\n${proposed.text}`,
+    },
+    'Exclude',
+  );
+  if (choice !== 'Exclude') return;
+
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(settingsDir));
+  await vscode.workspace.fs.writeFile(vscode.Uri.file(rootsJsonPath), Buffer.from(proposed.text, 'utf-8'));
+  if (watcherLifecycle) void watcherLifecycle.requestRefresh();
+
+  const undo = await vscode.window.showInformationMessage(`Excluded "${node.namespace}" from ADR Explorer.`, 'Undo');
+  if (undo !== 'Undo') return;
+
+  const reverted = removeBlockEntry(readCurrentText(), relPath);
+  await vscode.workspace.fs.writeFile(vscode.Uri.file(rootsJsonPath), Buffer.from(reverted.text, 'utf-8'));
+  if (watcherLifecycle) void watcherLifecycle.requestRefresh();
 }
