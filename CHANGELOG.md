@@ -8,6 +8,12 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.35] - 2026-07-25
+
+### Fixed
+- Recommendations written as `**Recommendation**: (by Author, …) text` — attribution after the colon on the same line — now parse with the full attribution (reviewers, dates and all) instead of showing a fragment of the Deciders line in the author chip and pushing attached commentary out of order.
+- Semicolon-separated Deciders rosters with parenthetical annotations no longer get shredded at every comma.
+
 ## [0.7.34] - 2026-07-24
 
 ### Added
