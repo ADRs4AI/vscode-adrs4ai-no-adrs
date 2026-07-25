@@ -207,6 +207,20 @@ interface ExtractedMetadata {
 // ADR-0014 Iteration 2: "- **Awaiting**: ADR-0035 == implemented" (or "ADR 0035", "== accepted", etc.)
 const AWAITING_DSL_RE = /^ADR[-\s]?(\d+)\s*==\s*(.+)$/i;
 
+function splitRoster(value: string): string[] {
+  if (value.includes(';')) return value.split(';').map(s => s.trim()).filter(Boolean);
+  const parts: string[] = [];
+  let depth = 0, current = '';
+  for (const ch of value) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) { parts.push(current.trim()); current = ''; }
+    else current += ch;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts.filter(Boolean);
+}
+
 function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
   const result: ExtractedMetadata = { iteration: 1, deciders: [], warnings: [] };
 
@@ -286,7 +300,15 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
         break;
       }
       case 'deciders': {
-        result.deciders = value.split(',').map(s => s.trim()).filter(Boolean);
+        // Semicolon-separated rosters exist precisely BECAUSE entries carry
+        // commas inside parentheticals ("Jérémie Lumbroso (charter,
+        // sequencing call); Understudy 5 (Claude Sonnet 5, HQ — ...)").
+        // The naive comma-split shredded such a roster into paren-fragments,
+        // and inferAuthorFromDeciders then served a shard as an author chip
+        // ("sequencing call); Understudy 5 (Claude Sonnet 5" — HQ ADR-0015
+        // QST-7, 2026-07-25). Prefer ';' when present; otherwise split on
+        // top-level commas only (never inside parentheses).
+        result.deciders = splitRoster(value);
         break;
       }
       case 'scope remaining': {
@@ -1100,9 +1122,26 @@ export function extractQuestion(
       inRecommendation = true;
       recommendationBlockStarts.push(recommendationLines.length);
       const recQualifier = recMatch[1]?.trim();
-      const inlineAttribution = recMatch[2]?.trim();
-      const firstLine = recMatch[3].trim();
+      let inlineAttribution = recMatch[2]?.trim();
+      let firstLine = recMatch[3].trim();
       recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
+      // Fourth attribution position (HQ ADR-0015 QST-7, 2026-07-25):
+      // "**Recommendation**: (by Consul 5, Iteration 18, reviewed by
+      // Understudy 5) **Staged: ...**" — the parenthetical AFTER the colon,
+      // same line, content following. Neither the protocol form (attribution
+      // ALONE on the line), the pre-colon inline form, nor the two-line
+      // shape — so the parenthetical leaked into rec text and the author
+      // was inferred from Deciders (see splitRoster's incident note).
+      // Captured whole as the author (it may carry commas, reviewers,
+      // em-dashes — never re-split as author,date), attributed ⇒ the block
+      // spans paragraphs, extent parity as always.
+      if (!recProtocolForm && !inlineAttribution) {
+        const leading = firstLine.match(/^\((?:by|from)\b\s*([^)]*)\)\s*(.*)$/i);
+        if (leading && leading[1].trim()) {
+          inlineAttribution = leading[1].trim();
+          firstLine = leading[2].trim();
+        }
+      }
       // Rec-extent escape (Lapidary 5, 2026-07-13, inbox-alchemy ADR-0022
       // specimen): v0.7.5's inline-attribution tolerance ("**Recommendation**
       // (by Author): text") captured only the same-line content — legacy-

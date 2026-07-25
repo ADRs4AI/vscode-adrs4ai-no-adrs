@@ -2424,6 +2424,61 @@ describe('Open Follow-ups subtype fields (Loftsman/ios-client catch, 2026-07-20)
   })
 })
 
+describe('Fourth rec-attribution position + roster-aware Deciders (HQ ADR-0015 QST-7, 2026-07-25)', () => {
+  describe('Regression tests', () => {
+    it('"**Recommendation**: (by X, Y) content" — attribution AFTER the colon, same line — parses with the whole parenthetical as author, spans paragraphs', () => {
+      const content = `# ADR-0015: T
+
+- **Date**: 2026-07-25
+- **Status**: Proposed
+- **Deciders**: Jérémie Lumbroso (charter, sequencing call); Understudy 5 (Claude Sonnet 5, HQ — implementation owner); Consul 5 (Claude Sonnet 5, HQ)
+
+## Questions
+
+### QST-7: Staged or full mesh?
+- Status: unanswered
+
+**Recommendation**: (by Consul 5, Iteration 18, reviewed by Understudy 5) **Staged: mutual wake with Consul only.**
+
+Understudy's review added two points worth keeping attached to the recommendation.
+
+**Recommendation**: (by Cartographer 5, Claude Fable 5, 2026-07-25, at Jérémie's direct ask — stacked, concurring) **Staged — direction-aware widening.**
+
+**ANS:** (by )
+[Fill this in]
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0015-t.md')
+      const recs = adr.questions[0].recommendations!
+      expect(recs).toHaveLength(2)
+      // The parenthetical is the author, WHOLE — commas, reviewers,
+      // em-dashes and all; never re-split as author,date; never inferred.
+      expect(recs[0].author).toBe('Consul 5, Iteration 18, reviewed by Understudy 5')
+      expect(recs[0].authorInferred).toBeFalsy()
+      expect(recs[1].author).toContain('Cartographer 5, Claude Fable 5')
+      // Attributed ⇒ spans paragraphs: the attached review paragraph
+      // belongs to rec 1, not orphaned rawBodyPost (the screenshot's
+      // out-of-order rendering).
+      expect(recs[0].text).toContain("Understudy's review added")
+      expect(adr.questions[0].rawBodyPost).toBeUndefined()
+      // The parenthetical never leaks into the rec text.
+      expect(recs[0].text).not.toContain('(by Consul 5')
+      // Semicolon roster splits on ';', entries intact with their parens.
+      expect(adr.deciders).toHaveLength(3)
+      expect(adr.deciders[0]).toBe('Jérémie Lumbroso (charter, sequencing call)')
+    })
+
+    it('comma rosters with parenthetical annotations split at top level only — no shard can become an inferred author', () => {
+      const adr = parseAdr(
+        '# ADR-1: T\n\n- **Deciders**: Ren Okafor (lead, ops), Sonnet 4.6 (1M)\n- **Status**: Draft\n\n## Questions\n\n### QST: X?\n- Status: unanswered\n\n**My recommendation**: do it.\n\n**ANS:**\n[Fill this in]\n',
+        '/fake/docs/adr/0001-t.md',
+      )
+      expect(adr.deciders).toEqual(['Ren Okafor (lead, ops)', 'Sonnet 4.6 (1M)'])
+      // Legacy-form inference now lands on a REAL entry, not a fragment.
+      expect(adr.questions[0].recommendations![0].author).toBe('Sonnet 4.6')
+    })
+  })
+})
+
 describe('Emphasis-robust keywords + attributed-rec sub-fields (Jérémie reports, 2026-07-22)', () => {
   describe('Regression tests', () => {
     it('"- Status: **answered** (…)" reads as answered — emphasis never defeats the keyword (caring-form ADR-0052:207)', () => {
