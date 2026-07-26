@@ -8,6 +8,12 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.36] - 2026-07-25
+
+### Added
+- **Staleness banner** (ADR-0023 square 4): if a second Open Questions window (or any future draft-writing surface) saves a draft for the same question you're looking at, the panel now shows it — a word-diff summary, the save time, and where it came from when that's informative — with Keep yours / Update / See diff (VS Code's own diff editor) instead of silently living with an unseen change. Pairs with v0.7.34's compare-and-swap vault fence, which already guaranteed nothing gets lost; this makes that guarantee visible.
+- **Error harvesting at the point of failure is live** (ADR-0035): every panel error now appends a full-reconstruction record — the entire ADR text, the entire answer box, and the triggering message — to the owning project's `docs/adr/.working/errors.jsonl`. On by default (`adrManager.logErrors`) during this collection era; a `scripts/harvest-errors.mjs` sweep script ships alongside it.
+
 ## [0.7.35] - 2026-07-25
 
 ### Fixed
