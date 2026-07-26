@@ -27,6 +27,7 @@ import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
+import { appendErrorRecord, buildErrorRecord } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,8 @@ interface WebviewQuestion {
   fileMtime?: number
   /** ADR-0023: ISO timestamp the draft was last saved, for the "draft restored" indicator. */
   draftSavedAt?: string
+  /** ADR-0023 square 4 (staleness banner): which surface last wrote this draft — 'panel', 'file-prefill', 'mobile', 'mcp', … Undefined for a draft saved before provenance existed. */
+  draftSource?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +122,8 @@ type WebviewMessage =
   | { type: 'ready' }
   /** Persistent save-failure warning (Lapidary 5, 2026-07-16): "Save now" retry. */
   | { type: 'retrySave'; adrPath: string }
+  /** ADR-0023 square 4 (staleness banner): "See diff" — open VS Code's own diff editor over two virtual documents rather than a bespoke webview differ. */
+  | { type: 'showDraftDiff'; mine: string; theirs: string; questionText: string }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -210,6 +215,26 @@ export class OpenQuestionsPanel {
     const unsubscribe = composite.onChange(() => this.sendQuestions())
     this.disposables.push({ dispose: unsubscribe })
 
+    // ADR-0023 square 4 (staleness banner, Riddle 5's design, 2026-07-24
+    // `1834`): the vault (drafts.json) can change without the ADR/seed
+    // content changing at all — a second Open Questions window saving a
+    // draft for the same question. composite.onChange (above) never fires
+    // for that. Re-push on any drafts.json write so every open panel
+    // learns about it; the webview's own lastSentDraftText already
+    // distinguishes "this is my own echo" from "another window wrote this"
+    // (see submit()/the 'draft' input handler), so no self-write
+    // suppression is needed here — same principle as the edit-time drift
+    // banner (v0.7.33), applied to the vault side of the matrix instead of
+    // the file side.
+    if (workspaceRoot) {
+      const draftsWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceRoot, `${adrDirRel}/.working/drafts.json`),
+      )
+      draftsWatcher.onDidChange(() => this.sendQuestions())
+      draftsWatcher.onDidCreate(() => this.sendQuestions())
+      this.disposables.push(draftsWatcher)
+    }
+
     this.sendQuestions()
   }
 
@@ -272,6 +297,7 @@ export class OpenQuestionsPanel {
           existingAnswer: !q.isAnswered && q.answer ? q.answer.text : undefined,
           fileMtime: statMtimeMs(q.adrPath),
           draftSavedAt: draft?.updatedAt,
+          draftSource: draft?.source,
           sourceKind: opts.sourceKind,
           groupSortKey: opts.groupSortKey,
           groupLabel: opts.groupLabel,
@@ -343,6 +369,7 @@ export class OpenQuestionsPanel {
     this.panel.webview.postMessage({
       type: 'questions',
       questions,
+      renderTitleMarkdown: vscode.workspace.getConfiguration('adrManager').get<boolean>('renderMarkdownInQuestionTitles', true),
       // Priority: settings > git config > top name from ADR index
       gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
       recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
@@ -374,12 +401,45 @@ export class OpenQuestionsPanel {
         this.sendQuestions()
         break
       case 'retrySave': await this.retrySave(msg.adrPath); break
+      case 'showDraftDiff': await this.showDraftDiff(msg.mine, msg.theirs, msg.questionText); break
     }
   }
 
   // ---------------------------------------------------------------------------
   // Write answer back to the ADR file
   // ---------------------------------------------------------------------------
+
+  /**
+   * Error harvesting at the point of failure (Jérémie's charter, 2026-07-25):
+   * every panel error appends a full-reconstruction record — entire ADR text,
+   * entire answer box, the triggering message — to the owning root's
+   * `.working/errors.jsonl`. Gated by `adrManager.logErrors` (default ON for
+   * the collection era; flip the default OFF once the wild runs dry).
+   * Failure-soft by contract: harvesting must never break the surface it
+   * observes, so this method cannot throw.
+   */
+  private harvestError(
+    kind: string,
+    message: string,
+    msg?: { adrPath?: string; questionId?: string; draftKey?: string; answerText?: string } & Record<string, unknown>,
+  ): void {
+    try {
+      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logErrors', true)) return
+      if (!msg?.adrPath) return
+      // Redact the box text from the meta copy — it's already first-class in
+      // boxText; duplicating full drafts in meta doubles record size for nothing.
+      const { answerText: _omit, ...metaMsg } = msg
+      appendErrorRecord(buildErrorRecord(kind, message, msg.adrPath, {
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        questionId: msg.questionId,
+        draftKey: msg.draftKey,
+        boxText: msg.answerText,
+        meta: { triggeringMessage: metaMsg },
+      }))
+    } catch {
+      /* failure-soft: never let the audit trail take down the panel */
+    }
+  }
 
   private async writeAnswer(msg: {
     questionId: string
@@ -406,10 +466,9 @@ export class OpenQuestionsPanel {
       // blind" discipline as the drift fence below).
       const owningRoot = this.composite.findRoot(msg.adrPath)
       if (!owningRoot) {
-        this.panel.webview.postMessage({
-          type: 'error',
-          message: `Could not determine which project owns ${msg.adrPath} — it may be outside every discovered root. Please answer it manually.`,
-        })
+        const message = `Could not determine which project owns ${msg.adrPath} — it may be outside every discovered root. Please answer it manually.`
+        this.harvestError('owning-root-not-found', message, msg)
+        this.panel.webview.postMessage({ type: 'error', message })
         return
       }
 
@@ -419,6 +478,9 @@ export class OpenQuestionsPanel {
       if (!msg.force) {
         const currentChecksum = crypto.createHash('sha1').update(currentContent).digest('hex')
         if (currentChecksum !== msg.fileChecksum) {
+          // Not an error the human sees as one, but the near-miss IS the
+          // specimen: every drift record is a clobber that didn't happen.
+          this.harvestError('drift-detected', `File changed under in-flight answer (checksum ${msg.fileChecksum.slice(0, 8)} → ${currentChecksum.slice(0, 8)})`, msg)
           this.panel.webview.postMessage({ type: 'driftDetected', questionId: msg.questionId })
           return
         }
@@ -465,10 +527,9 @@ export class OpenQuestionsPanel {
         computeDraftKey(freshContainerId, q.text, freshOrdinals[i]) === msg.draftKey || q.id === msg.questionId,
       )
       if (!currentQuestion) {
-        this.panel.webview.postMessage({
-          type: 'error',
-          message: `Could not relocate this question in ${msg.adrPath} — it may have been edited or removed. Please answer it manually.`,
-        })
+        const message = `Could not relocate this question in ${msg.adrPath} — it may have been edited or removed. Please answer it manually.`
+        this.harvestError('question-relocation-failed', message, msg)
+        this.panel.webview.postMessage({ type: 'error', message })
         return
       }
 
@@ -526,7 +587,17 @@ export class OpenQuestionsPanel {
           doc.lineAt(Math.max(ansHeaderLineIdx, ansContentEndLineIdx - 1)).range.end,
         )
         edit.replace(uri, replaceRange, `**ANS:** (by ${author})\n${msg.answerText}`)
-      } else if (statusLineIdx >= 0 && boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {
+      } else if (boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {
+        // No statusLineIdx requirement here (Jérémie, 2026-07-25): a QST
+        // block with NO "- Status:" line at all is fully surfaceable —
+        // status-authority derives openness from the absent answer — but
+        // this gate used to demand the Status anchor and hard-refuse the
+        // write ("Could not find the ANS block"), even though the insertion
+        // point is computed from the block END, not from Status. Once the
+        // fresh ANS block lands, answered-ness derives from the answer
+        // content (the same derived path that surfaced the question), so
+        // skipping step 1's status flip is correct, not a gap. The
+        // insertion-preview confirm below still guards the guess.
         // Missing-ANS fallback (Lapidary 5, 2026-07-13, specimen 1 — Jérémie
         // hit this hand-answering a grammar seed tonight): a QST block can
         // have a reliable "- Status:" field and no ANS marker or placeholder
@@ -561,10 +632,9 @@ export class OpenQuestionsPanel {
         edit.insert(uri, pos, `\n**ANS:** (by ${author})\n${msg.answerText}\n`)
       } else {
         // Fallback: can't find where to insert — report error
-        this.panel.webview.postMessage({
-          type: 'error',
-          message: `Could not find the ANS block near line ${currentQuestion.lineStart} in ${msg.adrPath}. Please answer this one manually.`,
-        })
+        const message = `Could not find the ANS block near line ${currentQuestion.lineStart} in ${msg.adrPath}. Please answer this one manually.`
+        this.harvestError('ans-anchor-not-found', message, msg)
+        this.panel.webview.postMessage({ type: 'error', message })
         return
       }
 
@@ -575,10 +645,9 @@ export class OpenQuestionsPanel {
       // (extension.ts's new onDidChangeTextDocument trigger):
       const applied = await vscode.workspace.applyEdit(edit)
       if (!applied) {
-        this.panel.webview.postMessage({
-          type: 'error',
-          message: `The edit could not be applied to ${msg.adrPath} — nothing was written. Please try again or answer manually.`,
-        })
+        const message = `The edit could not be applied to ${msg.adrPath} — nothing was written. Please try again or answer manually.`
+        this.harvestError('workspace-edit-rejected', message, msg)
+        this.panel.webview.postMessage({ type: 'error', message })
         return
       }
 
@@ -639,6 +708,7 @@ export class OpenQuestionsPanel {
 
       this.panel.webview.postMessage({ type: 'answered', questionId: msg.questionId })
     } catch (err) {
+      this.harvestError('unhandled-exception', String(err), msg)
       this.panel.webview.postMessage({ type: 'error', message: String(err) })
     }
   }
@@ -658,6 +728,21 @@ export class OpenQuestionsPanel {
     } catch {
       this.panel.webview.postMessage({ type: 'saveRetryResult', adrPath, saved: false })
     }
+  }
+
+  /**
+   * ADR-0023 square 4 (staleness banner) "See diff" — Riddle 5's design,
+   * 2026-07-24 `1834`: VS Code's own diff editor over two virtual, untitled
+   * documents rather than a bespoke webview differ. Deliberately the
+   * simpler of the two options the brief names (a `adr-draft:`
+   * TextDocumentContentProvider vs. untitled docs) — no scheme
+   * registration or provider lifecycle to manage for a view that's
+   * inspect-only by nature.
+   */
+  private async showDraftDiff(mine: string, theirs: string, questionText: string): Promise<void> {
+    const left = await vscode.workspace.openTextDocument({ content: mine })
+    const right = await vscode.workspace.openTextDocument({ content: theirs })
+    await vscode.commands.executeCommand('vscode.diff', left.uri, right.uri, `Your draft ↔ Updated draft — ${questionText}`)
   }
 
   /**
@@ -1308,6 +1393,14 @@ let pendingInsertionConfirm = null;
 // render() can tell "new question, restore is correct" apart from "same
 // question, a page repaint, leave the live textarea alone."
 let lastSentDraftText = undefined;
+let renderTitleMarkdown = true;
+function inlineMd(t) {
+  const esc = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc
+    .replace(/\`([^\`]+)\`/g, '<code>$1</code>')
+    .replace(/\\*\\*([^*]+)\\*\\*/g, '<b>$1</b>')
+    .replace(/(^|\\s)_([^_]+)_(?=\\s|$|[.,;:!?])/g, '$1<i>$2</i>');
+}
 let loadedFileChecksum = null;
 let loadedExistingAnswer = '';
 let lastShownDraftKey;
@@ -1320,6 +1413,41 @@ let lastQuestionsGeneration = -1;
 const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
+
+// ---------------------------------------------------------------------------
+// ADR-0023 square 4 (staleness banner, Riddle 5's design, 2026-07-24 1834):
+// banner-grade word diff — a rough multiset diff, not position-aware. Good
+// enough for "+114 -12 words", never claimed to be more.
+// ---------------------------------------------------------------------------
+function wordDiffCounts(oldText, newText) {
+  const countWords = text => {
+    const counts = {};
+    for (const w of (text || '').split(/\\s+/).filter(Boolean)) counts[w] = (counts[w] || 0) + 1;
+    return counts;
+  };
+  const oldCounts = countWords(oldText);
+  const newCounts = countWords(newText);
+  let added = 0, removed = 0;
+  const allWords = new Set([...Object.keys(oldCounts), ...Object.keys(newCounts)]);
+  for (const w of allWords) {
+    const delta = (newCounts[w] || 0) - (oldCounts[w] || 0);
+    if (delta > 0) added += delta;
+    else if (delta < 0) removed += -delta;
+  }
+  return { added, removed };
+}
+
+// Provenance display (Riddle's design): a human label for DraftRecord.source
+// when it's informative; 'panel' (the common two-windows-of-this-same-app
+// case) is left unlabeled rather than printing a redundant "(from Open
+// Questions panel)" on every ordinary race.
+function draftSourceLabel(source) {
+  if (!source || source === 'panel') return null;
+  if (source === 'mobile') return 'Mobile ADR entry';
+  if (source === 'file-prefill') return 'file prefill';
+  if (source === 'mcp') return 'MCP';
+  return source;
+}
 
 // ---------------------------------------------------------------------------
 // Minimal inline markdown renderer (ADR-0010)
@@ -1592,24 +1720,59 @@ function toggleExpandField() {
 }
 $id('expand-field').addEventListener('click', e => { e.preventDefault(); toggleExpandField(); });
 
-// Draft-vs-file swap (delegated: the link is re-created per render)
+// Draft-vs-file swap + vault-staleness resolution (delegated: the links are
+// re-created per render). q is re-read fresh at click time, never closed
+// over — questions[] is replaced wholesale on every 'questions' push, so a
+// stale reference could otherwise act on data superseded since the banner
+// was drawn.
 $id('draft-restored').addEventListener('click', e => {
   const q = questions[idx];
-  if (e.target && e.target.id === 'keep-editing') {
+  const targetId = e.target && e.target.id;
+
+  if (targetId === 'keep-editing') {
     e.preventDefault();
     if (q) { loadedFileChecksum = q.fileChecksum; loadedExistingAnswer = q.existingAnswer || ''; }
     $id('draft-restored').style.display = 'none';
     return;
   }
-  if (!(e.target && e.target.id === 'load-file-answer')) return;
-  e.preventDefault();
-  if (!q || !q.existingAnswer) return;
-  $id('ans').value = q.existingAnswer;
-  $id('ans').dispatchEvent(new Event('input')); // autosave takes the swap as the new draft
-  loadedFileChecksum = q.fileChecksum;
-  loadedExistingAnswer = q.existingAnswer || '';
-  $id('draft-restored').textContent = 'File answer loaded — edit if needed, then Answer to confirm & close';
-  $id('ans').focus();
+  if (targetId === 'load-file-answer') {
+    e.preventDefault();
+    if (!q || !q.existingAnswer) return;
+    $id('ans').value = q.existingAnswer;
+    $id('ans').dispatchEvent(new Event('input')); // autosave takes the swap as the new draft
+    loadedFileChecksum = q.fileChecksum;
+    loadedExistingAnswer = q.existingAnswer || '';
+    $id('draft-restored').textContent = 'File answer loaded — edit if needed, then Answer to confirm & close';
+    $id('ans').focus();
+    return;
+  }
+  // Vault staleness (ADR-0023 square 4): 'Keep yours' acknowledges the
+  // external draft as the new CAS baseline WITHOUT touching the textarea —
+  // this window's next save then correctly declares "I expected the vault
+  // to hold what I just saw", so a real third-party write after this point
+  // still detects and archives cleanly (the solemn promise keeps working).
+  if (targetId === 'keep-mine') {
+    e.preventDefault();
+    if (q) lastSentDraftText = q.draftText;
+    $id('draft-restored').style.display = 'none';
+    return;
+  }
+  if (targetId === 'update-draft') {
+    e.preventDefault();
+    if (!q) return;
+    // The vault already holds this text — no re-save needed, unlike the
+    // file-answer swap above (which moves content INTO the draft).
+    $id('ans').value = q.draftText || '';
+    lastSentDraftText = q.draftText;
+    $id('draft-restored').style.display = 'none';
+    $id('ans').focus();
+    return;
+  }
+  if (targetId === 'see-draft-diff') {
+    e.preventDefault();
+    if (!q) return;
+    vscode.postMessage({ type: 'showDraftDiff', mine: $id('ans').value, theirs: q.draftText || '', questionText: q.text });
+  }
 });
 
 $id('btn-ans').addEventListener('click', submit);
@@ -1844,7 +2007,14 @@ function render() {
   $id('pbar').style.width = pct + '%';
   $id('adr-link').textContent = q.groupLabel;
 
-  $id('qtext').textContent = q.text;
+  if (renderTitleMarkdown) {
+    // Inline-only markdown for titles (Jérémie, 2026-07-24: "take into
+    // account backticks in question titles") — escape first, then code/
+    // bold/italic spans only; never block constructs in a title.
+    $id('qtext').innerHTML = inlineMd(q.text);
+  } else {
+    $id('qtext').textContent = q.text;
+  }
 
   // ADR-0010: Collapsible context box
   if (q.adrContext) {
@@ -1921,6 +2091,25 @@ function render() {
       '<a id="load-file-answer" role="button" style="cursor:pointer">load new file answer</a> · ' +
       '<a id="keep-editing" role="button" style="cursor:pointer">keep my editing</a>';
     $id('draft-restored').style.display = 'block';
+  } else if (q.draftText !== undefined && q.draftText !== lastSentDraftText && q.draftText !== $id('ans').value) {
+    // Vault staleness (Riddle 5's design, ADR-0023 square 4, 2026-07-24
+    // inbox 1834): the VAULT draft changed while this question is on screen —
+    // a second Open Questions window (or any future draft-writing surface)
+    // saved for the same question. The vault layer already guarantees
+    // nothing is lost even if this window overwrites blind (v0.7.34's CAS
+    // fence archives whatever gets clobbered) — this banner is what makes
+    // that safety net VISIBLE and gives a graceful choice instead of a
+    // silent overwrite. Never touch the textarea on its own (same
+    // DEBRIEF-003/004 discipline as the file-drift sibling above).
+    const diff = wordDiffCounts($id('ans').value, q.draftText);
+    const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
+    const sourceLabel = draftSourceLabel(q.draftSource);
+    $id('draft-restored').innerHTML = '⚠ Updated draft detected (+' + diff.added + ' −' + diff.removed + ' words' +
+      (savedAt ? ' at ' + savedAt : '') + (sourceLabel ? ' from ' + sourceLabel : '') + ') — ' +
+      '<a id="keep-mine" role="button" style="cursor:pointer">Keep yours</a> · ' +
+      '<a id="update-draft" role="button" style="cursor:pointer">Update</a> · ' +
+      '<a id="see-draft-diff" role="button" style="cursor:pointer">See diff</a>';
+    $id('draft-restored').style.display = 'block';
   }
   $id('flash').style.display = 'none';
   $id('drift-bar').style.display = 'none';
@@ -1954,6 +2143,7 @@ window.addEventListener('message', e => {
     // actually on screen by its stable draftKey before falling back to the
     // old positional clamp.
     const currentKey = questions[idx] ? questions[idx].draftKey : undefined;
+    renderTitleMarkdown = msg.renderTitleMarkdown !== false;
     questions = msg.questions;
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
     if (questions.length === 0) {

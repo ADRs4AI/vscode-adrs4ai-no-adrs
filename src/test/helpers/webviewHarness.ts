@@ -65,6 +65,8 @@ function unescapeAsTemplateLiteral(rawScriptText: string): string {
 }
 
 export interface FakeElement {
+  /** Stamped to match the id it was looked up by — real delegated-click handlers read `e.target.id` to dispatch (e.g. openQuestionsPanel.ts's `#draft-restored` links), and this must match for those handlers to fire in a test. */
+  id: string
   value: string
   textContent: string
   innerHTML: string
@@ -80,8 +82,9 @@ export interface FakeElement {
   listeners: Record<string, Array<(e: unknown) => void>>
 }
 
-function makeFakeElement(): FakeElement {
+function makeFakeElement(id: string): FakeElement {
   const el: FakeElement = {
+    id,
     value: '',
     textContent: '',
     innerHTML: '',
@@ -106,6 +109,15 @@ export interface WebviewHarness {
   postToWebview(data: Record<string, unknown>): void
   /** Click a button/element by id (invokes its registered 'click' listeners). */
   click(id: string): void
+  /**
+   * Click a link/button rendered INSIDE a delegated-click container (e.g.
+   * openQuestionsPanel.ts's `#draft-restored` div, whose links are
+   * innerHTML-rendered per render() call, not individually
+   * addEventListener'd). Invokes `parentId`'s own 'click' listeners with
+   * `e.target.id === targetId`, matching how the real script's delegated
+   * handlers read `e.target.id` to dispatch.
+   */
+  clickDelegated(parentId: string, targetId: string): void
   /** Type into the answer textarea, firing its 'input' listener (drives the debounced autosave). */
   typeAnswer(text: string): void
   /** Read a fake element's current state (for assertions). */
@@ -129,7 +141,7 @@ export function createWebviewHarness(): WebviewHarness {
   const elements = new Map<string, FakeElement>()
   const getElementById = (id: string): FakeElement => {
     let el = elements.get(id)
-    if (!el) { el = makeFakeElement(); elements.set(id, el) }
+    if (!el) { el = makeFakeElement(id); elements.set(id, el) }
     return el
   }
 
@@ -180,6 +192,11 @@ export function createWebviewHarness(): WebviewHarness {
     click(id) {
       const el = getElementById(id)
       for (const handler of el.listeners['click'] ?? []) handler({ preventDefault: () => {}, target: el })
+    },
+    clickDelegated(parentId, targetId) {
+      const parent = getElementById(parentId)
+      const target = getElementById(targetId)
+      for (const handler of parent.listeners['click'] ?? []) handler({ preventDefault: () => {}, target })
     },
     typeAnswer(text) {
       const el = getElementById('ans')

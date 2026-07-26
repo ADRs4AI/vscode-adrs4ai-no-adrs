@@ -322,9 +322,28 @@ describe('Webview script block syntax', () => {
   // able to insert one, which I thought was already a feature"). writeAnswer
   // now appends a brand-new ANS block when neither an ANS header nor a
   // placeholder line is found, using Status as the reliable anchor.
-  it('writeAnswer appends a fresh ANS block when the question has Status but no ANS marker at all — only at a REAL boundary (DEBRIEF-006 gate)', () => {
-    expect(PANEL_SRC).toContain("} else if (statusLineIdx >= 0 && boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {")
+  it('writeAnswer appends a fresh ANS block when the question has no ANS marker at all — only at a REAL boundary (DEBRIEF-006 gate)', () => {
+    expect(PANEL_SRC).toContain("} else if (boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {")
     expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}\\n`)')
+  })
+
+  describe('Regression tests', () => {
+    // Bug (Jérémie, 2026-07-25): a perfectly well-formed question with no
+    // "[Fill this out]" placeholder, no ANS marker, AND no "- Status:" line
+    // hit "Could not find the ANS block ... Please answer this one manually"
+    // — the append-ANS fallback gate demanded `statusLineIdx >= 0` even
+    // though the insertion point is computed from the block END, not from
+    // Status. The read path (status-authority's derived-openness rule) had
+    // no such requirement, so the panel surfaced questions its own write
+    // path then refused. Fixed 2026-07-25: the gate keeps the DEBRIEF-006
+    // boundary check and the refuse/confirm setting, but not the Status
+    // anchor; answered-ness then derives from the appended ANS content —
+    // the same derived path that surfaced the question.
+    it('the append-ANS fallback gate must not require a Status line (fixes the status-less refusal, 2026-07-25)', () => {
+      expect(PANEL_SRC).not.toContain("statusLineIdx >= 0 && boundaryKind !== 'window'")
+      // Step 1's flip stays conditional — no Status line means nothing to rewrite.
+      expect(PANEL_SRC).toContain('if (statusLineIdx >= 0) {')
+    })
   })
 
   it('writeAnswer\'s anchor scan is the SHARED module, never a private re-derivation — block extent, Status form, and boundaries are answerWriteScan.ts\'s to define', () => {
@@ -609,6 +628,158 @@ describe('Webview script block syntax', () => {
         vi.useRealTimers()
       }
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ADR-0023 square 4: staleness banner (Riddle 5's design, 2026-07-24 inbox
+// 1834) — the vault-side sibling of the v0.7.33 edit-time file-drift
+// banner. These run the actual shipped script via the harness, not a
+// description of intended behavior.
+// ---------------------------------------------------------------------------
+
+type WordDiffCounts = (oldText: string, newText: string) => { added: number; removed: number }
+type DraftSourceLabel = (source: string | undefined) => string | null
+
+describe('wordDiffCounts (banner-grade multiset diff)', () => {
+  it('counts added and removed words between two texts', () => {
+    const wordDiffCounts = createWebviewHarness().sandbox.wordDiffCounts as WordDiffCounts
+    expect(wordDiffCounts('hello world', 'hello there world friend')).toEqual({ added: 2, removed: 0 })
+    expect(wordDiffCounts('hello there world friend', 'hello world')).toEqual({ added: 0, removed: 2 })
+  })
+
+  it('identical text is a zero diff', () => {
+    const wordDiffCounts = createWebviewHarness().sandbox.wordDiffCounts as WordDiffCounts
+    expect(wordDiffCounts('same text here', 'same text here')).toEqual({ added: 0, removed: 0 })
+  })
+
+  it('handles empty strings on either side', () => {
+    const wordDiffCounts = createWebviewHarness().sandbox.wordDiffCounts as WordDiffCounts
+    expect(wordDiffCounts('', 'a b c')).toEqual({ added: 3, removed: 0 })
+    expect(wordDiffCounts('a b c', '')).toEqual({ added: 0, removed: 3 })
+  })
+
+  it('a repeated word that changes count is tracked as a multiset, not a set', () => {
+    const wordDiffCounts = createWebviewHarness().sandbox.wordDiffCounts as WordDiffCounts
+    // 'the the the' -> 'the the': one fewer occurrence of 'the'.
+    expect(wordDiffCounts('the the the', 'the the')).toEqual({ added: 0, removed: 1 })
+  })
+})
+
+describe('draftSourceLabel', () => {
+  it('labels known non-panel sources for display', () => {
+    const draftSourceLabel = createWebviewHarness().sandbox.draftSourceLabel as DraftSourceLabel
+    expect(draftSourceLabel('mobile')).toBe('Mobile ADR entry')
+    expect(draftSourceLabel('file-prefill')).toBe('file prefill')
+    expect(draftSourceLabel('mcp')).toBe('MCP')
+  })
+
+  it('leaves an unrecognized source as its raw value (free-form by design)', () => {
+    const draftSourceLabel = createWebviewHarness().sandbox.draftSourceLabel as DraftSourceLabel
+    expect(draftSourceLabel('some-future-surface')).toBe('some-future-surface')
+  })
+
+  it('the common "another Open Questions window" case (panel) is unlabeled, not a redundant self-reference', () => {
+    const draftSourceLabel = createWebviewHarness().sandbox.draftSourceLabel as DraftSourceLabel
+    expect(draftSourceLabel('panel')).toBeNull()
+    expect(draftSourceLabel(undefined)).toBeNull()
+  })
+})
+
+describe('Vault staleness banner (ADR-0023 square 4)', () => {
+  const Q1 = { id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' }
+
+  it('shows the banner when the vault draft changes for the SAME question, with a word-diff and timestamp', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+    expect(h.element('ans').value).toBe('hello world')
+
+    h.postToWebview({
+      type: 'questions', generation: 1,
+      questions: [{ ...Q1, draftText: 'hello there world friend', draftSavedAt: '2026-07-24T12:12:00Z' }],
+    })
+
+    expect(h.element('draft-restored').style.display).toBe('block')
+    const text = h.element('draft-restored').innerHTML
+    expect(text).toContain('Updated draft detected')
+    expect(text).toContain('+2')
+    expect(text).toContain('−0')
+    // The textarea itself is never touched by the mere detection — only an explicit Update click may change it.
+    expect(h.element('ans').value).toBe('hello world')
+  })
+
+  it('does NOT show the banner for this window\'s own echo — lastSentDraftText already matches what it just sent', () => {
+    // vi.useFakeTimers() must be installed BEFORE createWebviewHarness() —
+    // the sandbox captures setTimeout/clearTimeout at construction time
+    // (webviewHarness.ts's own documented design: real timers pass through
+    // so fake-timers control the debounce), so faking timers afterward
+    // leaves the harness holding the pre-fake, real setTimeout reference.
+    vi.useFakeTimers()
+    let h
+    try {
+      h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+      h.typeAnswer('hello world v2') // schedules the 500ms debounced autosave
+      vi.runAllTimers() // fires it: posts 'draft' and sets lastSentDraftText = 'hello world v2'
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(h.sentMessages).toContainEqual(expect.objectContaining({ type: 'draft', draftText: 'hello world v2' }))
+
+    // The extension's resulting push (its own write settling, or the drafts.json
+    // watcher firing) echoes back exactly what this window just sent. The
+    // "Draft restored" status from the initial load is expected to still be
+    // showing (unrelated to staleness) — only the staleness text must be absent.
+    h.postToWebview({ type: 'questions', generation: 1, questions: [{ ...Q1, draftText: 'hello world v2' }] })
+    expect(h.element('draft-restored').innerHTML).not.toContain('Updated draft detected')
+  })
+
+  it('provenance is named in the banner when the source is not this same panel surface', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+    h.postToWebview({ type: 'questions', generation: 1, questions: [{ ...Q1, draftText: 'hello world v2', draftSource: 'mobile' }] })
+    expect(h.element('draft-restored').innerHTML).toContain('Mobile ADR entry')
+  })
+
+  it('"Update" loads the vault text into the textarea and hides the banner, without re-sending a draft save', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+    h.postToWebview({ type: 'questions', generation: 1, questions: [{ ...Q1, draftText: 'hello there world friend' }] })
+    h.clickDelegated('draft-restored', 'update-draft')
+    expect(h.element('ans').value).toBe('hello there world friend')
+    expect(h.element('draft-restored').style.display).toBe('none')
+    expect(h.sentMessages.filter(m => m.type === 'draft')).toHaveLength(0)
+  })
+
+  it('"Keep yours" hides the banner without touching the textarea, and re-arms so the SAME vault text doesn\'t nag again', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+    h.postToWebview({ type: 'questions', generation: 1, questions: [{ ...Q1, draftText: 'hello there world friend' }] })
+    h.clickDelegated('draft-restored', 'keep-mine')
+    expect(h.element('ans').value).toBe('hello world')
+    expect(h.element('draft-restored').style.display).toBe('none')
+
+    // Re-arm check: the identical vault text arriving again must not re-trigger the banner.
+    h.postToWebview({ type: 'questions', generation: 2, questions: [{ ...Q1, draftText: 'hello there world friend' }] })
+    expect(h.element('draft-restored').style.display).not.toBe('block')
+  })
+
+  it('"See diff" posts showDraftDiff with the live textarea value and the vault text, never touching the textarea itself', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+    h.postToWebview({ type: 'questions', generation: 1, questions: [{ ...Q1, draftText: 'hello there world friend' }] })
+    h.clickDelegated('draft-restored', 'see-draft-diff')
+    expect(h.sentMessages).toContainEqual({ type: 'showDraftDiff', mine: 'hello world', theirs: 'hello there world friend', questionText: 'Q1' })
+    expect(h.element('ans').value).toBe('hello world')
+  })
+
+  it('a same-question background push with unchanged draftText never shows the staleness banner (the ordinary, silent case)', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [{ ...Q1, draftText: 'hello world' }] })
+    // The plain "Draft restored" status message from the first push is expected
+    // to persist (unrelated to staleness) — only the staleness text must be absent.
+    h.postToWebview({ type: 'questions', generation: 1, questions: [{ ...Q1, draftText: 'hello world' }] })
+    expect(h.element('draft-restored').innerHTML).not.toContain('Updated draft detected')
   })
 })
 
