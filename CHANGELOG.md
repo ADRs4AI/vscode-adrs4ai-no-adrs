@@ -8,6 +8,13 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.37] - 2026-07-26
+
+### Fixed
+- **The write path now tolerates exactly what the read path tolerates** — the answer-write scan carried private, narrower copies of two recognitions and both diverged from the parser: ANS headers written with the colon outside the bold (`**ANS**: …`) were invisible to the write anchors (causing duplicate ANS blocks and insertion previews for questions with a perfectly good anchor), and only the canonical `[Fill this in]` counted as a replaceable placeholder (so `[Fill this out]`, `[tbd]`, `_pending — routing to …_` and friends prefilled as if they were real answers). Both recognitions now come from the extractor's exported predicates — the same "one parser, N consumers" fix as v0.7.17, one level deeper.
+- `**ANS**: (by Name)` — colon-outside marker with the byline after the colon — now captures the author instead of leaking `(by Name)` into the answer text. Keyword-required: a bare `(Name)` after the colon stays content, per the QST-ANS-BYLINE posture (unrecognized bylines degrade to preserved text, never to a fake author).
+- `[Fill this out]` is now canonical alongside `[Fill this in]`.
+
 ## [0.7.36] - 2026-07-25
 
 ### Added
