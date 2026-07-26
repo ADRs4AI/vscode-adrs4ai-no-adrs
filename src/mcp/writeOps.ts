@@ -193,10 +193,19 @@ export function applyAddRecommendation(
   const section = findSectionForQuestion(freshAdr, question)
   const end = section ? Math.min(section.lineEnd, lines.length) : Math.min(start + 60, lines.length)
 
+  // LAST-wins, mirroring applyAnswerQuestion's scan (dialogue layering,
+  // v0.7.32/system3 ADR-0033): a question can already hold a full rec ->
+  // ANS -> "Recommendation (updated)" -> "ANS (to the updated
+  // recommendation)" history. Stopping at the FIRST **ANS...**: marker
+  // (this loop's behavior before this fix) spliced every new recommendation
+  // between the ORIGINAL recommendation and ORIGINAL answer -- silently
+  // corrupting the existing dialogue rather than extending it. Found by
+  // probing scripts/ephemeral/2026-07-26-probe-add-recommendation-insertion-point.ts
+  // against the real system3 ADR-0033 specimen before assuming the bug.
   let ansHeaderLineIdx = -1
   for (let i = start; i < end; i++) {
     const trimmed = lines[i].trim()
-    if (ANS_INLINE_RE.test(trimmed)) { ansHeaderLineIdx = i; break }
+    if (ANS_INLINE_RE.test(trimmed)) ansHeaderLineIdx = i
   }
   if (ansHeaderLineIdx === -1) {
     return { ok: false, error: `Could not find a **ANS:** block near line ${question.lineStart} in ${adrPath} to insert the recommendation before — this question may use a non-standard format.` }

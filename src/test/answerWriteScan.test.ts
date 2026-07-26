@@ -14,7 +14,7 @@
 import { describe, it, expect } from 'vitest'
 import { scanAnswerWriteAnchors, buildInsertionPreview } from '../webview/answerWriteScan'
 import { parseAdr } from '../parser/extractor'
-import { applyAnswerQuestion } from '../mcp/writeOps'
+import { applyAnswerQuestion, applyAddRecommendation } from '../mcp/writeOps'
 
 // Minimized from crossfoot/docs/adr/0030-intermittent-use-memory-support.md
 const CROSSFOOT_0030 = `# ADR 0030: Intermittent-use memory support
@@ -261,6 +261,26 @@ Recommend a ~20-line ride-along snapshot. This stops the bleeding while the hold
       expect(result.newContent).toContain('last standing thing for full sync')
       expect(result.newContent).toContain('stops the bleeding while the hold holds')
       expect(result.newContent).toContain('**B — hold with the concrete trigger.**')
+    }
+  })
+
+  it('applyAddRecommendation on an already-layered question appends after the LAST ANS marker, not the first (regression: it used to splice between the ORIGINAL recommendation and ORIGINAL answer — a DEBRIEF-006-class wrong-location corruption, found by probing before assuming)', () => {
+    const adr = parseAdr(DIALOGUE, '/fake/docs/adr/0033-t.md')
+    const result = applyAddRecommendation(DIALOGUE, '/fake/docs/adr/0033-t.md', adr.questions[0].id, 'Probe Agent', 'A brand new third-round recommendation.', '2026-07-25')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const newBlockIdx = result.newContent.indexOf('A brand new third-round recommendation.')
+      const originalAnsIdx = result.newContent.indexOf('**ANS:** (by Jérémie Lumbroso — given in chat 2026-07-14')
+      const updatedRecIdx = result.newContent.indexOf('**Recommendation (updated)**')
+      const openSlotIdx = result.newContent.indexOf('**ANS (to the updated recommendation):**')
+      // The new block must land after the WHOLE existing history, not
+      // wedged between the first recommendation and the first answer.
+      expect(newBlockIdx).toBeGreaterThan(originalAnsIdx)
+      expect(newBlockIdx).toBeGreaterThan(updatedRecIdx)
+      expect(newBlockIdx).toBeLessThan(openSlotIdx)
+      // Every prior layer survives byte-for-byte intact:
+      expect(result.newContent).toContain('last standing thing for full sync')
+      expect(result.newContent).toContain('stops the bleeding while the hold holds')
     }
   })
 })
