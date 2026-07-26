@@ -73,8 +73,15 @@ export function projectOverview(ctx: RepositoryContext, options: ProjectOverview
     // `resolution` is not yet a parsed field on AdrFile — ADR-0009's Action
     // Item (owner: Hearth 4.6) adds it. Explicit-over-absent in the
     // meantime: always emit `[unset]`, never omit the field.
+    // Namespace is printed only when set (multi-root workspaces) — omitted
+    // for the common single-root case, where it's not a meaningful concept.
+    // Elenchus 2026-07-24 (Eikon 5): the namespace string a caller needs for
+    // `namespace.NNNN` refs is derived from git-remote/CLAUDE.md identity,
+    // not the folder name docs tend to illustrate it with (e.g. "legacy") —
+    // unguessable without this row surfacing the real value.
+    const nsSuffix = adr.namespace ? ` | ns: ${adr.namespace}` : ''
     lines.push(
-      `${bracket(adrRefString(adr))} ${adr.title} | ${adr.status} | resolution: [unset] | open: ${openCount} | iter: ${adr.iteration}`,
+      `${bracket(adrRefString(adr))} ${adr.title} | ${adr.status} | resolution: [unset] | open: ${openCount} | iter: ${adr.iteration}${nsSuffix}`,
     )
   }
 

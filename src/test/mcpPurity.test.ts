@@ -182,6 +182,16 @@ describe('projectOverview (Tier 0)', () => {
     expect(result).toContain('scanned_at: [unset] | version: [unset]')
   })
 
+  it('surfaces the real namespace string per row in multi-root workspaces, so a caller can copy the namespace.NNNN form rather than guess (elenchus 2026-07-24: "legacy.0016" is not a real namespace — the folder name and the resolved namespace can differ)', () => {
+    const result = projectOverview(makeMockContext([makeAdr({ namespace: 'warm-call-or-interactive-sessions' })]))
+    expect(result).toContain('| ns: warm-call-or-interactive-sessions')
+  })
+
+  it('omits the ns segment entirely for single-root ADRs with no namespace — not a meaningful concept there', () => {
+    const result = projectOverview(makeMockContext([makeAdr()]))
+    expect(result).not.toContain('| ns:')
+  })
+
   it('sorts ADRs by number regardless of index insertion order', () => {
     const adrs = [makeAdr({ number: 9, title: 'Ninth' }), makeAdr({ number: 2, title: 'Second' })]
     const result = projectOverview(makeMockContext(adrs))
