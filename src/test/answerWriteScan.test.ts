@@ -373,3 +373,44 @@ describe('writeOps bold-Status write-back', () => {
     })
   })
 })
+
+describe('Regression tests: scan uses the extractor\'s FULL marker + placeholder recognition (2026-07-26)', () => {
+  // Jérémie, 2026-07-26: "the inability to insert answers is becoming
+  // really almost omnipresent" — live specimen was his OWN ADR-0036 edit,
+  // "**ANS**: (by Jérémie)" (colon outside the bold) over a
+  // "[Fill this out]" placeholder. The extractor read both tolerantly
+  // (COLON_OUTSIDE since crossfoot ADR-0029; placeholder family since
+  // D9.4), but this scan carried private narrower copies: ANS_INLINE_RE
+  // only + canonical-"[Fill this in]" only. Result: header invisible to
+  // the write path → append-fallback previews/duplicate ANS blocks for
+  // questions that had a perfectly good anchor.
+  it('finds a colon-outside ANS header ("**ANS**: (by X)") as the write anchor (fixes the ADR-0036 refusal)', () => {
+    const lines = [
+      '### QST-UNRES-TOKEN: Is `unresolved` the right word?',
+      '- Status: unanswered',
+      '',
+      '**ANS**: (by Jérémie)',
+      '[Fill this out]',
+      '',
+      '### Next question',
+    ]
+    const a = scanAnswerWriteAnchors(lines, 0)
+    expect(a.ansHeaderLineIdx).toBe(3)
+    expect(a.fillLineIdx).toBe(4)
+    expect(a.boundaryKind).toBe('heading')
+  })
+
+  it('recognizes the whole placeholder family as fill lines — "[Fill this out]", "[tbd]", "_pending — routing to Jérémie_"', () => {
+    for (const placeholder of ['[Fill this out]', '[tbd]', '_pending — routing to Jérémie_', '[]']) {
+      const lines = ['### QST: Q?', '- Status: unanswered', '**ANS:** (from Jérémie)', placeholder, '', '### Next']
+      const a = scanAnswerWriteAnchors(lines, 0)
+      expect(a.fillLineIdx, `placeholder form: ${placeholder}`).toBe(3)
+    }
+  })
+
+  it('never mistakes a REAL short answer for a fill line (bare prose is not a placeholder)', () => {
+    const lines = ['### QST: Q?', '- Status: unanswered', '**ANS:** (by Jérémie)', 'Pending on budget approval.', '', '### Next']
+    const a = scanAnswerWriteAnchors(lines, 0)
+    expect(a.fillLineIdx).toBe(-1)
+  })
+})

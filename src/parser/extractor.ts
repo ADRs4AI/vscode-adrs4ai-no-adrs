@@ -803,7 +803,12 @@ const AI_AUTHOR_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral|fable/i;
 const RECOMMENDATION_BULLET_RE = /^-\s+Recommendation(?:\s*\(([^)]+)\))?:\s*(.*)/i;
 
 // ADR-0012: the canonical placeholder — tolerated silently, no diagnostic.
-const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i;
+// "out" variant added 2026-07-26: Jérémie SAYS "fill this out" (his 07-25
+// charter message), and Riddle 5 then TYPED the spoken form into ADR-0036's
+// four QSTs — the seat whose whole program is format interpolation
+// interpolated the placeholder. Both prepositions are the same intent;
+// enumerating them here is cheaper than every future transcription drifting.
+const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+(?:in|out)[^\]]*\]$/i;
 // D9.4 (live specimen, 2026-07-10, temp/0011-agent-sessions-json-linter-…):
 // models sometimes emit a *different* stock placeholder token — inline
 // "**ANS:** [unanswered]" instead of "**ANS:**" + newline + "[Fill this
@@ -855,7 +860,30 @@ const PLACEHOLDER_EMPTY_RE = /^\[\s*\]$/;
 // answer. Wrapped-only + whole-content anchoring (inherited from the
 // caller) keep the false-positive surface unchanged: bare "fill in the
 // form below" prose is never eligible (no wrapper to strip).
-export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending|awaiting|fill(?:\s+this)?\s+in)\b.*$/i;
+export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending|awaiting|fill(?:\s+this)?\s+(?:in|out))\b.*$/i;
+
+/**
+ * "One parser, N consumers" predicates (2026-07-26). The write scan
+ * (answerWriteScan.ts) carried PRIVATE narrower copies of both of these
+ * recognitions — ANS_INLINE_RE only for headers (blind to the colon-outside
+ * form THIS file has read tolerantly since crossfoot ADR-0029), and a
+ * canonical-only fill regex (blind to every synonym/wrapped placeholder
+ * this classifier accepts). Result: questions the extractor surfaced were
+ * unwritable or mis-anchored — Jérémie's "inability to insert answers is
+ * becoming really almost omnipresent" (2026-07-26). These exports ARE the
+ * recognition; the scan may not re-derive it.
+ */
+export function isAnsMarkerLine(line: string): boolean {
+  return ANS_INLINE_RE.test(line) || ANS_COLON_OUTSIDE_RE.test(line);
+}
+
+/** Whole-content placeholder test — same composition finalizeAnswerLayer uses. */
+export function isPlaceholderAnswerText(text: string): boolean {
+  const t = text.trim();
+  if (PLACEHOLDER_CANONICAL_RE.test(t) || PLACEHOLDER_SYNONYM_RE.test(t) || PLACEHOLDER_EMPTY_RE.test(t)) return true;
+  const stripped = stripPlaceholderWrapper(t);
+  return stripped.wrapped && PLACEHOLDER_LEXICON_RE.test(stripped.inner);
+}
 
 /**
  * Exported so the D9.4 normalizer handler (d9-4-nonstandard-fill-
@@ -1240,7 +1268,22 @@ export function extractQuestion(
       answerLine = absLine;
       // Collect any text on the same line after the ANS marker
       const markerRe = ansMatch ? ANS_INLINE_RE : ANS_COLON_OUTSIDE_RE;
-      const afterMarker = line.replace(markerRe, '').trim();
+      let afterMarker = line.replace(markerRe, '').trim();
+      // Post-colon byline on the colon-outside form (Jérémie's own hand-form,
+      // 2026-07-25/26, ADR-0036 live specimen): "**ANS**: (by Jérémie)" — the
+      // colon lands right after the bold, so COLON_OUTSIDE's attribution
+      // group (which sits BEFORE the colon) captures nothing and "(by
+      // Jérémie)" leaked into answer content. Keyword-REQUIRED here, same
+      // reasoning as the recommendations' fourth position and QST-ANS-BYLINE
+      // (ADR-0032): after the colon, only "by"/"from" distinguishes a byline
+      // from content like "(see ADR-14)" — a bare "(Name)" stays content.
+      if (!answerAuthor) {
+        const postColonByline = afterMarker.match(/^\((?:by|from)\b\s*([^)]*)\)\s*(.*)$/i);
+        if (postColonByline && postColonByline[1].trim()) {
+          answerAuthor = postColonByline[1].trim();
+          afterMarker = postColonByline[2].trim();
+        }
+      }
       if (afterMarker) answerLines.push(afterMarker);
       if (ansColonOutsideMatch && warnings) {
         warnings.push({

@@ -16,12 +16,21 @@
  * questions the machinery then can't serve (the 0620 composition rule).
  */
 
-import { STATUS_LINE_RE, ANS_INLINE_RE } from '../parser/extractor'
+import { STATUS_LINE_RE, isAnsMarkerLine, isPlaceholderAnswerText } from '../parser/extractor'
 
 /** Thematic break — same boundary set as extractor.ts's THEMATIC_BREAK_RE. */
 const THEMATIC_BREAK_LINE_RE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/
 
-const FILL_PLACEHOLDER_LINE_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
+// The private FILL_PLACEHOLDER_LINE_RE that lived here (canonical
+// "[Fill this in]" only) and the direct ANS_INLINE_RE header test were this
+// file's OWN violation of the doctrine stated in its header comment: the
+// extractor reads colon-outside ANS markers ("**ANS**: ...") and a whole
+// placeholder family ("[Fill this out]", "[tbd]", "_pending — routing to
+// Jérémie_", "[]"), and this scan recognized none of them — so the panel
+// prefilled placeholder junk as if it were a real answer, or missed the
+// header entirely and appended duplicate ANS blocks (Jérémie, 2026-07-26:
+// "the inability to insert answers is becoming really almost omnipresent").
+// Both recognitions now come from the extractor's exported predicates.
 
 export interface AnswerWriteAnchors {
   /** Line index of the question's Status field (plain or bold form), or -1. */
@@ -118,11 +127,12 @@ export function scanAnswerWriteAnchors(
     // the CURRENT slot — the last ANS marker in the block — never the
     // first layer of a Q&A history. fill resets with each new marker so a
     // placeholder is only honored under the marker it belongs to.
-    if (ANS_INLINE_RE.test(trimmed)) { anchors.ansHeaderLineIdx = i; anchors.fillLineIdx = -1 }
+    if (isAnsMarkerLine(trimmed)) { anchors.ansHeaderLineIdx = i; anchors.fillLineIdx = -1 }
     if (
       anchors.fillLineIdx === -1 &&
       anchors.ansHeaderLineIdx !== -1 &&
-      FILL_PLACEHOLDER_LINE_RE.test(trimmed)
+      i !== anchors.ansHeaderLineIdx &&
+      isPlaceholderAnswerText(trimmed)
     ) anchors.fillLineIdx = i
   }
 

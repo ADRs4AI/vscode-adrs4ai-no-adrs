@@ -3930,3 +3930,65 @@ describe('HQ ADR-0012 — QST identifier grammar ("### QST-<ID>: title")', () =>
     expect(adr.questions[0].qstId).toBe('A')
   })
 })
+
+describe('Regression tests: ANS marker + placeholder morphologies (Jérémie live reports, 2026-07-25/26)', () => {
+  // The colon-outside form WITH a post-colon byline — Jérémie's natural
+  // hand-form, typed into ADR-0036 while answering QST-UNRES-TOKEN. The
+  // COLON_OUTSIDE regex's attribution group sits BEFORE the colon, so
+  // "(by Jérémie)" leaked into answer content and no author was captured.
+  it('captures the byline in "**ANS**: (by Jérémie) text" — post-colon, keyword-required (fixes ADR-0036 specimen)', () => {
+    const doc = [
+      '## Open Questions',
+      '',
+      '### QST: Is the token right?',
+      '- Status: unanswered',
+      '',
+      '**ANS**: (by Jérémie) Yes, unresolved reads correctly.',
+      '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/0036-x.md')
+    const q = adr.questions[0]
+    expect(q.answer?.author).toBe('Jérémie')
+    expect(q.answer?.text).toBe('Yes, unresolved reads correctly.')
+  })
+
+  // QST-ANS-BYLINE posture (ADR-0032, Jérémie's own reversal 2026-07-25):
+  // bare "(Name)" after the colon is NOT a byline — it degrades to
+  // preserved content, never to a fake author chip.
+  it('keeps a bare post-colon parenthetical as content: "**ANS**: (Jérémie Lumbroso)" has no author', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS**: (Jérémie Lumbroso) some words.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.answer?.author).toBeUndefined()
+    expect(q.answer?.text).toContain('(Jérémie Lumbroso)')
+  })
+
+  // "The placeholder need that keeps getting swatted away" (Jérémie's
+  // hypothesis, 2026-07-26, confirmed): swat #6 was "**ANS:** _pending —
+  // routing to Jérémie_" making questions unanswerable. Whole-content +
+  // wrapped-only anchoring: the italics make it a placeholder; the same
+  // words as bare prose stay a real answer.
+  it('classifies "**ANS:** _pending — routing to Jérémie_" as an unanswered placeholder, not an answer', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Routing?', '',
+      '**ANS:** _pending — routing to Jérémie_', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+  })
+
+  // "[Fill this out]" — the spoken form of the canonical placeholder,
+  // typed by Riddle 5 itself into ADR-0036 (the format seat interpolated
+  // the placeholder). Both prepositions now canonical.
+  it('reads "[Fill this out]" as a placeholder — the question stays open', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS:** (from Jérémie)', '[Fill this out]', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+  })
+})
