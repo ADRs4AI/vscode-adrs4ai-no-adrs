@@ -228,6 +228,11 @@
           "default": "Sonnet 4.6 (1M)",
           "description": "The AI model name used in new ADR templates (e.g., 'Sonnet 4.6 (1M)', 'Claude Opus 4.6')."
         },
+        "adrManager.logErrors": {
+          "type": "boolean",
+          "default": true,
+          "description": "When an error occurs in the Open Questions panel, append a full-reconstruction record (entire ADR text, entire answer box, all metadata) to the owning project's docs/adr/.working/errors.jsonl. Default is ON during the error-collection era; will flip to OFF once the format stabilizes."
+        },
         "adrManager.renderMarkdownInQuestionTitles": {
           "type": "boolean",
           "default": true,
