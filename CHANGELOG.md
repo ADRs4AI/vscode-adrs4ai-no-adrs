@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.38] - 2026-07-26
+
+### Added
+- **QuestionTours, reference implementation (ADR-0034)**: a tour is a curated, ordered, annotated walk over your existing open questions — a view, never a second queue. Run **ADR Manager: Mint Tour from Current Filter** to save the sidebar's current filter (open/all/answered) as a named, shareable `docs/adr/tours/*.tour.json`; tours appear in a new **Tours** sidebar category; clicking one opens the Open Questions panel in tour mode — same panel, same drafts, same anti-clobber protections, dressed with the tour's own title, author, and optional color theme. Entries that can't be resolved are shown, never silently dropped.
+
 ## [0.7.37] - 2026-07-26
 
 ### Fixed
