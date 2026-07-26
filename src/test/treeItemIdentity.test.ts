@@ -31,8 +31,19 @@ describe('stableTreeItemId', () => {
       // container-path prefix is what keeps the tree-wide id unique
       stableTreeItemId({ kind: 'question', questionContainerPath: '/ws/docs/adr/0001-a.md', questionId: '1::abc::0' }),
       stableTreeItemId({ kind: 'question', questionContainerPath: '/ws/sub/docs/adr/0001-a.md', questionId: '1::abc::0' }),
+      stableTreeItemId({ kind: 'tour-group', rootNodePath: '/ws' }),
+      stableTreeItemId({ kind: 'tour', tourPath: '/ws/docs/adr/tours/2026-07-24-a.tour.json' }),
+      stableTreeItemId({ kind: 'tour', tourPath: '/ws/sub/docs/adr/tours/2026-07-24-a.tour.json' }),
+      stableTreeItemId({ kind: 'tour-entry', tourPath: '/ws/docs/adr/tours/2026-07-24-a.tour.json', tourEntryRef: 'adr:0001#qst-x' }),
+      stableTreeItemId({ kind: 'tour-entry', tourPath: '/ws/docs/adr/tours/2026-07-25-b.tour.json', tourEntryRef: 'adr:0001#qst-x' }),
     ]
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('the same question referenced from two different tours gets two distinct tour-entry ids', () => {
+    const a = stableTreeItemId({ kind: 'tour-entry', tourPath: '/ws/docs/adr/tours/tour-a.tour.json', tourEntryRef: 'adr:0001#qst-x' })
+    const b = stableTreeItemId({ kind: 'tour-entry', tourPath: '/ws/docs/adr/tours/tour-b.tour.json', tourEntryRef: 'adr:0001#qst-x' })
+    expect(a).not.toBe(b)
   })
 
   it('is stable across rebuilds — same facts, same id (reveal depends on it)', () => {

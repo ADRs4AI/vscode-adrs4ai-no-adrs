@@ -27,6 +27,8 @@ import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
+import { resolveTourEntries, isTourDone } from '../index/tourIndex'
+import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import { appendErrorRecord, buildErrorRecord } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 
@@ -92,6 +94,26 @@ interface WebviewQuestion {
   draftSavedAt?: string
   /** ADR-0023 square 4 (staleness banner): which surface last wrote this draft — 'panel', 'file-prefill', 'mobile', 'mcp', … Undefined for a draft saved before provenance existed. */
   draftSource?: string
+  /** ADR-0034: present only when this question is being walked as part of a tour — the authored claim beside the live facts above. */
+  tourEntry?: {
+    comment?: string
+    disposition?: string
+    answerPath?: string
+    mustRespond: boolean
+  }
+}
+
+/** ADR-0034: sent alongside `questions` only when the panel is in tour mode. */
+interface WebviewTourMeta {
+  slug: string
+  title: string
+  author: { name: string; model?: string; role?: string }
+  mintedAt: string
+  theme?: { background?: string; foreground?: string }
+  retired: boolean
+  done: boolean
+  /** Doctrine 3: entries that failed to resolve — surfaced as a visible list, never silently dropped. */
+  brokenRefs: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +146,8 @@ type WebviewMessage =
   | { type: 'retrySave'; adrPath: string }
   /** ADR-0023 square 4 (staleness banner): "See diff" — open VS Code's own diff editor over two virtual documents rather than a bespoke webview differ. */
   | { type: 'showDraftDiff'; mine: string; theirs: string; questionText: string }
+  /** ADR-0034: leave tour mode, back to the full open-questions walk. */
+  | { type: 'exitTour' }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -150,14 +174,18 @@ export class OpenQuestionsPanel {
    */
   private questionsGeneration = 0
 
+  /** ADR-0034: when set, sendQuestions() walks exactly this tour's unanswered, resolvable entries, in tour order, instead of every open question. Same executor, tour-mode dress — never a second component. */
+  private activeTourSlug: string | undefined
+
   // ---------------------------------------------------------------------------
 
-  static createOrShow(composite: CompositeIndex): void {
+  static createOrShow(composite: CompositeIndex, tourSlug?: string): void {
     if (OpenQuestionsPanel.instance) {
       OpenQuestionsPanel.instance.panel.reveal(vscode.ViewColumn.One)
+      if (tourSlug) OpenQuestionsPanel.instance.setTour(tourSlug)
       return
     }
-    new OpenQuestionsPanel(composite)
+    new OpenQuestionsPanel(composite, tourSlug)
   }
 
   /** Jump the open panel to a specific question by ID. Call after createOrShow. */
@@ -168,8 +196,15 @@ export class OpenQuestionsPanel {
     }, 150)
   }
 
-  private constructor(private readonly composite: CompositeIndex) {
+  /** ADR-0034: switch an already-open panel into (or between) tour mode — the tree's "click a tour" entry point when the panel is already showing. */
+  setTour(slug: string): void {
+    this.activeTourSlug = slug
+    this.sendQuestions()
+  }
+
+  private constructor(private readonly composite: CompositeIndex, initialTourSlug?: string) {
     OpenQuestionsPanel.instance = this
+    this.activeTourSlug = initialTourSlug
 
     // ADR-0023: docs/adr/.working/ — committed substrate, not a gitignored
     // sidecar (Jérémie's completist reversal). Owned by the ADR directory,
@@ -269,44 +304,103 @@ export class OpenQuestionsPanel {
     return questions
       .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
       .filter(({ q }) => !q.isAnswered)
-      .map(({ q, ordinal, total }) => {
-        const draftKey = computeDraftKey(opts.containerId, q.text, ordinal)
-        // getIfMatching, not get: a stale key whose duplicate-text group
-        // shape has shifted (write-adversary CATCH 3) must never silently
-        // restore into the wrong question's answer box.
-        const draft = this.draftStore.getIfMatching(draftKey, q.text, total)
-        return {
-          id: q.id,
-          text: q.text,
-          whyAsking: q.whyAsking,
-          whyDeferring: q.whyDeferring,
-          need: q.need,
-          recommendation: q.recommendation,
-          recommendations: q.recommendations,
-          body: q.rawBody,
-          bodyPost: q.rawBodyPost,
-          adrContext: opts.adrContext,
-          adrNumber: opts.adrNumber,
-          adrTitle: opts.groupLabel,
-          adrPath: opts.adrPath,
-          lineStart: q.lineStart,
-          draftKey,
-          totalOccurrences: total,
-          fileChecksum: opts.checksum,
-          draftText: draft?.draftText,
-          existingAnswer: !q.isAnswered && q.answer ? q.answer.text : undefined,
-          fileMtime: statMtimeMs(q.adrPath),
-          draftSavedAt: draft?.updatedAt,
-          draftSource: draft?.source,
-          sourceKind: opts.sourceKind,
-          groupSortKey: opts.groupSortKey,
-          groupLabel: opts.groupLabel,
-          rootNamespace: opts.rootNamespace,
-        }
-      })
+      .map(({ q, ordinal, total }) => this.buildRow(q, ordinal, total, opts))
+  }
+
+  /** The single-question body `buildRows` maps over — factored out so ADR-0034's tour mode can build exactly one row for a resolved entry, without needing a whole container's question list in hand. */
+  private buildRow(
+    q: Question,
+    ordinal: number,
+    total: number,
+    opts: {
+      containerId: string
+      adrPath: string
+      checksum: string
+      sourceKind: 'adr' | 'seed'
+      adrNumber: number
+      adrContext: string | undefined
+      groupSortKey: string
+      groupLabel: string
+      rootNamespace: string
+    },
+  ): WebviewQuestion {
+    const draftKey = computeDraftKey(opts.containerId, q.text, ordinal)
+    // getIfMatching, not get: a stale key whose duplicate-text group
+    // shape has shifted (write-adversary CATCH 3) must never silently
+    // restore into the wrong question's answer box.
+    const draft = this.draftStore.getIfMatching(draftKey, q.text, total)
+    return {
+      id: q.id,
+      text: q.text,
+      whyAsking: q.whyAsking,
+      whyDeferring: q.whyDeferring,
+      need: q.need,
+      recommendation: q.recommendation,
+      recommendations: q.recommendations,
+      body: q.rawBody,
+      bodyPost: q.rawBodyPost,
+      adrContext: opts.adrContext,
+      adrNumber: opts.adrNumber,
+      adrTitle: opts.groupLabel,
+      adrPath: opts.adrPath,
+      lineStart: q.lineStart,
+      draftKey,
+      totalOccurrences: total,
+      fileChecksum: opts.checksum,
+      draftText: draft?.draftText,
+      existingAnswer: !q.isAnswered && q.answer ? q.answer.text : undefined,
+      fileMtime: statMtimeMs(q.adrPath),
+      draftSavedAt: draft?.updatedAt,
+      draftSource: draft?.source,
+      sourceKind: opts.sourceKind,
+      groupSortKey: opts.groupSortKey,
+      groupLabel: opts.groupLabel,
+      rootNamespace: opts.rootNamespace,
+    }
+  }
+
+  /** Row-building opts for one ADR — shared between the full walk (sendQuestions) and a single resolved tour entry (buildTourRow), which only ever targets one ADR at a time. */
+  private adrRowOpts(adr: AdrFile): {
+    containerId: string; adrPath: string; checksum: string; sourceKind: 'adr'; adrNumber: number
+    adrContext: string | undefined; groupSortKey: string; groupLabel: string; rootNamespace: string
+  } {
+    const node = this.composite.findRoot(adr.path)
+    const namespace = node?.namespace ?? ''
+    const num = String(adr.number).padStart(4, '0')
+    return {
+      containerId: `${namespace}:${adr.number}`,
+      adrPath: adr.path,
+      checksum: adr.checksum,
+      sourceKind: 'adr',
+      adrNumber: adr.number,
+      adrContext: computeAdrContext(adr),
+      groupSortKey: `${namespace}::0-${num}`,
+      groupLabel: `ADR-${num}: ${stripAdrNumberPrefix(adr.title)}`,
+      rootNamespace: namespace,
+    }
   }
 
   private sendQuestions(): void {
+    const questions = this.activeTourSlug ? this.buildTourQuestions(this.activeTourSlug) : this.buildAllQuestions()
+    const tour = this.activeTourSlug ? this.buildTourMeta(this.activeTourSlug) : null
+
+    const cfg = vscode.workspace.getConfiguration('adrManager')
+    const settingsName = cfg.get<string>('humanName', '')
+    this.questionsGeneration += 1
+    this.panel.webview.postMessage({
+      type: 'questions',
+      questions,
+      tour,
+      renderTitleMarkdown: vscode.workspace.getConfiguration('adrManager').get<boolean>('renderMarkdownInQuestionTitles', true),
+      // Priority: settings > git config > top name from ADR index
+      gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
+      recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
+      generation: this.questionsGeneration,
+    })
+  }
+
+  /** The ordinary walk: every open question across every root — unchanged from before ADR-0034. */
+  private buildAllQuestions(): WebviewQuestion[] {
     // ADR-0025 panel-aggregation (Option A): walk every root in the
     // composite, not just a single AdrIndex/SeedIndex pair. groupSortKey is
     // prefixed by root namespace FIRST so the TOC clusters by project (per
@@ -316,33 +410,7 @@ export class OpenQuestionsPanel {
     // order — zero conditionals needed to keep the single-root case trivial.
     const questions: WebviewQuestion[] = []
     for (const node of this.composite.walk()) {
-      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => {
-        const cleanTitle = stripAdrNumberPrefix(adr.title)
-        // ADR-0010: collapsible context box. The boundary is derived from
-        // where the extracted questions sit (prefix of sections before the
-        // first question-bearing one), never from section names — see
-        // parser/adrContext.ts for why name-anchoring showed whole files.
-        const adrContext = computeAdrContext(adr)
-
-        const num = String(adr.number).padStart(4, '0')
-        return this.buildRows(adr.questions, {
-          // Root-qualified: a bare adrNumber isn't a safe containerId once
-          // more than one root exists — two roots can each have their own
-          // ADR-0001. Same collision shape Flint's ADR-0018 Step 3 fixed
-          // for ADR-vs-seed containers, one level up (roots vs. containers).
-          containerId: `${node.namespace}:${adr.number}`,
-          adrPath: adr.path,
-          checksum: adr.checksum,
-          sourceKind: 'adr',
-          adrNumber: adr.number,
-          adrContext,
-          // Root namespace first (clusters the TOC by project), then '0-'
-          // before seeds' '1-' within a root, then zero-padded number.
-          groupSortKey: `${node.namespace}::0-${num}`,
-          groupLabel: `ADR-${num}: ${cleanTitle}`,
-          rootNamespace: node.namespace,
-        })
-      })
+      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => this.buildRows(adr.questions, this.adrRowOpts(adr)))
 
       const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed => {
         const dateStr = seed.date ? ` (${seed.date})` : ''
@@ -362,19 +430,60 @@ export class OpenQuestionsPanel {
 
       questions.push(...adrRows, ...seedRows)
     }
+    return questions
+  }
 
-    const cfg = vscode.workspace.getConfiguration('adrManager')
-    const settingsName = cfg.get<string>('humanName', '')
-    this.questionsGeneration += 1
-    this.panel.webview.postMessage({
-      type: 'questions',
-      questions,
-      renderTitleMarkdown: vscode.workspace.getConfiguration('adrManager').get<boolean>('renderMarkdownInQuestionTitles', true),
-      // Priority: settings > git config > top name from ADR index
-      gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
-      recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
-      generation: this.questionsGeneration,
-    })
+  /**
+   * ADR-0034 tour mode: exactly this tour's entries, in tour order,
+   * filtered to those that (a) resolve and (b) resolve to a still-open
+   * question — an already-answered "ratify"-style entry has nothing left
+   * to walk, and a seed-anchored or broken ref isn't walkable in this
+   * slice (doctrine 3's broken-reference visibility is met by
+   * buildTourMeta's brokenRefs list, surfaced in the header, not woven
+   * into the per-question walk sequence).
+   */
+  private buildTourQuestions(slug: string): WebviewQuestion[] {
+    const found = this.composite.findTour(slug)
+    if (!found) return []
+    const resolved = resolveTourEntries(found.tour, createRepositoryContextAdapter(this.composite))
+    const rows: WebviewQuestion[] = []
+    for (const entry of resolved) {
+      if (entry.resolution.kind !== 'question') continue
+      if (entry.resolution.question.isAnswered) continue
+      const row = this.buildRow(
+        entry.resolution.question,
+        ...this.tourEntryOrdinal(entry.resolution.adr, entry.resolution.question),
+        this.adrRowOpts(entry.resolution.adr),
+      )
+      row.tourEntry = { comment: entry.comment, disposition: entry.disposition, answerPath: entry.answerPath, mustRespond: entry.mustRespond }
+      rows.push(row)
+    }
+    return rows
+  }
+
+  /** Where `question` sits in its own ADR's full (unfiltered) question list — buildRow needs the SAME ordinal/total buildRows would have computed had it walked that ADR whole, so a tour-walked question's draftKey is identical to what the ordinary walk would use for the same question. */
+  private tourEntryOrdinal(adr: AdrFile, question: Question): [number, number] {
+    const idx = adr.questions.findIndex(q => q.id === question.id)
+    const ordinals = computeOccurrenceOrdinals(adr.questions.map(q => q.text))
+    const totals = computeOccurrenceCounts(adr.questions.map(q => q.text))
+    return idx === -1 ? [0, 1] : [ordinals[idx], totals[idx]]
+  }
+
+  /** Doctrine 3 (broken refs are visible, never silent): brokenRefs collects every entry that failed to resolve, for the header — computed fresh from the live substrate on every push, same as doneness. */
+  private buildTourMeta(slug: string): WebviewTourMeta | null {
+    const found = this.composite.findTour(slug)
+    if (!found) return null
+    const resolved = resolveTourEntries(found.tour, createRepositoryContextAdapter(this.composite))
+    return {
+      slug: found.tour.slug,
+      title: found.tour.title,
+      author: { name: found.tour.author.name, model: found.tour.author.model, role: found.tour.author.role },
+      mintedAt: found.tour.minted_at,
+      theme: found.tour.theme,
+      retired: found.tour.retired,
+      done: isTourDone(resolved),
+      brokenRefs: resolved.filter(e => e.resolution.kind === 'error').map(e => e.ref),
+    }
   }
 
   private async handleMessage(msg: WebviewMessage): Promise<void> {
@@ -402,6 +511,7 @@ export class OpenQuestionsPanel {
         break
       case 'retrySave': await this.retrySave(msg.adrPath); break
       case 'showDraftDiff': await this.showDraftDiff(msg.mine, msg.theirs, msg.questionText); break
+      case 'exitTour': this.activeTourSlug = undefined; this.sendQuestions(); break
     }
   }
 
@@ -1154,6 +1264,32 @@ textarea.expanded{min-height:70vh;height:70vh}
   font-weight:600;
 }
 .insertion-preview-actions{display:flex;gap:8px}
+/* ADR-0034 (QuestionTours): the tour-mode skin's one visible seam — header
+   renders provenance-first metadata, per doctrine 2 ("perspectives, not
+   consensus" — no ordering ever reads as authoritative without naming its
+   author). Default colors here are the UNTHEMED fallback; a tour's own
+   theme.background/foreground (doctrine 6, chrome-only — never the
+   substrate content below) are applied inline, per tour, in JS. */
+.tour-header{
+  display:flex;flex-direction:column;gap:4px;
+  margin-bottom:14px;padding:10px 14px;border-radius:4px;
+  background:var(--vscode-textBlockQuote-background,rgba(127,127,127,.08));
+  border:1px solid var(--vscode-textBlockQuote-border,rgba(127,127,127,.25));
+}
+.tour-header-title{font-size:14px;font-weight:600}
+.tour-header-meta{font-size:11px;opacity:.85}
+.tour-header-broken{font-size:11px;color:var(--vscode-inputValidation-warningForeground,#a9822c)}
+.tour-header a{font-size:11px;color:var(--vscode-textLink-foreground);text-decoration:none;align-self:flex-start}
+.tour-entry-info{
+  font-size:11px;margin-top:8px;margin-bottom:8px;padding:8px 10px;
+  background:var(--vscode-textBlockQuote-background,rgba(127,127,127,.08));
+  border-left:3px solid var(--vscode-textBlockQuote-border,rgba(127,127,127,.4));
+  border-radius:2px;
+}
+.tour-entry-info .disposition{
+  text-transform:uppercase;font-weight:600;letter-spacing:.03em;
+  color:var(--vscode-descriptionForeground);
+}
 .hint{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -1288,6 +1424,14 @@ textarea.expanded{min-height:70vh;height:70vh}
   <div style="font-size:13px">No open questions across your ADRs.</div>
 </div>
 
+<!-- ADR-0034: tour-mode header — provenance first, per doctrine 2. Hidden entirely outside tour mode. -->
+<div class="tour-header" id="tour-header" style="display:none">
+  <div class="tour-header-title" id="tour-header-title"></div>
+  <div class="tour-header-meta" id="tour-header-meta"></div>
+  <div class="tour-header-broken" id="tour-header-broken" style="display:none"></div>
+  <a id="exit-tour" role="button">← Exit tour, back to all open questions</a>
+</div>
+
 <div id="card">
   <div class="counter" id="counter"></div>
   <div class="progress"><div class="progress-fill" id="pbar"></div></div>
@@ -1305,6 +1449,8 @@ textarea.expanded{min-height:70vh;height:70vh}
   </details>
 
   <div class="qtext" id="qtext"></div>
+  <!-- ADR-0034: the authored claim beside the live facts above (doctrine 1) — only present while walking a tour. -->
+  <div class="tour-entry-info" id="tour-entry-info" style="display:none"></div>
   <div class="why" id="why" style="display:none"></div>
   <div class="qst-body" id="body" style="display:none"></div>
   <div id="rec-wrap"></div>
@@ -1410,6 +1556,10 @@ let lastShownDraftKey;
 // panel's own post-write reindex and arrive later despite being computed
 // earlier. Never let older data overwrite newer data.
 let lastQuestionsGeneration = -1;
+// ADR-0034: the active tour's metadata (title/author/theme/brokenRefs), or
+// null outside tour mode — set fresh from every 'questions' push, never
+// cached longer than that (doctrine 1: facts and claims both re-read live).
+let activeTour = null;
 const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
@@ -1799,6 +1949,44 @@ function showOverlay() {
   if (cur) cur.scrollIntoView({ block: 'center' });
 }
 function hideOverlay() { $id('q-overlay').classList.remove('open'); }
+
+// ADR-0034: tour-mode header — called once per 'questions' push (not
+// per-render like the per-question card), since provenance/theme don't
+// change while skipping/back-ing within the same walk.
+function renderTourHeader() {
+  const header = $id('tour-header');
+  if (!activeTour) {
+    header.style.display = 'none';
+    header.style.background = '';
+    header.style.color = '';
+    return;
+  }
+  header.style.display = 'flex';
+  // Doctrine 6: theme colors the tour's chrome ONLY — this header, never
+  // the substrate content in #card below it, which always stays in
+  // editor-theme colors.
+  header.style.background = (activeTour.theme && activeTour.theme.background) || '';
+  header.style.color = (activeTour.theme && activeTour.theme.foreground) || '';
+
+  const authorLabel = activeTour.author.role ? activeTour.author.name + ' (' + activeTour.author.role + ')' : activeTour.author.name;
+  const mintedLabel = activeTour.mintedAt ? ' · minted ' + new Date(activeTour.mintedAt).toLocaleString() : '';
+  const statusLabel = activeTour.retired ? ' [retired]' : (activeTour.done ? ' [done]' : '');
+  $id('tour-header-title').textContent = activeTour.title + statusLabel;
+  $id('tour-header-meta').textContent = 'By ' + authorLabel + mintedLabel;
+
+  // Doctrine 3: broken references are visible, never silently dropped.
+  if (activeTour.brokenRefs && activeTour.brokenRefs.length > 0) {
+    const n = activeTour.brokenRefs.length;
+    $id('tour-header-broken').textContent = '⚠ ' + n + ' entr' + (n === 1 ? 'y' : 'ies') + ' could not be resolved: ' + activeTour.brokenRefs.join(', ');
+    $id('tour-header-broken').style.display = 'block';
+  } else {
+    $id('tour-header-broken').style.display = 'none';
+  }
+}
+$id('exit-tour').addEventListener('click', e => {
+  e.preventDefault();
+  vscode.postMessage({ type: 'exitTour' });
+});
 // ADR-0025 panel-aggregation: null = "All roots". Scoped to the TOC overlay
 // only — the main single-question Cmd+Enter flow always advances through
 // every root's questions; the filter narrows what's browsable in the list,
@@ -2016,6 +2204,20 @@ function render() {
     $id('qtext').textContent = q.text;
   }
 
+  // ADR-0034: the authored claim beside the live facts (doctrine 1) —
+  // present only while walking a tour, never in the ordinary full walk.
+  if (q.tourEntry) {
+    const parts = [];
+    if (q.tourEntry.disposition) parts.push('<span class="disposition">' + q.tourEntry.disposition + '</span>');
+    if (!q.tourEntry.mustRespond) parts.push('optional for this walk');
+    if (q.tourEntry.answerPath) parts.push('Answer shape: ' + q.tourEntry.answerPath);
+    if (q.tourEntry.comment) parts.push(q.tourEntry.comment);
+    $id('tour-entry-info').innerHTML = parts.join(' · ');
+    $id('tour-entry-info').style.display = parts.length > 0 ? 'block' : 'none';
+  } else {
+    $id('tour-entry-info').style.display = 'none';
+  }
+
   // ADR-0010: Collapsible context box
   if (q.adrContext) {
     $id('ctx-details').style.display = 'block';
@@ -2145,6 +2347,8 @@ window.addEventListener('message', e => {
     const currentKey = questions[idx] ? questions[idx].draftKey : undefined;
     renderTitleMarkdown = msg.renderTitleMarkdown !== false;
     questions = msg.questions;
+    activeTour = msg.tour || null;
+    renderTourHeader();
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
     if (questions.length === 0) {
       idx = 0;

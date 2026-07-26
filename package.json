@@ -105,6 +105,11 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.mintTourFromFilter",
+        "title": "Mint Tour from Current Filter",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.openQuestionsPanel",
         "title": "Answer Open Questions",
         "category": "ADR Manager",

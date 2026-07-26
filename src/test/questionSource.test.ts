@@ -47,7 +47,7 @@ function makeNode(adrContent: string | null, seedContent: string | null): RootNo
   const seeds = new SeedIndex()
   if (adrContent) adrs.indexContent('/fake/root/docs/adr/0001-storage.md', adrContent)
   if (seedContent) seeds.indexContent('/fake/root/docs/adr/seed-2026-07-23-camera.md', seedContent)
-  return { path: '/fake/root', namespace: 'test', adrs, seeds, children: [], isSubmodule: false, hasAdrDir: true }
+  return { path: '/fake/root', namespace: 'test', adrs, seeds, tours: [], children: [], isSubmodule: false, hasAdrDir: true }
 }
 
 describe('QUESTION_SOURCES', () => {

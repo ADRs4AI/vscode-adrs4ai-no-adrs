@@ -15,6 +15,7 @@ import * as path from 'path'
 import { AdrIndex } from './adrIndex'
 import { SeedIndex } from './seedIndex'
 import { discoverRoots, type DiscoveredRoot, type RootDiscoveryOptions } from './rootNode'
+import { discoverTourFiles, type TourFile } from './tourIndex'
 import type { AdrFile, SeedFile } from '../parser/types'
 
 export interface RootNode {
@@ -22,6 +23,15 @@ export interface RootNode {
   namespace: string
   adrs: AdrIndex
   seeds: SeedIndex
+  /**
+   * ADR-0034 (QuestionTours): tours discovered under this root's own
+   * `docs/adr/tours/*.tour.json`. Scanned once at build time (same
+   * lifecycle as adrs/seeds' own initial scan) — no per-file watcher yet;
+   * a root-set refresh or a manual mint-from-filter both trigger a full
+   * rebuild that re-scans this list. Pure data (no live subscription,
+   * unlike adrs/seeds), since tours change far less often than ADR content.
+   */
+  tours: TourFile[]
   children: RootNode[]
   parent?: RootNode
   isSubmodule: boolean
@@ -56,6 +66,7 @@ async function buildNode(discovered: DiscoveredRoot, parent: RootNode | undefine
     namespace: discovered.namespace,
     adrs,
     seeds,
+    tours: discovered.hasAdrDir ? discoverTourFiles(discovered.adrDirPath) : [],
     children: [],
     parent,
     isSubmodule: discovered.isSubmodule,
@@ -85,7 +96,7 @@ export class CompositeIndex {
    * pass of their own.
    */
   static wrapSingle(rootPath: string, adrs: AdrIndex, seeds: SeedIndex, namespace = 'project'): CompositeIndex {
-    return new CompositeIndex({ path: rootPath, namespace, adrs, seeds, children: [], isSubmodule: false, hasAdrDir: true })
+    return new CompositeIndex({ path: rootPath, namespace, adrs, seeds, tours: [], children: [], isSubmodule: false, hasAdrDir: true })
   }
 
   /** Depth-first walk of every node in the tree, including the root itself. */
@@ -104,6 +115,18 @@ export class CompositeIndex {
     const out: SeedFile[] = []
     for (const node of this.walk()) out.push(...node.seeds.allSeeds())
     return out
+  }
+
+  /** Every tour across every root, paired with the node that owns it — ADR-0034. */
+  allTours(): Array<{ node: RootNode; tour: TourFile }> {
+    const out: Array<{ node: RootNode; tour: TourFile }> = []
+    for (const node of this.walk()) for (const tour of node.tours) out.push({ node, tour })
+    return out
+  }
+
+  /** Find a tour by its slug across every root — slugs are filenames, unique per root but not guaranteed unique tree-wide; returns the first match, same "first-hit is fine for a human-facing slug" tolerance the rest of this class extends only where collisions are implausible. */
+  findTour(slug: string): { node: RootNode; tour: TourFile } | undefined {
+    return this.allTours().find(({ tour }) => tour.slug === slug)
   }
 
   /** The RootNode that owns `filePath` — the node whose `path` is the longest matching prefix. */

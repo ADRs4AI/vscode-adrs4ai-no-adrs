@@ -10,7 +10,7 @@ import { pathFragmentFor } from '../views/rootPathFragment'
 import type { RootNode } from '../index/compositeIndex'
 
 function fakeNode(nodePath: string): RootNode {
-  return { path: nodePath, namespace: 'x', adrs: {} as never, seeds: {} as never, children: [], isSubmodule: false, hasAdrDir: true }
+  return { path: nodePath, namespace: 'x', adrs: {} as never, seeds: {} as never, tours: [], children: [], isSubmodule: false, hasAdrDir: true }
 }
 
 describe('pathFragmentFor', () => {

@@ -42,12 +42,14 @@ import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickC
 import { pathFragmentFor } from './rootPathFragment'
 import { stableTreeItemId } from './treeItemIdentity'
 import { openQuestionCountForNode, QUESTION_SOURCES, type SourceInclusion } from '../index/questionSource'
+import { resolveTourEntries, isTourDone, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
+import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 
 // ---------------------------------------------------------------------------
 // Tree item types
 // ---------------------------------------------------------------------------
 
-type AdrTreeItemKind = 'root' | 'adr' | 'question' | 'open-questions-header' | 'adr-group' | 'seed-group' | 'seed';
+type AdrTreeItemKind = 'root' | 'adr' | 'question' | 'open-questions-header' | 'adr-group' | 'seed-group' | 'seed' | 'tour-group' | 'tour' | 'tour-entry';
 
 /** The broad implementation parameter type shared by all constructor overloads and static helpers.
  *  Using AdrTreeItemOpts resolves to the LAST overload only,
@@ -57,6 +59,9 @@ type AdrTreeItemOpts = {
   adr?: AdrFile;
   question?: Question;
   seed?: SeedFile;
+  tour?: TourFile;
+  done?: boolean;
+  entry?: ResolvedTourEntry;
   count?: number;
   collapsibleState?: vscode.TreeItemCollapsibleState;
   rootNode?: RootNode;
@@ -68,7 +73,11 @@ export class AdrTreeItem extends vscode.TreeItem {
   public readonly adr?: AdrFile;
   public readonly question?: Question;
   public readonly seed?: SeedFile;
-  /** Present on 'root' items, and on 'open-questions-header'/'adr-group'/'seed-group' items when the tree is multi-root — the container `getChildren()` must dispatch against. Undefined in the N=1 case, where there's only ever one root to mean anyway. */
+  /** ADR-0034: present on 'tour' items, and on 'tour-entry' items (the owning tour, for getParent()). */
+  public readonly tour?: TourFile;
+  /** ADR-0034: present on 'tour-entry' items — the authored claims (comment/disposition/mustRespond) beside the live question. */
+  public readonly entry?: ResolvedTourEntry;
+  /** Present on 'root' items, and on 'open-questions-header'/'adr-group'/'seed-group'/'tour-group' items when the tree is multi-root — the container `getChildren()` must dispatch against. Undefined in the N=1 case, where there's only ever one root to mean anyway. */
   public readonly rootNode?: RootNode;
 
   constructor(opts: {
@@ -114,10 +123,31 @@ export class AdrTreeItem extends vscode.TreeItem {
     collapsibleState?: vscode.TreeItemCollapsibleState;
   });
   constructor(opts: {
+    kind: 'tour-group';
+    count: number;
+    rootNode?: RootNode;
+  });
+  constructor(opts: {
+    kind: 'tour';
+    tour: TourFile;
+    done: boolean;
+    collapsibleState?: vscode.TreeItemCollapsibleState;
+    rootNode?: RootNode;
+  });
+  constructor(opts: {
+    kind: 'tour-entry';
+    question: Question;
+    tour: TourFile;
+    entry: ResolvedTourEntry;
+  });
+  constructor(opts: {
     kind: AdrTreeItemKind;
     adr?: AdrFile;
     question?: Question;
     seed?: SeedFile;
+    tour?: TourFile;
+    done?: boolean;
+    entry?: ResolvedTourEntry;
     count?: number;
     collapsibleState?: vscode.TreeItemCollapsibleState;
     rootNode?: RootNode;
@@ -138,6 +168,8 @@ export class AdrTreeItem extends vscode.TreeItem {
     this.adr = opts.adr
     this.question = opts.question
     this.seed = opts.seed
+    this.tour = opts.tour
+    this.entry = opts.entry
     this.rootNode = opts.rootNode
 
     this.contextValue = opts.kind
@@ -154,10 +186,14 @@ export class AdrTreeItem extends vscode.TreeItem {
       this.resourceUri = vscode.Uri.file(opts.adr.path)
     }
 
-    if (opts.kind === 'question' && opts.question) {
+    if ((opts.kind === 'question' || opts.kind === 'tour-entry') && opts.question) {
       // adrManager.clickOpensIn: resource-scoped so a multi-root workspace
       // can set it per-folder. question.adrPath is correct for both
       // container kinds (an ADR's path, or a seed's) as the scope resource.
+      // ADR-0034: a tour-entry's click behavior is deliberately IDENTICAL to
+      // an ordinary question's — "no walk machinery in the tree" extends to
+      // navigation too. Entering tour MODE is the tour item's own click
+      // (below), never an individual entry's.
       const clickOpensIn = vscode.workspace
         .getConfiguration('adrManager', vscode.Uri.file(opts.question.adrPath))
         .get<ClickOpensIn>('clickOpensIn', 'panel')
@@ -184,6 +220,18 @@ export class AdrTreeItem extends vscode.TreeItem {
     if (opts.kind === 'root' && opts.rootNode) {
       this.resourceUri = vscode.Uri.file(opts.rootNode.path)
     }
+
+    if (opts.kind === 'tour' && opts.tour) {
+      // ADR-0034 Decision point 4: "tree (click a tour → dialog opens in
+      // tour mode)" — clicking the TOUR itself opens the walk; its entries
+      // underneath are inventory, unchanged from ordinary question items.
+      this.command = {
+        command: 'adrManager.openQuestionsPanel',
+        title: 'Walk Tour',
+        arguments: [opts.tour.slug],
+      }
+      this.resourceUri = vscode.Uri.file(opts.tour.path)
+    }
   }
 
   /** Unique tree-wide, stable across rebuilds — the pure mapping lives in
@@ -200,6 +248,8 @@ export class AdrTreeItem extends vscode.TreeItem {
       seedPath: opts.seed?.path,
       questionContainerPath: opts.question?.adrPath,
       questionId: opts.question?.id,
+      tourPath: opts.tour?.path,
+      tourEntryRef: opts.entry?.ref,
     })
   }
 
@@ -207,7 +257,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     if (opts.kind === 'root') {
       return vscode.TreeItemCollapsibleState.Expanded
     }
-    if (opts.kind === 'adr-group' || opts.kind === 'seed-group') {
+    if (opts.kind === 'adr-group' || opts.kind === 'seed-group' || opts.kind === 'tour-group') {
       return (opts.count ?? 0) > 0
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.None
@@ -257,6 +307,12 @@ export class AdrTreeItem extends vscode.TreeItem {
       const dateStr = s.date ? ` (${s.date})` : ''
       return `SEED${dateStr}: ${s.topic}`
     }
+    if (opts.kind === 'tour-group') {
+      return `Tours (${opts.count ?? 0})`
+    }
+    if (opts.kind === 'tour' && opts.tour) {
+      return opts.tour.title
+    }
     return ''
   }
 
@@ -276,6 +332,17 @@ export class AdrTreeItem extends vscode.TreeItem {
       const statusPart = opts.seed.isProcessed ? '[processed]' : ''
       const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
       return `${statusPart}${questionPart}`
+    }
+    if (opts.kind === 'tour' && opts.tour) {
+      const parts = [
+        opts.tour.retired ? '[retired]' : (opts.done ? '[done]' : null),
+        `${opts.tour.entries.length} entr${opts.tour.entries.length === 1 ? 'y' : 'ies'}`,
+      ].filter(Boolean)
+      return parts.join(' · ')
+    }
+    if (opts.kind === 'tour-entry' && opts.entry) {
+      const parts = [opts.entry.disposition ?? null, opts.entry.mustRespond ? null : 'optional'].filter(Boolean)
+      return parts.join(' · ')
     }
     return ''
   }
@@ -327,6 +394,27 @@ export class AdrTreeItem extends vscode.TreeItem {
     if (opts.kind === 'seed-group') {
       return 'Brain dumps and pre-decisional artifacts (see ADR-0011)'
     }
+    if (opts.kind === 'tour-group') {
+      return 'Curated walks over the substrate (see ADR-0034) — a tour references questions, it never owns them'
+    }
+    if (opts.kind === 'tour' && opts.tour) {
+      const t = opts.tour
+      const parts = [
+        `**${t.title}**`,
+        `By ${t.author.name}${t.author.role ? ` (${t.author.role})` : ''}`,
+        t.minted_at ? `Minted: ${t.minted_at}` : null,
+        t.retired ? 'Retired' : (opts.done ? 'Done' : null),
+      ].filter(Boolean)
+      return parts.join('\n')
+    }
+    if (opts.kind === 'tour-entry' && opts.question && opts.entry) {
+      const parts = [
+        opts.question.text,
+        opts.entry.comment ? `Comment: ${opts.entry.comment}` : null,
+        opts.entry.answerPath ? `Answer shape: ${opts.entry.answerPath}` : null,
+      ].filter(Boolean)
+      return parts.join('\n')
+    }
     return ''
   }
 
@@ -337,7 +425,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     if (opts.kind === 'adr' && opts.adr) {
       return statusThemeIcon(opts.adr.status, vscode.ThemeIcon, vscode.ThemeColor)
     }
-    if (opts.kind === 'question' && opts.question) {
+    if ((opts.kind === 'question' || opts.kind === 'tour-entry') && opts.question) {
       // Unanswered: bright orange (needs attention)
       // Answered: dimmed (same shape, distinguished by brightness not hue — colorblind-safe)
       const color = opts.question.isAnswered
@@ -359,6 +447,15 @@ export class AdrTreeItem extends vscode.TreeItem {
       return opts.seed.isProcessed
         ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'))
         : new vscode.ThemeIcon('wrench', new vscode.ThemeColor('charts.orange'))
+    }
+    if (opts.kind === 'tour-group') {
+      return new vscode.ThemeIcon('compass', new vscode.ThemeColor('charts.orange'))
+    }
+    if (opts.kind === 'tour' && opts.tour) {
+      if (opts.tour.retired) return new vscode.ThemeIcon('archive', new vscode.ThemeColor('descriptionForeground'))
+      return opts.done
+        ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'))
+        : new vscode.ThemeIcon('compass', new vscode.ThemeColor('charts.orange'))
     }
     return new vscode.ThemeIcon('file')
   }
@@ -452,6 +549,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
       case 'open-questions-header':
       case 'adr-group':
       case 'seed-group':
+      case 'tour-group':
         return rootItemFor(element.rootNode)
       case 'adr': {
         if (!element.adr) return undefined
@@ -480,6 +578,23 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
         if (seed) return new AdrTreeItem({ kind: 'seed', seed })
         return undefined
       }
+      case 'tour': {
+        if (!element.tour) return undefined
+        const node = nodeContaining(element.tour.path)
+        const count = node?.tours.length ?? 0
+        return new AdrTreeItem({ kind: 'tour-group', count, rootNode: multiRoot ? node : undefined })
+      }
+      case 'tour-entry': {
+        if (!element.tour) return undefined
+        // 'tour' items carry no rootNode (identified by tour.path alone, same as adr/seed items above).
+        const resolved = resolveTourEntries(element.tour, createRepositoryContextAdapter(this.composite))
+        return new AdrTreeItem({
+          kind: 'tour',
+          tour: element.tour,
+          done: isTourDone(resolved),
+          collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+        })
+      }
     }
   }
 
@@ -490,6 +605,8 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     if (element.kind === 'seed-group') return this.getSeedGroupChildren(this.resolveNode(element.rootNode))
     if (element.kind === 'adr' && element.adr) return this.getAdrChildren(element.adr)
     if (element.kind === 'seed' && element.seed) return this.getSeedChildren(element.seed)
+    if (element.kind === 'tour-group') return this.getTourGroupChildren(this.resolveNode(element.rootNode))
+    if (element.kind === 'tour' && element.tour) return this.getTourChildren(element.tour)
     return []
   }
 
@@ -533,6 +650,11 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     const seedCount = node.seeds.size
     if (seedCount > 0) {
       items.push(new AdrTreeItem({ kind: 'seed-group', count: seedCount, rootNode: rootNodeArg }))
+    }
+
+    const tourCount = node.tours.length
+    if (tourCount > 0) {
+      items.push(new AdrTreeItem({ kind: 'tour-group', count: tourCount, rootNode: rootNodeArg }))
     }
 
     return items
@@ -588,6 +710,45 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
 
   private getSeedChildren(seed: SeedFile): AdrTreeItem[] {
     return this.filterQuestions(seed.questions).map(q => new AdrTreeItem({ kind: 'question', question: q }))
+  }
+
+  /**
+   * ADR-0034: "Tree: 'Tours' category — same structural algebra as ADRs/
+   * Seeds... Pure inventory; no walk machinery in the tree." Doneness is
+   * computed fresh from the live substrate (doctrine 1) on every listing —
+   * never cached on the tour item itself.
+   */
+  private getTourGroupChildren(node: RootNode): AdrTreeItem[] {
+    const ctx = createRepositoryContextAdapter(this.composite)
+    return node.tours.map(tour => {
+      const resolved = resolveTourEntries(tour, ctx)
+      const walkableCount = resolved.filter(e => e.resolution.kind === 'question').length
+      return new AdrTreeItem({
+        kind: 'tour',
+        tour,
+        done: isTourDone(resolved),
+        collapsibleState: walkableCount > 0
+          ? vscode.TreeItemCollapsibleState.Collapsed
+          : vscode.TreeItemCollapsibleState.None,
+      })
+    })
+  }
+
+  /**
+   * A tour entry that fails to resolve, or resolves to something other than
+   * a question (a whole ADR/seed/section ref), is skipped here — the tree
+   * is inventory-only for v1; doctrine 3's "visible broken-reference row"
+   * requirement is met in the walk dialog (openQuestionsPanel.ts), where a
+   * human is actually trying to act on the tour, not in this pure listing.
+   */
+  private getTourChildren(tour: TourFile): AdrTreeItem[] {
+    const resolved = resolveTourEntries(tour, createRepositoryContextAdapter(this.composite))
+    const items: AdrTreeItem[] = []
+    for (const entry of resolved) {
+      if (entry.resolution.kind !== 'question') continue
+      items.push(new AdrTreeItem({ kind: 'tour-entry', question: entry.resolution.question, tour, entry }))
+    }
+    return items
   }
 
   private filterQuestions(questions: Question[]): Question[] {

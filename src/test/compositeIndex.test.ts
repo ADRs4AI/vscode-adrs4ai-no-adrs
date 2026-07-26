@@ -168,3 +168,49 @@ describe('CompositeIndex.wrapSingle', () => {
     expect(composite.allSeeds()).toEqual([])
   })
 })
+
+describe('CompositeIndex tours (ADR-0034)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composite-index-tours-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  function writeTour(adrDir: string, filename: string, title: string): void {
+    const toursDir = path.join(adrDir, 'tours')
+    mkdirp(toursDir)
+    fs.writeFileSync(path.join(toursDir, filename), JSON.stringify({ schema: 'question-tour/1', title, entries: [] }))
+  }
+
+  it('fromWorkspace discovers tours under docs/adr/tours/, surfaced via allTours()/findTour()', async () => {
+    writeAdr(path.join(dir, 'docs', 'adr'), '0001-storage.md', 1, 'Storage')
+    writeTour(path.join(dir, 'docs', 'adr'), '2026-07-24-morning-brief.tour.json', 'Morning brief')
+
+    const composite = await CompositeIndex.fromWorkspace(dir, { adrDirRel: 'docs/adr' })
+    expect(composite.allTours()).toHaveLength(1)
+    expect(composite.allTours()[0].tour.title).toBe('Morning brief')
+    expect(composite.findTour('2026-07-24-morning-brief')?.tour.title).toBe('Morning brief')
+    expect(composite.findTour('does-not-exist')).toBeUndefined()
+  })
+
+  it('tours aggregate across every root in a multi-root workspace', async () => {
+    writeAdr(path.join(dir, 'docs', 'adr'), '0001-parent.md', 1, 'Parent')
+    writeTour(path.join(dir, 'docs', 'adr'), '2026-07-24-parent-tour.tour.json', 'Parent tour')
+    const nestedRoot = path.join(dir, 'subprojects', 'child')
+    writeAdr(path.join(nestedRoot, 'docs', 'adr'), '0001-child.md', 1, 'Child')
+    writeTour(path.join(nestedRoot, 'docs', 'adr'), '2026-07-24-child-tour.tour.json', 'Child tour')
+
+    const composite = await CompositeIndex.fromWorkspace(dir, { adrDirRel: 'docs/adr' })
+    expect(composite.allTours().map(({ tour }) => tour.title).sort()).toEqual(['Child tour', 'Parent tour'])
+  })
+
+  it('a root with no tours/ directory contributes zero tours, not an error', async () => {
+    writeAdr(path.join(dir, 'docs', 'adr'), '0001-storage.md', 1, 'Storage')
+    const composite = await CompositeIndex.fromWorkspace(dir, { adrDirRel: 'docs/adr' })
+    expect(composite.allTours()).toEqual([])
+  })
+})

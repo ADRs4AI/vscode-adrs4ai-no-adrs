@@ -186,8 +186,9 @@ describe('Webview script block syntax', () => {
   })
 
   it('ADR-0025 panel-aggregation: createOrShow and the constructor both take a CompositeIndex', () => {
-    expect(PANEL_SRC).toContain('createOrShow(composite: CompositeIndex)')
-    expect(PANEL_SRC).toContain('constructor(private readonly composite: CompositeIndex)')
+    // ADR-0034: both gained an optional tour-slug parameter — the CompositeIndex requirement itself is unchanged.
+    expect(PANEL_SRC).toContain('createOrShow(composite: CompositeIndex, tourSlug?: string)')
+    expect(PANEL_SRC).toContain('constructor(private readonly composite: CompositeIndex, initialTourSlug?: string)')
   })
 
   it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
@@ -303,7 +304,8 @@ describe('Webview script block syntax', () => {
   })
 
   it('ADR-0025 panel-aggregation: ADR-sourced draftKey containerId is root-qualified, seed containerId is unchanged', () => {
-    expect(PANEL_SRC).toContain('containerId: `${node.namespace}:${adr.number}`')
+    // ADR-0034: this row-opts computation was factored into adrRowOpts() (shared with tour mode's buildTourQuestions), reading node.findRoot(adr.path) rather than closing over a loop's `node` — same root-qualification, same value.
+    expect(PANEL_SRC).toContain('containerId: `${namespace}:${adr.number}`')
     expect(PANEL_SRC).toContain('freshContainerId = `${owningRoot.namespace}:${freshAdr.number}`')
     // Seed containerId stays the seed's own absolute path — already globally unique.
     expect(PANEL_SRC).toContain("freshContainerId = msg.adrPath")
@@ -628,6 +630,95 @@ describe('Webview script block syntax', () => {
         vi.useRealTimers()
       }
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ADR-0034 (QuestionTours): the tour-mode skin — header, theme, broken-refs
+// disclosure, exit affordance, and the per-question authored-claim block.
+// These run the actual shipped script via the harness, not a description
+// of intended behavior.
+// ---------------------------------------------------------------------------
+
+describe('Tour-mode skin (ADR-0034)', () => {
+  const Q1 = { id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' }
+  const TOUR = {
+    slug: '2026-07-24-morning-brief', title: "Morning brief", author: { name: 'Lamplighter', role: 'postman' },
+    mintedAt: '2026-07-24T13:18:05Z', theme: { background: '#556B2F', foreground: '#F5F5F0' },
+    retired: false, done: false, brokenRefs: [],
+  }
+
+  it('the tour header is hidden outside tour mode (tour: null)', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: null })
+    expect(h.element('tour-header').style.display).toBe('none')
+  })
+
+  it('shows title, provenance, and applies the tour theme to the header chrome only', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+    expect(h.element('tour-header').style.display).toBe('flex')
+    expect(h.element('tour-header-title').textContent).toBe('Morning brief')
+    expect(h.element('tour-header-meta').textContent).toContain('Lamplighter (postman)')
+    expect(h.element('tour-header').style.background).toBe('#556B2F')
+    expect(h.element('tour-header').style.color).toBe('#F5F5F0')
+  })
+
+  it('a done tour is labeled [done] in the title, a retired one [retired] instead', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, done: true } })
+    expect(h.element('tour-header-title').textContent).toContain('[done]')
+
+    h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, retired: true, done: true } })
+    expect(h.element('tour-header-title').textContent).toContain('[retired]')
+    expect(h.element('tour-header-title').textContent).not.toContain('[done]')
+  })
+
+  it('doctrine 3: broken references render as a visible list, not silently dropped', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, brokenRefs: ['adr:9999#nope', 'seed:missing#x'] } })
+    expect(h.element('tour-header-broken').style.display).toBe('block')
+    expect(h.element('tour-header-broken').textContent).toContain('2 entries')
+    expect(h.element('tour-header-broken').textContent).toContain('adr:9999#nope')
+    expect(h.element('tour-header-broken').textContent).toContain('seed:missing#x')
+  })
+
+  it('no broken refs: the disclosure stays hidden', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+    expect(h.element('tour-header-broken').style.display).toBe('none')
+  })
+
+  it('"Exit tour" posts exitTour and nothing else', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+    h.click('exit-tour')
+    expect(h.sentMessages).toContainEqual({ type: 'exitTour' })
+  })
+
+  it('a walked question carrying tourEntry shows the authored claim beside the live question', () => {
+    const h = createWebviewHarness()
+    const withEntry = { ...Q1, tourEntry: { comment: 'crew lean is A-now-C-next', disposition: 'decide', answerPath: 'one word: B yes/no', mustRespond: true } }
+    h.postToWebview({ type: 'questions', generation: 0, questions: [withEntry], tour: TOUR })
+    expect(h.element('tour-entry-info').style.display).toBe('block')
+    const html = h.element('tour-entry-info').innerHTML
+    expect(html).toContain('decide')
+    expect(html).toContain('crew lean is A-now-C-next')
+    expect(html).toContain('one word: B yes/no')
+    expect(html).not.toContain('optional for this walk')
+  })
+
+  it('an optional (must_respond: false) entry is labeled as such', () => {
+    const h = createWebviewHarness()
+    const withEntry = { ...Q1, tourEntry: { mustRespond: false } }
+    h.postToWebview({ type: 'questions', generation: 0, questions: [withEntry], tour: TOUR })
+    expect(h.element('tour-entry-info').innerHTML).toContain('optional for this walk')
+  })
+
+  it('an ordinary (non-tour) question never shows the authored-claim block', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: null })
+    expect(h.element('tour-entry-info').style.display).toBe('none')
   })
 })
 

@@ -22,6 +22,7 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
+import { execSync } from 'child_process'
 import { AdrIndex } from './index/adrIndex'
 import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { CompositeIndex } from './index/compositeIndex'
@@ -30,6 +31,7 @@ import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from '
 import { AdrTreeProvider, type AdrTreeItem } from './views/adrTreeProvider'
 import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
 import { addBlockEntry, removeBlockEntry, relativeRootPath } from './index/rootsConfigWriter'
+import { buildTourJson, serializeTourJson, tourFilename, tourFilePath } from './index/tourWriter'
 import type { RootNode } from './index/compositeIndex'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
@@ -258,11 +260,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (item?.rootNode) await excludeRoot(item.rootNode);
     }),
 
+    vscode.commands.registerCommand('adrManager.mintTourFromFilter', async () => {
+      if (treeProvider && compositeIndex) await mintTourFromFilter(treeProvider, compositeIndex);
+    }),
+
     vscode.languages.registerDocumentLinkProvider({ language: 'markdown' }, new AdrDocumentLinkProvider()),
     registerOpenDeepLinkCommand(resolveLink),
 
-    vscode.commands.registerCommand('adrManager.openQuestionsPanel', () => {
-      if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex);
+    // ADR-0034: tour tree items pass their slug as the first argument
+    // ("Walk Tour" command) — the plain sidebar/toolbar invocation passes
+    // none, opening the ordinary full walk.
+    vscode.commands.registerCommand('adrManager.openQuestionsPanel', (tourSlug?: string) => {
+      if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex, tourSlug);
     }),
 
     vscode.commands.registerCommand('adrManager.filterQuestions', () => {
@@ -1154,4 +1163,80 @@ async function excludeRoot(node: RootNode): Promise<void> {
   const reverted = removeBlockEntry(readCurrentText(), relPath);
   await vscode.workspace.fs.writeFile(vscode.Uri.file(rootsJsonPath), Buffer.from(reverted.text, 'utf-8'));
   if (watcherLifecycle) void watcherLifecycle.requestRefresh();
+}
+
+/**
+ * ADR-0034 doctrine 5, "both mint": "turn my current filter into a tour."
+ * Snapshots exactly what the sidebar tree's current filter (open/all/
+ * answered — adrManager.filterQuestions) shows right now, across every
+ * root, as an ordered ref list — no per-entry curation (disposition/
+ * comment/answer_path are a richer, model-authored mint, not this v1
+ * command's job). Namespace-qualified refs (`namespace.NNNN#slug`) once
+ * more than one root is in play — a bare `adr:NNNN` is ambiguous the
+ * moment two roots share a number, and mint-from-filter spans the whole
+ * composite by construction.
+ */
+async function mintTourFromFilter(treeProvider: import('./views/adrTreeProvider').AdrTreeProvider, composite: CompositeIndex): Promise<void> {
+  const filterMode = treeProvider.filterMode
+  const matchesFilter = (isAnswered: boolean): boolean => {
+    if (filterMode === 'all') return true
+    if (filterMode === 'answered') return isAnswered
+    return !isAnswered // 'open' (default)
+  }
+
+  const nodes = Array.from(composite.walk())
+  const multiRoot = nodes.length > 1
+  const refs: string[] = []
+  for (const node of nodes) {
+    for (const adr of node.adrs.allAdrs().filter(a => !a.isSeed)) {
+      for (const q of adr.questions.filter(qq => matchesFilter(qq.isAnswered))) {
+        const prefix = multiRoot ? `${node.namespace}.${adr.number}` : `adr:${String(adr.number).padStart(4, '0')}`
+        refs.push(`${prefix}#${q.slug}`)
+      }
+    }
+  }
+
+  if (refs.length === 0) {
+    vscode.window.showInformationMessage(`No questions match the sidebar's current filter (${filterMode}) — nothing to mint.`)
+    return
+  }
+
+  const title = await vscode.window.showInputBox({
+    prompt: `Mint a tour from ${refs.length} currently-visible question${refs.length === 1 ? '' : 's'} (filter: ${filterMode})`,
+    placeHolder: 'Tour title (e.g., "Morning brief — the four things waiting on you")',
+  })
+  if (!title) return
+
+  const workspaceRoot = composite.root.path
+  const cfg = vscode.workspace.getConfiguration('adrManager')
+  const adrDirRel = cfg.get<string>('adrDirectory', 'docs/adr')
+  const humanName = cfg.get<string>('humanName', '') || 'Human'
+  const mintedAt = new Date().toISOString()
+  const mintedCommit = tryGitRevParseHead(workspaceRoot)
+
+  const tour = buildTourJson({
+    title,
+    authorName: humanName,
+    mintedAt,
+    mintedCommit,
+    entries: refs.map(ref => ({ ref })),
+  })
+  const filename = tourFilename(title, mintedAt.slice(0, 10))
+  const filePath = tourFilePath(path.join(workspaceRoot, adrDirRel), filename)
+
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(filePath)))
+  await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), Buffer.from(serializeTourJson(tour), 'utf-8'))
+  if (watcherLifecycle) void watcherLifecycle.requestRefresh();
+
+  const openNow = await vscode.window.showInformationMessage(`Minted "${title}" (${refs.length} entries) to ${adrDirRel}/tours/${filename}.`, 'Walk it now')
+  if (openNow === 'Walk it now') OpenQuestionsPanel.createOrShow(composite, filename.replace(/\.tour\.json$/, ''))
+}
+
+/** Best-effort HEAD commit for a tour's minted_commit provenance — never blocks minting on git being absent, uncommitted, or unavailable. */
+function tryGitRevParseHead(cwd: string): string | undefined {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd, encoding: 'utf-8' }).trim() || undefined
+  } catch {
+    return undefined
+  }
 }
