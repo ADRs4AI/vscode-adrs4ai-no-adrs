@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.39] - 2026-07-26
+
+### Fixed
+- **Tour mode, first click-through fixes**: clicking a specific question inside a tour now actually enters that tour instead of landing in the plain walk; once in tour mode, clicking any other question in the sidebar now correctly leaves the tour instead of silently doing nothing (previously the only way out was the explicit Exit-tour link); the counter no longer misreports "9 of 9" on first opening a tour; the panel's tab title now shows the active tour's name.
+
 ## [0.7.38] - 2026-07-26
 
 ### Added
