@@ -191,6 +191,28 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('constructor(private readonly composite: CompositeIndex, initialTourSlug?: string)')
   })
 
+  // Regression (Facet's live click-through report, 2026-07-26 inbox 0349):
+  // an already-open panel stuck in tour mode had no way out except the
+  // explicit Exit-tour link — clicking any other, non-tour question in the
+  // tree was a silent no-op, because `if (tourSlug) setTour(tourSlug)`
+  // left activeTourSlug untouched when tourSlug was omitted. Fixed by
+  // making every call state its intended mode outright: setTour(undefined)
+  // now explicitly returns to the full walk instead of being skipped.
+  it('createOrShow calls setTour UNCONDITIONALLY on an already-open panel — omitting tourSlug must clear tour mode, not leave it alone', () => {
+    expect(PANEL_SRC).toContain('OpenQuestionsPanel.instance.setTour(tourSlug)')
+    expect(PANEL_SRC).not.toContain('if (tourSlug) OpenQuestionsPanel.instance.setTour(tourSlug)')
+  })
+
+  it('setTour accepts string | undefined (a bare boolean-truthy check would silently re-introduce the "stuck in tour mode" bug)', () => {
+    expect(PANEL_SRC).toContain('setTour(tourSlug: string | undefined): void')
+  })
+
+  // Regression (same report): the tab title never distinguished tour mode from the plain walk.
+  it('the panel title reflects tour mode, and reverts to "Open Questions" outside it', () => {
+    expect(PANEL_SRC).toContain("this.panel.title = found ? `Tour: ${found.tour.title}` : 'Open Questions'")
+    expect(PANEL_SRC).toContain('this.updatePanelTitle()')
+  })
+
   it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
     expect(PANEL_SRC).toContain("msg.sourceKind === 'seed'")
     expect(PANEL_SRC).toContain('parseSeed(currentContent, msg.adrPath)')
@@ -719,6 +741,98 @@ describe('Tour-mode skin (ADR-0034)', () => {
     const h = createWebviewHarness()
     h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: null })
     expect(h.element('tour-entry-info').style.display).toBe('none')
+  })
+
+  // Regression tests (Facet's live click-through report, 2026-07-26 inbox
+  // 0349): DEBRIEF-004's relocate-or-clamp idx logic assumed pool
+  // CONTINUITY (the same set, possibly reshuffled) — tour mode breaks that
+  // assumption by swapping to a wholesale DISJOINT pool. A stale idx that
+  // numerically still fit the new (often much smaller) array was silently
+  // left alone instead of reset, landing on "9 of 9" instead of "1 of 9".
+  describe('Regression tests: idx resets when the POOL identity changes (tour started/stopped/switched)', () => {
+    function makePool(prefix: string, count: number, adrNumber: number) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: prefix + i, text: prefix + i, adrPath: '/fake/' + prefix + '.md', adrNumber,
+        lineStart: 1, draftKey: prefix + '-key-' + i, fileChecksum: 'c-' + prefix,
+        totalOccurrences: 1, groupLabel: 'ADR-000' + adrNumber, groupSortKey: '0-000' + adrNumber, sourceKind: 'adr',
+      }))
+    }
+    const TOUR = { slug: 'x', title: 'X', author: { name: 'A' }, mintedAt: '', retired: false, done: false, brokenRefs: [] }
+
+    // idx is a script-internal `let` binding, not a property of the vm
+    // context object — h.sandbox.idx can't read or write it. Navigate via
+    // the real btn-skip click (advances idx client-side, same as a human
+    // skipping) and verify via the rendered #counter text instead.
+    function skip(h: ReturnType<typeof createWebviewHarness>, times: number) {
+      for (let i = 0; i < times; i++) h.click('btn-skip')
+    }
+
+    it('entering a tour resets idx to 0 even though the stale idx (8) numerically still fits the tour\'s 9-entry array — the exact "9 of 9" bug', () => {
+      const h = createWebviewHarness()
+      const bigPool = makePool('full', 28, 32) // simulates ADR-0032's raw 28-question register
+      h.postToWebview({ type: 'questions', generation: 0, questions: bigPool, tour: null })
+      skip(h, 8) // "question 9 of 28" — the position Jérémie was browsing before entering the tour
+      expect(h.element('counter').textContent).toBe('Question 9 of 28')
+
+      const tourPool = makePool('tour', 9, 32) // disjoint draftKeys — none relocate
+      h.postToWebview({ type: 'questions', generation: 1, questions: tourPool, tour: TOUR })
+
+      expect(h.element('counter').textContent).toBe('Question 1 of 9')
+    })
+
+    it('exiting a tour back to the full walk also resets idx, not just entering one', () => {
+      const h = createWebviewHarness()
+      const tourPool = makePool('tour', 3, 32)
+      h.postToWebview({ type: 'questions', generation: 0, questions: tourPool, tour: TOUR })
+      skip(h, 2) // last entry of the tour
+      expect(h.element('counter').textContent).toBe('Question 3 of 3')
+
+      const bigPool = makePool('full', 28, 32) // disjoint draftKeys — idx=2 would otherwise still "fit"
+      h.postToWebview({ type: 'questions', generation: 1, questions: bigPool, tour: null })
+
+      expect(h.element('counter').textContent).toBe('Question 1 of 28')
+    })
+
+    it('switching from one tour directly to a different tour resets idx too', () => {
+      const h = createWebviewHarness()
+      const tourA = makePool('a', 5, 1)
+      h.postToWebview({ type: 'questions', generation: 0, questions: tourA, tour: { ...TOUR, slug: 'tour-a' } })
+      skip(h, 3)
+      expect(h.element('counter').textContent).toBe('Question 4 of 5')
+
+      const tourB = makePool('b', 4, 2) // disjoint draftKeys — idx=3 would otherwise still "fit"
+      h.postToWebview({ type: 'questions', generation: 1, questions: tourB, tour: { ...TOUR, slug: 'tour-b' } })
+
+      expect(h.element('counter').textContent).toBe('Question 1 of 4')
+    })
+
+    it('an ordinary reshuffle WITHIN the same tour (no pool change) still uses relocate-by-key, not a blind reset', () => {
+      const h = createWebviewHarness()
+      const tourPool = makePool('tour', 5, 1)
+      h.postToWebview({ type: 'questions', generation: 0, questions: tourPool, tour: TOUR })
+      skip(h, 3) // now on 'tour-key-3'
+      expect(h.element('counter').textContent).toBe('Question 4 of 5')
+
+      // Same tour, same entries, reordered (e.g. an unrelated background push) — draftKey 'tour-key-3' still present, just moved.
+      const reordered = [tourPool[4], tourPool[3], tourPool[2], tourPool[1], tourPool[0]]
+      h.postToWebview({ type: 'questions', generation: 1, questions: reordered, tour: TOUR })
+
+      // 'tour-key-3' relocated to its new position (index 1) — not reset to 0.
+      expect(h.element('counter').textContent).toBe('Question 2 of 5')
+    })
+
+    it('an ordinary reshuffle of the full (non-tour) walk is unaffected by the pool-change guard', () => {
+      const h = createWebviewHarness()
+      const bigPool = makePool('full', 5, 1)
+      h.postToWebview({ type: 'questions', generation: 0, questions: bigPool, tour: null })
+      skip(h, 3) // now on 'full-key-3'
+      expect(h.element('counter').textContent).toBe('Question 4 of 5')
+
+      const reordered = [bigPool[4], bigPool[3], bigPool[2], bigPool[1], bigPool[0]]
+      h.postToWebview({ type: 'questions', generation: 1, questions: reordered, tour: null })
+
+      expect(h.element('counter').textContent).toBe('Question 2 of 5')
+    })
   })
 })
 

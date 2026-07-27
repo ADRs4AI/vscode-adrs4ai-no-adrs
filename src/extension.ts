@@ -284,7 +284,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.goToQuestionInPanel', (item) => {
       if (item?.question && compositeIndex) {
-        OpenQuestionsPanel.createOrShow(compositeIndex);
+        // ADR-0034 fix (Facet's live click-through report, 2026-07-26
+        // inbox 0349): a tour-entry's click carries its owning tour along,
+        // so the panel opens (or switches) into THAT tour instead of
+        // always landing in the plain, untoured walk — the bug was
+        // clicking a specific question inside a tour and never seeing the
+        // tour header at all. An ordinary (non-tour) question click passes
+        // undefined, which now explicitly RETURNS the panel to full-walk
+        // mode if it happened to be showing a tour (see createOrShow).
+        OpenQuestionsPanel.createOrShow(compositeIndex, item.kind === 'tour-entry' ? item.tour?.slug : undefined);
         OpenQuestionsPanel.navigateTo(item.question.id);
       }
     }),

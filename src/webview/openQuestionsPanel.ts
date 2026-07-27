@@ -182,7 +182,15 @@ export class OpenQuestionsPanel {
   static createOrShow(composite: CompositeIndex, tourSlug?: string): void {
     if (OpenQuestionsPanel.instance) {
       OpenQuestionsPanel.instance.panel.reveal(vscode.ViewColumn.One)
-      if (tourSlug) OpenQuestionsPanel.instance.setTour(tourSlug)
+      // Bug fix (Facet's live click-through report, 2026-07-26 inbox
+      // 0349): every call now fully specifies the desired mode —
+      // `tourSlug` present enters/switches to that tour, absent EXPLICITLY
+      // returns to the full walk. The old `if (tourSlug)` (no-op when
+      // absent) left an already-open tour-mode panel with no way out
+      // except the explicit Exit-tour link: clicking any other, non-tour
+      // question in the tree called this with no tourSlug, which used to
+      // leave activeTourSlug untouched — the click had nowhere to land.
+      OpenQuestionsPanel.instance.setTour(tourSlug)
       return
     }
     new OpenQuestionsPanel(composite, tourSlug)
@@ -196,10 +204,23 @@ export class OpenQuestionsPanel {
     }, 150)
   }
 
-  /** ADR-0034: switch an already-open panel into (or between) tour mode — the tree's "click a tour" entry point when the panel is already showing. */
-  setTour(slug: string): void {
-    this.activeTourSlug = slug
+  /**
+   * ADR-0034: switch an already-open panel into (or between, or OUT of)
+   * tour mode. `undefined` explicitly returns to the full walk — every
+   * caller states its intended mode outright now, rather than "leave
+   * whatever's active alone" (the bug Facet's report named: a click on a
+   * non-tour question while tour mode was active used to be a no-op).
+   */
+  setTour(tourSlug: string | undefined): void {
+    this.activeTourSlug = tourSlug
+    this.updatePanelTitle()
     this.sendQuestions()
+  }
+
+  /** Bug fix (Facet, 2026-07-26 inbox 0349): the tab title never reflected tour mode — indistinguishable from the plain walk at a glance. */
+  private updatePanelTitle(): void {
+    const found = this.activeTourSlug ? this.composite.findTour(this.activeTourSlug) : undefined
+    this.panel.title = found ? `Tour: ${found.tour.title}` : 'Open Questions'
   }
 
   private constructor(private readonly composite: CompositeIndex, initialTourSlug?: string) {
@@ -270,6 +291,7 @@ export class OpenQuestionsPanel {
       this.disposables.push(draftsWatcher)
     }
 
+    this.updatePanelTitle()
     this.sendQuestions()
   }
 
@@ -511,7 +533,7 @@ export class OpenQuestionsPanel {
         break
       case 'retrySave': await this.retrySave(msg.adrPath); break
       case 'showDraftDiff': await this.showDraftDiff(msg.mine, msg.theirs, msg.questionText); break
-      case 'exitTour': this.activeTourSlug = undefined; this.sendQuestions(); break
+      case 'exitTour': this.setTour(undefined); break
     }
   }
 
@@ -2345,10 +2367,16 @@ window.addEventListener('message', e => {
     // actually on screen by its stable draftKey before falling back to the
     // old positional clamp.
     const currentKey = questions[idx] ? questions[idx].draftKey : undefined;
+    // Bug fix (Facet's live click-through report, 2026-07-26 inbox 0349,
+    // "9 of 9 on first tour open"): capture which pool we were in BEFORE
+    // this push, so a tour started/stopped/switched can be told apart from
+    // an ordinary reshuffle of the SAME pool.
+    const previousTourSlug = activeTour ? activeTour.slug : null;
     renderTitleMarkdown = msg.renderTitleMarkdown !== false;
     questions = msg.questions;
     activeTour = msg.tour || null;
     renderTourHeader();
+    const poolChanged = previousTourSlug !== (activeTour ? activeTour.slug : null);
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
     if (questions.length === 0) {
       idx = 0;
@@ -2358,6 +2386,15 @@ window.addEventListener('message', e => {
         // Same question, just at a new position — idx corrected, nothing
         // else changes, isNewQuestion will correctly read false in render().
         idx = relocated;
+      } else if (poolChanged) {
+        // Tour started/stopped/switched: this is a wholesale DISJOINT pool,
+        // not a reshuffle of the one idx was already tracking — DEBRIEF-004's
+        // "clamp only if out of bounds" assumed pool CONTINUITY (same set,
+        // reordered), which tour mode breaks by design. A stale idx that
+        // numerically still fit the new (often much smaller) array was
+        // otherwise left alone instead of reset — the exact "9 of 9" on
+        // first tour open Facet reported live.
+        idx = 0;
       } else if (idx >= questions.length) {
         // Genuinely gone (answered/removed elsewhere) and no fallback
         // position: clamp to last item rather than wrapping to 0 — keeps
