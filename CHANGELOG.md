@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.43] - 2026-07-28
+
+### Changed
+- ADR-0034 doctrine 9 (resolved entries are review stops): walking a tour no longer skips already-answered entries. Each renders read-only — the live answer shown in place of the input box, no Answer button — so Back/Skip still pass through it and the step count includes it. The counter reads "Stop N of M · K awaiting you" in tour mode. This supersedes v0.7.42's interim fix, which jumped an answered entry's click straight to the file instead; that click now stays in the panel like every other tour-entry click.
+
 ## [0.7.42] - 2026-07-28
 
 ### Fixed
