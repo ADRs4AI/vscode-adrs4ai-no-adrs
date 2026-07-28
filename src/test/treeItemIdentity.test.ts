@@ -72,4 +72,16 @@ describe('AdrTreeProvider reveal prerequisites (structural — vscode wall)', ()
   it('every constructed item is assigned the stable id', () => {
     expect(src).toMatch(/this\.id = AdrTreeItem\.makeStableId\(opts\)/)
   })
+
+  // Regression (Facet's live-tour report, 2026-07-28 inbox 0732): makeIcon
+  // and the click-command wiring both shared a combined
+  // `(opts.kind === 'question' || opts.kind === 'tour-entry')` check;
+  // makeLabel did NOT — every tour-entry item fell through to the
+  // function's final `return ''`, an unconditionally empty label ("the
+  // sidebar has only question marks that are all empty"). Pinning the
+  // shared-condition shape here so a future edit to one can't silently
+  // drop the other again.
+  it('makeLabel treats tour-entry the same as question — never the empty-label fallthrough', () => {
+    expect(src).toMatch(/if \(\(opts\.kind === 'question' \|\| opts\.kind === 'tour-entry'\) && opts\.question\)/)
+  })
 })

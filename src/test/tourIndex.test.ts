@@ -92,6 +92,33 @@ describe('parseTourFile', () => {
     expect(tour!.title).toBe('2026-07-24-untitled')
     expect(tour!.author.name).toBe('unknown')
   })
+
+  // Regression (Facet's live-tour report, 2026-07-28 inbox 0732): ADR-0034
+  // Iteration 4 renamed `required` to `must_respond` before any
+  // implementation existed, but at least one real tour was minted under
+  // the old name — its entries were silently getting must_respond's
+  // always-true default, since the field this code checked was always
+  // absent on them.
+  it('tolerates the pre-rename "required" field when "must_respond" is absent', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1', entries: [{ ref: 'adr:0001#a', required: false }],
+    }))
+    expect(tour!.entries[0].must_respond).toBe(false)
+  })
+
+  it('"must_respond" wins when both the old and new field names are present', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1', entries: [{ ref: 'adr:0001#a', required: false, must_respond: true }],
+    }))
+    expect(tour!.entries[0].must_respond).toBe(true)
+  })
+
+  it('neither field present leaves must_respond undefined (resolveTourEntries defaults it to true)', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1', entries: [{ ref: 'adr:0001#a' }],
+    }))
+    expect(tour!.entries[0].must_respond).toBeUndefined()
+  })
 })
 
 describe('discoverTourFiles', () => {

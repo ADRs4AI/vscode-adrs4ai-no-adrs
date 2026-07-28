@@ -89,7 +89,18 @@ export function parseTourFile(filePath: string, content: string): TourFile | nul
     .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object' && typeof e.ref === 'string')
     .map(e => ({
       ref: e.ref as string,
-      must_respond: typeof e.must_respond === 'boolean' ? e.must_respond : undefined,
+      // Read-tolerant for the pre-rename field (Facet's live-tour report,
+      // 2026-07-28 inbox 0732): ADR-0034 Iteration 4 renamed `required` to
+      // `must_respond` before any implementation existed, but at least one
+      // real tour was minted under the old name and never migrated — its
+      // entries were silently getting the ALWAYS-true default (the field
+      // this code actually checked was always absent), which happened not
+      // to explain that report's specific symptom but is a real, separate
+      // divergence worth closing now that it's been spotted. `must_respond`
+      // wins when both are present.
+      must_respond: typeof e.must_respond === 'boolean'
+        ? e.must_respond
+        : (typeof e.required === 'boolean' ? e.required : undefined),
       disposition: typeof e.disposition === 'string' ? (e.disposition as TourDisposition) : undefined,
       answer_path: typeof e.answer_path === 'string' ? e.answer_path : undefined,
       comment: typeof e.comment === 'string' ? e.comment : undefined,

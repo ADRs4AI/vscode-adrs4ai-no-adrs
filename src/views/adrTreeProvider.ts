@@ -285,11 +285,25 @@ export class AdrTreeItem extends vscode.TreeItem {
       const title = stripAdrNumberPrefix(opts.adr.title)
       return `ADR-${num}: ${title}`
     }
-    if (opts.kind === 'question' && opts.question) {
+    if ((opts.kind === 'question' || opts.kind === 'tour-entry') && opts.question) {
       // Backticks are markup, not content — tree labels can't render code
       // spans, so strip them rather than display literal backquotes
       // (Jérémie, 2026-07-24; the panel renders them properly per the
       // renderMarkdownInQuestionTitles setting).
+      //
+      // Bug fix (Facet's live-tour report, 2026-07-28 inbox 0732): this
+      // case never matched 'tour-entry' — every tour-entry item got the
+      // fallthrough `return ''` at the end of this function, an
+      // unconditionally EMPTY label. makeIcon and the click-command wiring
+      // already shared 'question'/'tour-entry' in one combined check;
+      // this was the one spot that didn't, and it's exactly what produced
+      // "the sidebar has only question marks that are all empty" — a
+      // row with a real (non-dimmed) icon but no label text at all reads
+      // as present-but-blank; one dimmed by isAnswered's existing
+      // gray-icon treatment on TOP of a blank label reads as functionally
+      // invisible, which is the more likely explanation for "missing"
+      // entries than a second, separate bug — they were rendering the
+      // whole time, just as unlabeled gray ghosts.
       return `? ${opts.question.text.replace(/`/g, '')}`
     }
     if (opts.kind === 'open-questions-header') {
