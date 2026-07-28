@@ -8,6 +8,11 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.44] - 2026-07-28
+
+### Fixed
+- A tour minted or edited outside the extension (hand-written JSON, a sibling crew's commit, a `git pull`) stayed invisible in the sidebar until something else happened to trigger a reindex. `docs/adr/tours/*.tour.json` now has the same per-root FileSystemWatcher coverage as ADRs/seeds — create, change, and delete all refresh the tree automatically. No "tours may be stale, refresh?" affordance was added; the fix is the watcher, not a label asking you to work around its absence.
+
 ## [0.7.43] - 2026-07-28
 
 ### Changed
