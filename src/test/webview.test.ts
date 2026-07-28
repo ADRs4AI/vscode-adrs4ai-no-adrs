@@ -253,6 +253,25 @@ describe('Webview script block syntax', () => {
     })
   })
 
+  // Regression (Facet, 2026-07-28 inbox 2247, Jérémie's screenshot):
+  // .review-stop-answer got the renderMarkdown() swap (v0.7.46, fixing the
+  // whitespace-collapse bug) but never the CSS scaffold every OTHER class
+  // receiving renderMarkdown's output already carries — no ul/ol indent, no
+  // paragraph spacing, everything fell through to the file's universal
+  // `*{margin:0;padding:0}` reset. Named here as a standing check so a
+  // FUTURE new prose container can't silently ship without its scaffold
+  // the same way this one did — per Facet's own suggested regression.
+  describe('Every class rendering renderMarkdown() output carries its CSS scaffold (ul/ol indent, p margin)', () => {
+    const proseClasses = ['.why', '.qst-body', '.ctx-body', '.recommendation', '.review-stop-answer']
+    for (const cls of proseClasses) {
+      it(`${cls} has a ul/ol padding rule and a p margin rule`, () => {
+        const escaped = cls.replace('.', '\\.')
+        expect(PANEL_SRC, `${cls} is missing a ul/ol padding-left rule`).toMatch(new RegExp(`${escaped} (ul|ol)[,{]`))
+        expect(PANEL_SRC, `${cls} is missing a p margin rule`).toMatch(new RegExp(`${escaped} p[,{]`))
+      })
+    }
+  })
+
   it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
     expect(PANEL_SRC).toContain("msg.sourceKind === 'seed'")
     expect(PANEL_SRC).toContain('parseSeed(currentContent, msg.adrPath)')

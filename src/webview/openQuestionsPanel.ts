@@ -1187,26 +1187,26 @@ body{
 .rec-chip-inferred{
   border-bottom:1px dotted rgba(255,255,255,.7);
 }
-/* Markdown HTML rendering inside why/recommendation/body containers */
-.why code,.recommendation code,.qst-body code{
+/* Markdown HTML rendering inside why/recommendation/body/review-stop containers */
+.why code,.recommendation code,.qst-body code,.review-stop-answer code{
   font-family:var(--vscode-editor-font-family,monospace);
   font-size:11px;
   background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
   padding:1px 4px;border-radius:3px;
 }
-.why pre,.recommendation pre,.qst-body pre{
+.why pre,.recommendation pre,.qst-body pre,.review-stop-answer pre{
   font-family:var(--vscode-editor-font-family,monospace);
   font-size:11px;
   background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.15));
   padding:8px 12px;border-radius:4px;
   overflow-x:auto;margin:6px 0;white-space:pre;
 }
-.why ul,.why ol,.recommendation ul,.recommendation ol{padding-left:20px;margin:6px 0}
-.why li,.recommendation li{margin:3px 0}
-.why p,.recommendation p,.qst-body p{margin:0 0 6px}
-.why p:last-child,.recommendation p:last-child,.qst-body p:last-child{margin-bottom:0}
-.why strong,.recommendation strong{font-weight:600}
-.why em,.recommendation em{font-style:italic}
+.why ul,.why ol,.recommendation ul,.recommendation ol,.review-stop-answer ul,.review-stop-answer ol{padding-left:20px;margin:6px 0}
+.why li,.recommendation li,.review-stop-answer li{margin:3px 0}
+.why p,.recommendation p,.qst-body p,.review-stop-answer p{margin:0 0 6px}
+.why p:last-child,.recommendation p:last-child,.qst-body p:last-child,.review-stop-answer p:last-child{margin-bottom:0}
+.why strong,.recommendation strong,.review-stop-answer strong{font-weight:600}
+.why em,.recommendation em,.review-stop-answer em{font-style:italic}
 .author-row{
   display:flex;align-items:center;gap:8px;
   margin-bottom:10px;
