@@ -8,6 +8,12 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.41] - 2026-07-28
+
+### Fixed
+- A tour's questions in the sidebar **Tours** tree had no title at all — a real question and status icon with completely blank text, easy to mistake for the entry being missing entirely rather than just unlabeled. Every entry in a tour now shows its actual question text, same as anywhere else in the tree.
+- A tour minted before ADR-0034's schema rename (`required` → `must_respond`) had every entry silently treated as required, regardless of what the tour actually said — the old field name is now read as a fallback.
+
 ## [0.7.40] - 2026-07-28
 
 ### Fixed
