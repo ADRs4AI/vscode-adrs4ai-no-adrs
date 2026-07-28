@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.46] - 2026-07-28
+
+### Fixed
+- **Review-stop answers no longer read as one collapsed blob**: a resolved tour entry's live answer (ADR-0034 doctrine 9, v0.7.43) rendered via plain `.textContent` with no whitespace handling, so a real multi-paragraph or multi-line answer lost all its structure. Now rendered as markdown, matching every other prose surface in the panel.
+- **ADR-0038 tier 1 — the answer box uses your editor font**: the answer textarea inherited VS Code's UI chrome font instead of the editor font you've actually configured for writing — the reason bullet-point indentation had no way to render in monospace. It now reads `--vscode-editor-font-*` directly; anyone with a configured editor font gets it here with zero new settings.
+
 ## [0.7.45] - 2026-07-28
 
 ### Fixed
