@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.47] - 2026-07-28
+
+### Fixed
+- **Review-stop answer text had no list indent or paragraph spacing**: v0.7.46's markdown fix rendered a resolved tour entry's answer correctly, but the class never got the scoped `ul`/`ol`/`p`/`strong`/`em`/`code`/`pre` rules the panel's other prose boxes (`.why`, `.qst-body`, `.recommendation`) already carry, so everything fell through to the file's blanket margin/padding reset. It now shares the same scaffold as its siblings.
+
 ## [0.7.46] - 2026-07-28
 
 ### Fixed
