@@ -22,3 +22,7 @@ package-lock.json
 !dist/**
 dist/**/*.map
 diff.txt
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
