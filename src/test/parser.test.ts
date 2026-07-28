@@ -4102,3 +4102,56 @@ describe('Question.rounds (ADR-0021 Iteration 10, Riddle 5 format ruling)', () =
     expect(q.rounds[0].answer?.text).toBe('Fine anyway.')
   })
 })
+
+describe("Regression tests: byline scaffold — '(Jérémie Lumbroso)' as an ANS slot's entire content (Herald's second tour, 2026-07-28)", () => {
+  // Jérémie, verbatim: "All the questions from Herald's tour have
+  // '(Jérémie Lumbroso)' preparsed in the answer. That's not good! If the
+  // byline is parsed as draft question, it introduces noise." Real corpus:
+  // system3-conversations ADR-0028, five open QSTs scaffolded
+  // "**ANS:** (Jérémie Lumbroso)" with no keyword and no content — the
+  // bare parenthetical became answer text and prefilled every box.
+  it('whole-content bare parenthetical reads as a scaffold: question open, NO answer text, NO author', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST I4-1: Two profiles, one account?',
+      '- Status: unanswered', '',
+      '**ANS:** (Jérémie Lumbroso)', '',
+      '### QST I4-2: Next question',
+      '- Status: unanswered',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/0028-x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined() // the prefill-noise source must be gone
+  })
+
+  it('QST-ANS-BYLINE posture intact: bare parenthetical FOLLOWED BY real text stays preserved content, unattributed', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS:** (Jérémie Lumbroso) the actual answer follows here.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.answer?.text).toContain('(Jérémie Lumbroso)')
+    expect(q.answer?.text).toContain('the actual answer follows here.')
+    expect(q.answer?.author).toBeUndefined()
+  })
+
+  it('keyword byline with real content is untouched: author captured, answer clean', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS:** (by Jérémie Lumbroso)', 'A real answer.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.answer?.author).toBe('Jérémie Lumbroso')
+    expect(q.answer?.text).toBe('A real answer.')
+  })
+
+  it('a multi-line parenthesized paragraph is NOT a scaffold — single-line whole-content anchoring only', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '', 
+      '**ANS:** (by X)', '(This whole answer is an aside', 'spanning two lines.)', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.answer?.text).toContain('spanning two lines.')
+    expect(q.isAnswered).toBe(true)
+  })
+})

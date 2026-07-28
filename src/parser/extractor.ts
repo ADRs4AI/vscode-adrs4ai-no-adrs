@@ -1188,7 +1188,31 @@ export function extractQuestion(
         line: answerLine,
       });
     }
-    const isReal = !!answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder;
+    // Byline scaffold (Herald's second tour, Jérémie verbatim 2026-07-28:
+    // "All the questions from Herald's tour have '(Jérémie Lumbroso)'
+    // preparsed in the answer... it introduces noise"): an ANS slot whose
+    // ENTIRE content is one bare parenthetical — "**ANS:** (Jérémie
+    // Lumbroso)" with nothing else — is a scaffold reserving the slot, not
+    // an answer. Cousin of the "(by )" empty-attribution class (v0.7.21).
+    // The QST-ANS-BYLINE posture is intact: we still never ATTRIBUTE a
+    // keyword-less name (no author set), and a bare parenthetical followed
+    // by real text is still preserved as content — whole-content-only
+    // anchoring, same discipline as the placeholder family. Single-line
+    // only ([^()\n]): a multi-line parenthesized paragraph is real content.
+    // And ONLY when the layer captured no author: a slot that already has
+    // a keyword byline can't be awaiting one — its parenthetical content
+    // ("(see ADR-0014 for the full argument)") stays a real draft answer,
+    // per the pre-existing guard-the-guard test.
+    const isBylineScaffold = !answerAuthor && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder &&
+      /^\([^()\n]+\)$/.test(answerText);
+    if (isBylineScaffold && warnings) {
+      warnings.push({
+        code: 'ANS_BYLINE_SCAFFOLD',
+        message: `The ANS slot's entire content is the bare parenthetical "${answerText}" — read as an empty byline scaffold (the question stays unanswered), not as an answer. If this names the intended answerer, the recognized byline form is "**ANS:** (by ${answerText.slice(1, -1)})". If it was meant as a real answer, add text outside the parentheses.`,
+        line: answerLine,
+      });
+    }
+    const isReal = !!answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder && !isBylineScaffold;
     answerLayers.push({ qualifier: answerQualifier, author: answerAuthor, text: answerText, line: answerLine, isReal });
     answerLines.length = 0;
     answerQualifier = undefined;
