@@ -414,3 +414,75 @@ describe('Regression tests: scan uses the extractor\'s FULL marker + placeholder
     expect(a.fillLineIdx).toBe(-1)
   })
 })
+
+describe('Regression tests: the elenchus 0002 same-line multi-paragraph destruction (2026-07-24, reported 2026-07-27)', () => {
+  // Real incident, reconstructed from the vault + file forensics: legacy
+  // 0002-section-models.md held "**ANS:** (by Jérémie) Wow, what a great
+  // anticipation…" — same-line first paragraph, then two more paragraphs —
+  // with "- Status: unanswered". Answering through the panel (v0.7.27 era)
+  // destroyed paragraph 1 AND the typed answer: the file ended up holding
+  // only paragraphs 2-3 under a rewritten byline. Three fix generations
+  // later (v0.7.29 replace-extent, v0.7.32 prefill/swap, v0.7.37 shared
+  // predicates), this pins the invariants that make the class impossible:
+  // the parse used for prefill must carry the FULL text including the
+  // same-line start, and the write extent must cover the ENTIRE old answer
+  // so what lands is exactly the submitted box, never a splice of both.
+  const SPECIMEN = [
+    '## Open Questions',
+    '',
+    '### QST: How do we handle capacity fairness in cross-registration?',
+    '- Status: unanswered',
+    '- Why asking: If Section 001 has 50 students…',
+    '- Need: Policy decision + implementation approach',
+    '',
+    '**ANS:** (by Jérémie) Wow, what a great anticipation of a failure mode! Perhaps preallocation rules by proportion.',
+    '',
+    "I don't think we should give users more control besides FCFS vs preallocation.",
+    '',
+    'Thanks again for your generative question!',
+    '',
+    '---',
+    '',
+    '### QST: Do sections share TARGET_SESSIONS requirement?',
+    '- Status: unanswered',
+  ].join('\n')
+
+  it('prefill source (q.answer.text) carries the same-line first paragraph AND the later paragraphs', () => {
+    const adr = parseAdr(SPECIMEN, '/fake/legacy/docs/adr/0002-section-models.md')
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(false) // declared Status wins; content is a draft
+    expect(q.answer?.text).toContain('Wow, what a great anticipation')
+    expect(q.answer?.text).toContain('generative question!')
+  })
+
+  it('the write extent spans header line through last paragraph — replacing leaves NO orphaned fragment behind', () => {
+    const lines = SPECIMEN.split('\n')
+    const a = scanAnswerWriteAnchors(lines, 2)
+    expect(a.ansHeaderLineIdx).toBe(7)
+    // Content end (exclusive) sits just past 'Thanks again…' at index 11 —
+    // the extent [7..12) covers the same-line start and both later paragraphs.
+    expect(a.ansContentEndLineIdx).toBe(12)
+    expect(a.boundaryKind).toBe('break')
+  })
+
+  it('end-to-end (MCP path): the written file holds exactly the submitted answer — old paragraphs fully replaced, never spliced', () => {
+    const adr = parseAdr(SPECIMEN, '/fake/legacy/docs/adr/0002-section-models.md')
+    const q = adr.questions[0]
+    const result = applyAnswerQuestion(
+      SPECIMEN, '/fake/legacy/docs/adr/0002-section-models.md', q.id,
+      'I think that question has been debated at length in the legacy ADRs. You should check it out.',
+      'Jérémie Lumbroso',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.newContent).toContain('debated at length in the legacy ADRs')
+      // The incident's signature: paragraphs 2-3 surviving while the typed
+      // answer vanished. Neither fragment of the old draft may remain.
+      expect(result.newContent).not.toContain('Wow, what a great anticipation')
+      expect(result.newContent).not.toContain("I don't think we should give users")
+      expect(result.newContent).not.toContain('generative question!')
+      // The neighboring question is untouched (wrong-question guard).
+      expect(result.newContent).toContain('Do sections share TARGET_SESSIONS requirement?')
+    }
+  })
+})
