@@ -27,7 +27,9 @@ import type {
   ParseWarningCode,
   Question,
   QuestionAnswer,
+  QuestionRound,
   Recommendation,
+  RoundAnswer,
 } from './types'
 import { KNOWN_STATUSES } from './types'
 
@@ -947,6 +949,52 @@ function detectNonstandardQstFormat(tokens: ReturnType<typeof tokenize>): boolea
 }
 
 /**
+ * ADR-0021 Iteration 10 (Riddle 5, format ruling, 2026-07-26): fold a
+ * question's separately-parsed recommendations and answer layers into
+ * explicit rounds, by document order (line number) ALONE — qualifiers are
+ * display-only and must never be consulted here. Fold rule: a round is
+ * zero-or-more recommendations followed by at most one answer; an answer
+ * CLOSES the current round; a recommendation appearing after an answer
+ * OPENS a new round; an answer with no preceding recommendation is a round
+ * with `recommendations: []`; trailing recommendations with no closing
+ * answer at all become a final round whose `answer` is undefined — the
+ * same "awaiting" shape as an empty trailing ANS placeholder (v0.7.32).
+ * One fold, implemented once — `recommendations`/`answers` (plural, flat)
+ * are derived FROM this, never computed independently, so the two can
+ * never drift apart.
+ */
+function foldQuestionRounds(
+  recommendations: Recommendation[],
+  answerLayers: { qualifier?: string; author?: string; text: string; line: number; isReal: boolean }[],
+): QuestionRound[] {
+  type Event =
+    | { line: number; kind: 'rec'; rec: Recommendation }
+    | { line: number; kind: 'ans'; layer: (typeof answerLayers)[number] }
+  const events: Event[] = [
+    ...recommendations.map((rec): Event => ({ line: rec.line, kind: 'rec', rec })),
+    ...answerLayers.map((layer): Event => ({ line: layer.line, kind: 'ans', layer })),
+  ].sort((a, b) => a.line - b.line)
+
+  const rounds: QuestionRound[] = []
+  let currentRecs: Recommendation[] = []
+  for (const event of events) {
+    if (event.kind === 'rec') {
+      currentRecs.push(event.rec)
+      continue
+    }
+    const answer: RoundAnswer | undefined = event.layer.isReal
+      ? { qualifier: event.layer.qualifier, author: event.layer.author, text: event.layer.text, line: event.layer.line }
+      : undefined
+    rounds.push({ recommendations: currentRecs, answer })
+    currentRecs = []
+  }
+  if (currentRecs.length > 0) {
+    rounds.push({ recommendations: currentRecs, answer: undefined })
+  }
+  return rounds
+}
+
+/**
  * ADR-0018 (QST/ANS Substrate): exported so seedExtractor.ts can extract
  * QST/ANS fields from a seed-embedded question the same way an ADR's
  * question is parsed — one field parser, two container kinds. `adrNumber`/
@@ -1323,14 +1371,10 @@ export function extractQuestion(
   const rawBodyPost = rawBodyLinesPost.length > 0 ? unwrapMarkdownish(rawBodyLinesPost).join('\n') : undefined
 
   finalizeAnswerLayer();
-  const realLayers = answerLayers.filter(l => l.isReal);
   const lastLayer = answerLayers[answerLayers.length - 1];
   if (lastLayer?.isReal) {
     answer = { text: lastLayer.text, author: lastLayer.author, line: lastLayer.line };
   }
-  const answers = realLayers.length > 0
-    ? realLayers.map(l => ({ qualifier: l.qualifier, author: l.author, text: l.text, line: l.line }))
-    : undefined;
 
   // ADR-0012: Case-insensitive, trimmed comparison — human-typed values like "Answered" should work.
   // Leading-token match (not exact-match) tolerates a trailing annotation
@@ -1405,6 +1449,15 @@ export function extractQuestion(
     if (blocks.length > 0) recommendations = blocks;
   }
 
+  // ADR-0021 Iteration 10: rounds is the source of truth; recommendations/
+  // answers (plural, flat) are DERIVED from it, never computed independently
+  // — the two can never drift apart because there's only one computation.
+  const rounds = foldQuestionRounds(recommendations ?? [], answerLayers);
+  recommendations = rounds.flatMap((r) => r.recommendations);
+  if (recommendations.length === 0) recommendations = undefined;
+  let answers: RoundAnswer[] | undefined = rounds.filter((r) => r.answer).map((r) => r.answer!);
+  if (answers.length === 0) answers = undefined;
+
   return {
     id: `adr-${String(adrNumber).padStart(4, '0')}-${section.slug}`,
     slug: section.slug,
@@ -1420,6 +1473,7 @@ export function extractQuestion(
     rawBodyPost,
     answer,
     answers,
+    rounds,
     adrNumber,
     adrPath,
     lineStart: section.lineStart,

@@ -175,7 +175,11 @@ export interface Question {
    * ADR-0019: recommendation blocks split by source order (one entry per
    * **Recommendation**:/**My recommendation**: marker), each attributed.
    * `recommendation` above stays the flat concatenation for backward
-   * compatibility with older consumers.
+   * compatibility with older consumers. ADR-0021 Iteration 10 (Riddle 5,
+   * format ruling): this is now a DERIVED view — `rounds.flatMap(r =>
+   * r.recommendations)` — kept through a deprecation window (anti-DLL-Hell),
+   * not the source of truth. Consumers that need round correspondence
+   * should read `rounds` instead.
    */
   recommendations?: Recommendation[];
   /** Pre-recommendation body: proposed grammars, option lists, analysis —
@@ -192,9 +196,32 @@ export interface Question {
    * verdict — the last layer when real, undefined when the last layer is
    * an empty/placeholder slot (a re-ask awaiting its answer). Renderers
    * show `answer` prominently and may collapse earlier layers, mirroring
-   * the stacked-recommendations display.
+   * the stacked-recommendations display. ADR-0021 Iteration 10: also now a
+   * DERIVED view — `rounds.filter(r => r.answer).map(r => r.answer)` —
+   * kept through a deprecation window, not the source of truth.
    */
-  answers?: { qualifier?: string; author?: string; text: string; line: number }[];
+  answers?: RoundAnswer[];
+  /**
+   * ADR-0021 Iteration 10 (Riddle 5, format ruling, 2026-07-26): explicit
+   * round grouping — the source of truth `recommendations`/`answers` above
+   * are now derived from. Replaces implicit document-order correspondence
+   * between the two flat arrays, which had no way to say which
+   * recommendations a given answer round responds to once more than one
+   * recommendation preceded an answer (found auditing this exact question
+   * against `architecture-of-complexity`'s near-decomposability framework).
+   *
+   * Fold rule, stated once here — every consumer implements the same fold,
+   * never a private re-derivation: a round is zero-or-more recommendations
+   * followed by at most one answer; an answer CLOSES the current round; a
+   * recommendation appearing after an answer OPENS a new round; an answer
+   * with no preceding recommendation is a round with `recommendations: []`;
+   * the empty trailing ANS slot (re-asked/awaiting, v0.7.32) is a final
+   * round whose `answer` is undefined.
+   *
+   * Qualifiers (`RoundAnswer.qualifier`) are DISPLAY-ONLY — never parsed to
+   * resolve correspondence. Document order alone decides round membership.
+   */
+  rounds: QuestionRound[];
   adrNumber: number;
   adrPath: string;
   /** Line number of the ### QST: heading */
@@ -222,6 +249,31 @@ export interface QuestionAnswer {
   author?: string;
   /** Line number of the **ANS:** marker */
   line: number;
+}
+
+/**
+ * One answer layer's content, as it appears within a round. `qualifier` is
+ * DISPLAY-ONLY (e.g. "to the updated recommendation") — ADR-0021 Iteration
+ * 10: never parsed to resolve which round an answer belongs to. Document
+ * order alone decides that.
+ */
+export interface RoundAnswer {
+  qualifier?: string;
+  author?: string;
+  text: string;
+  line: number;
+}
+
+/**
+ * ADR-0021 Iteration 10 (Riddle 5, format ruling): one fold-grouped round of
+ * a question's dialogue. See `Question.rounds`'s doc comment for the fold
+ * rule. `recommendations` may be empty (an answer with nothing preceding
+ * it); `answer` is undefined for a round still awaiting its answer (the
+ * empty trailing ANS slot, v0.7.32).
+ */
+export interface QuestionRound {
+  recommendations: Recommendation[];
+  answer?: RoundAnswer;
 }
 
 // ---------------------------------------------------------------------------

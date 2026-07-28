@@ -3992,3 +3992,113 @@ describe('Regression tests: ANS marker + placeholder morphologies (Jérémie liv
     expect(q.answer).toBeUndefined()
   })
 })
+
+describe('Question.rounds (ADR-0021 Iteration 10, Riddle 5 format ruling)', () => {
+  // Regression for the exact gap Jérémie found: recommendations[] and
+  // answers[] previously had no structural correspondence, so two stacked
+  // recommendations before one answer left "which recs does this answer
+  // respond to" undefined. The fold groups by document order alone.
+  it('a simple one-recommendation, one-answer question folds into a single round', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Simple?', '- Status: unanswered', '',
+      '**Recommendation**: (by Herald 5, 2026-07-26)', '', 'Ship it.', '',
+      '**ANS:** (by Jérémie)', 'Agreed.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.rounds).toHaveLength(1)
+    expect(q.rounds[0].recommendations).toHaveLength(1)
+    expect(q.rounds[0].recommendations[0].text).toBe('Ship it.')
+    expect(q.rounds[0].answer?.text).toBe('Agreed.')
+  })
+
+  it('two stacked recommendations before one answer both belong to the SAME round — the gap Jérémie found', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Which approach?', '- Status: unanswered', '',
+      '**Recommendation**: (by Herald 5, 2026-07-26)', '', 'Option A.', '',
+      '**Recommendation**: (by Quarry 5, 2026-07-26)', '', 'Actually, Option B.', '',
+      '**ANS:** (by Jérémie)', 'Going with B.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.rounds).toHaveLength(1)
+    expect(q.rounds[0].recommendations).toHaveLength(2)
+    expect(q.rounds[0].recommendations[0].text).toBe('Option A.')
+    expect(q.rounds[0].recommendations[1].text).toBe('Actually, Option B.')
+    expect(q.rounds[0].answer?.text).toBe('Going with B.')
+  })
+
+  it('the real system3 ADR-0033 dialogue-layering specimen folds into two rounds, each owning its own recommendation', () => {
+    const doc = [
+      '# ADR 0033: Team completism', '',
+      '## Status meta', '',
+      '### QST: The stated promotion trigger has fired — design now, hold, or fold?',
+      '- Status: unanswered (added by the 2026-07-09 ORJ tour)', '',
+      '**Recommendation**: (by Herald 5, 2026-07-09)', '',
+      '**B — hold with the concrete trigger.**', '',
+      '**ANS:** (by Jérémie Lumbroso — given in chat 2026-07-14, transcribed by Herald 5)',
+      'Hold — "I\'d like to put the Team completism a bit on hold, and tackle it as',
+      'the last standing thing for full sync."', '',
+      '**Recommendation (updated)**: (by Herald 5, 2026-07-24)', '',
+      '**Your hold stands unchanged — but it\'s time to stop letting time-windowed analytics expire.**', '',
+      'Recommend a ~20-line ride-along snapshot. This stops the bleeding while the hold holds.', '',
+      '**ANS (to the updated recommendation):** (by Jérémie Lumbroso)', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/0033-t.md').questions[0]
+    expect(q.rounds).toHaveLength(2)
+    // Round 1: Herald's original rec, Jérémie's real hold answer.
+    expect(q.rounds[0].recommendations).toHaveLength(1)
+    expect(q.rounds[0].recommendations[0].text).toContain('hold with the concrete trigger')
+    expect(q.rounds[0].answer?.text).toContain('last standing thing for full sync')
+    // Round 2: Herald's updated rec, open re-ask slot (undefined answer).
+    expect(q.rounds[1].recommendations).toHaveLength(1)
+    expect(q.rounds[1].recommendations[0].text).toContain('stops the bleeding')
+    expect(q.rounds[1].answer).toBeUndefined()
+  })
+
+  it('an answer with no preceding recommendation is a round with recommendations: []', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Quick one?', '- Status: unanswered', '',
+      '**ANS:** (by Jérémie)', 'Just yes.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.rounds).toHaveLength(1)
+    expect(q.rounds[0].recommendations).toEqual([])
+    expect(q.rounds[0].answer?.text).toBe('Just yes.')
+  })
+
+  it('trailing recommendations with no ANS block at all become a final round awaiting an answer', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Not yet answered?', '- Status: unanswered', '',
+      '**Recommendation**: (by Herald 5, 2026-07-26)', '', 'Consider option C.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.rounds).toHaveLength(1)
+    expect(q.rounds[0].recommendations).toHaveLength(1)
+    expect(q.rounds[0].answer).toBeUndefined()
+  })
+
+  it('the derived flat recommendations[]/answers[] views stay consistent with rounds — never independently computed', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: The stated promotion trigger?', '- Status: unanswered', '',
+      '**Recommendation**: (by Herald 5, 2026-07-09)', '', 'Hold.', '',
+      '**ANS:** (by Jérémie)', 'Held.', '',
+      '**Recommendation (updated)**: (by Herald 5, 2026-07-24)', '', 'Snapshot.', '',
+      '**ANS (to the updated recommendation):** (by Jérémie)', 'Approved.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.recommendations).toEqual(q.rounds.flatMap((r) => r.recommendations))
+    expect(q.answers).toEqual(q.rounds.filter((r) => r.answer).map((r) => r.answer))
+  })
+
+  it('qualifiers are display-only — a fabricated qualifier that does not match any recommendation does not break the fold (document order still decides)', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Edge case?', '- Status: unanswered', '',
+      '**Recommendation**: (by Herald 5, 2026-07-26)', '', 'First.', '',
+      '**ANS (to a recommendation nobody wrote):** (by Jérémie)', 'Fine anyway.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.rounds).toHaveLength(1)
+    expect(q.rounds[0].recommendations).toHaveLength(1)
+    expect(q.rounds[0].answer?.qualifier).toBe('to a recommendation nobody wrote')
+    expect(q.rounds[0].answer?.text).toBe('Fine anyway.')
+  })
+})

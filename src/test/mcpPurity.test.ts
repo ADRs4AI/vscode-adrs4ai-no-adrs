@@ -63,6 +63,7 @@ function makeQuestion(overrides: Partial<Question> = {}): Question {
     text: 'An example question?',
     statusText: 'unanswered',
     isAnswered: false,
+    rounds: [],
     adrNumber: 1,
     adrPath: '/fake/docs/adr/0001-example.md',
     lineStart: 10,
