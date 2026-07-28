@@ -242,6 +242,17 @@ describe('Webview script block syntax', () => {
     expect(match![0]).not.toContain('color:')
   })
 
+  describe('ADR-0038 tier 1: the answer box inherits the editor font, not the UI font', () => {
+    it('the textarea rule uses the editor-font CSS variables, not --vscode-font-family', () => {
+      const match = PANEL_SRC.match(/^textarea\{[^}]*\}/m)
+      expect(match).toBeTruthy()
+      expect(match![0]).toContain('font-family:var(--vscode-editor-font-family)')
+      expect(match![0]).toContain('font-size:var(--vscode-editor-font-size,14px)')
+      expect(match![0]).toContain('font-weight:var(--vscode-editor-font-weight,normal)')
+      expect(match![0]).not.toContain('--vscode-font-family')
+    })
+  })
+
   it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
     expect(PANEL_SRC).toContain("msg.sourceKind === 'seed'")
     expect(PANEL_SRC).toContain('parseSeed(currentContent, msg.adrPath)')
@@ -783,11 +794,36 @@ describe('Tour-mode skin (ADR-0034)', () => {
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
       expect(h.element('review-stop-block').style.display).toBe('block')
-      expect(h.element('review-stop-answer').textContent).toBe('We picked option B.')
+      // Rendered as markdown (Facet's catch, 2026-07-28 inbox 2230), not
+      // plain .textContent — a real multi-line answer needs paragraph/list
+      // structure, not one whitespace-collapsed blob.
+      expect(h.element('review-stop-answer').innerHTML).toContain('We picked option B.')
       expect(h.element('author-row').style.display).toBe('none')
       expect(h.element('ans').style.display).toBe('none')
       expect(h.element('answer-hint').style.display).toBe('none')
       expect(h.element('btn-ans').style.display).toBe('none')
+    })
+
+    // Regression (Facet, 2026-07-28 inbox 2230, Jérémie: "it's a bit
+    // performative to read the answer"): plain .textContent into a div with
+    // no white-space handling collapsed a multi-paragraph answer into one
+    // dense, space-joined blob. Now rendered as markdown, same as every
+    // other prose surface in this dialog (why/body/body-post/
+    // recommendations) — each paragraph gets its own <p>.
+    it('a multi-paragraph review-stop answer keeps its paragraph structure, not one collapsed blob', () => {
+      const h = createWebviewHarness()
+      const multiPara = { ...answered, finalAnswerText: 'First paragraph.\n\nSecond paragraph.' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [multiPara], tour: TOUR })
+      const html = h.element('review-stop-answer').innerHTML
+      expect(html).toContain('<p>First paragraph.</p>')
+      expect(html).toContain('<p>Second paragraph.</p>')
+    })
+
+    it('an empty/missing answer text shows a placeholder, never a blank review stop', () => {
+      const h = createWebviewHarness()
+      const noText = { ...answered, finalAnswerText: undefined }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [noText], tour: TOUR })
+      expect(h.element('review-stop-answer').innerHTML).toContain('(no answer text on file)')
     })
 
     it('a still-open entry shows the answering machinery, not the review stop', () => {

@@ -1233,7 +1233,14 @@ textarea{
   color:var(--vscode-input-foreground);
   border:1px solid var(--vscode-input-border,transparent);
   border-radius:4px;
-  font-family:var(--vscode-font-family);font-size:14px;
+  /* ADR-0038 tier 1: the answer box inherits the user's own EDITOR font
+     (what they've configured for writing text/code), not VS Code's UI
+     chrome font — the prior rule read the UI-chrome variable instead,
+     which is why no amount of editor.fontFamily tuning ever reached
+     this field. */
+  font-family:var(--vscode-editor-font-family);
+  font-size:var(--vscode-editor-font-size,14px);
+  font-weight:var(--vscode-editor-font-weight,normal);
   line-height:1.6;resize:vertical;outline:none;
 }
 textarea:focus{border-color:var(--vscode-focusBorder)}
@@ -2328,7 +2335,12 @@ function render() {
   if (q.isReviewStop) {
     $id('review-stop-block').style.display = 'block';
     $id('review-stop-label').textContent = 'Already answered' + (q.tourEntry && q.tourEntry.disposition ? ' · ' + q.tourEntry.disposition : '');
-    $id('review-stop-answer').textContent = q.finalAnswerText || '(no answer text on file)';
+    // Facet's catch (2026-07-28 inbox 2230): plain .textContent collapsed
+    // all whitespace, so a multi-paragraph/multi-line real answer rendered
+    // as one dense blob. renderMarkdown matches every other prose surface
+    // in this dialog (why/body/body-post/recommendations, all a few lines
+    // up) rather than making this one field a plain-text special case.
+    $id('review-stop-answer').innerHTML = q.finalAnswerText ? renderMarkdown(q.finalAnswerText) : '<em>(no answer text on file)</em>';
     $id('author-row').style.display = 'none';
     $id('ans').style.display = 'none';
     $id('answer-hint').style.display = 'none';
