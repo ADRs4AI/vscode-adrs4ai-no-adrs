@@ -26,10 +26,22 @@ export interface RootNode {
   /**
    * ADR-0034 (QuestionTours): tours discovered under this root's own
    * `docs/adr/tours/*.tour.json`. Scanned once at build time (same
-   * lifecycle as adrs/seeds' own initial scan) — no per-file watcher yet;
-   * a root-set refresh or a manual mint-from-filter both trigger a full
-   * rebuild that re-scans this list. Pure data (no live subscription,
-   * unlike adrs/seeds), since tours change far less often than ADR content.
+   * lifecycle as adrs/seeds' own initial scan) — this field is still pure
+   * data with no live subscription of its own, but it is NOT stale between
+   * scans: `rootWatcherLifecycle.ts`'s per-root watcher now covers this
+   * glob too and triggers the same coalesced full rebuild a manual
+   * mint-from-filter already does.
+   *
+   * Retired assumption (Riddle's ruling, 2026-07-28, docs/inbox
+   * `riddle-to-fitter-facet-ruling-tours-get-full-watcher-parity.md`): this
+   * comment used to say tours "change far less often than ADR content," so
+   * a watcher wasn't worth building yet. That was wrong twice over — empirically
+   * (two mints landed in two days) and doctrinally (Decision 5's primary
+   * authoring paths are hand/model-authored JSON and cross-repo transport by
+   * git commit, which never touch the mint-from-filter code path that was
+   * the only thing keeping this list fresh). Do not re-adopt "tours change
+   * rarely" as a reason to skip watching them — that reasoning is exactly
+   * what let a second git-committed tour go invisible until reload.
    */
   tours: TourFile[]
   children: RootNode[]

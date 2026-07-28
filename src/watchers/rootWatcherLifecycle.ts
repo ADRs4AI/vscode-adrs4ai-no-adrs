@@ -44,17 +44,38 @@ interface RootWatcherHandle extends vscode.Disposable {
 
 const watchersByRoot = new WeakMap<RootNode, RootWatcherHandle>()
 
-/** Spin up a FileSystemWatcher scoped to ONE root's own docs/adr/ — one per root, per Decision 3's per-root shape. Non-recursive, matching the existing single-root glob (`<adrDir>/*.md`). */
-function createRootWatcher(node: RootNode, adrDirRel: string, onAudit: WatcherAuditListener): RootWatcherHandle {
+/**
+ * Spin up a FileSystemWatcher scoped to ONE root's own docs/adr/ — one per
+ * root, per Decision 3's per-root shape. Non-recursive, matching the
+ * existing single-root glob (`<adrDir>/*.md`).
+ *
+ * ADR-0034 tours get the same per-root treatment (Riddle's ruling,
+ * 2026-07-28, "tours get full watcher parity" — docs/inbox
+ * `riddle-to-fitter-facet-ruling-tours-get-full-watcher-parity.md`):
+ * `<adrDir>/tours/*.tour.json` create/change/delete all trigger `onTourChange`
+ * — the SAME coalesced full-rebuild `requestRefresh()` mint-from-filter's own
+ * write already triggers, not an incremental per-tour update. A tour is a
+ * whole-file unit (no partial-parse merge like an ADR's questions), and the
+ * rebuild is already coalesced (CoalescingRefresher), so reusing it is
+ * strictly simpler than adding a second update path for one file kind.
+ */
+function createRootWatcher(node: RootNode, adrDirRel: string, onAudit: WatcherAuditListener, onTourChange: () => void): RootWatcherHandle {
   const metrics = new WatcherMetrics(node.namespace)
   const pattern = new vscode.RelativePattern(node.path, `${adrDirRel}/*.md`)
   const watcher = vscode.workspace.createFileSystemWatcher(pattern)
+  const tourPattern = new vscode.RelativePattern(node.path, `${adrDirRel}/tours/*.tour.json`)
+  const tourWatcher = vscode.workspace.createFileSystemWatcher(tourPattern)
 
   const handleUpsert = (uri: vscode.Uri, kind: 'created' | 'changed'): void => {
     const base = path.basename(uri.fsPath)
     metrics.recordEvent(kind)
     if (isAdrBasename(base)) node.adrs.indexFile(uri.fsPath)
     else if (isSeedBasename(base)) node.seeds.indexFile(uri.fsPath)
+  }
+
+  const handleTourEvent = (kind: 'created' | 'changed' | 'deleted'): void => {
+    metrics.recordEvent(kind)
+    onTourChange()
   }
 
   const listeners: vscode.Disposable[] = [
@@ -66,6 +87,10 @@ function createRootWatcher(node: RootNode, adrDirRel: string, onAudit: WatcherAu
       node.seeds.removeFile(uri.fsPath)
     }),
     watcher,
+    tourWatcher.onDidCreate(() => handleTourEvent('created')),
+    tourWatcher.onDidChange(() => handleTourEvent('changed')),
+    tourWatcher.onDidDelete(() => handleTourEvent('deleted')),
+    tourWatcher,
   ]
 
   onAudit('watcher.create', node)
@@ -89,8 +114,8 @@ export function getRootWatcherMetrics(node: RootNode): WatcherMetrics | undefine
   return watchersByRoot.get(node)?.metrics
 }
 
-function setupWatchersForComposite(composite: CompositeIndex, adrDirRel: string, onAudit: WatcherAuditListener): void {
-  for (const node of composite.walk()) createRootWatcher(node, adrDirRel, onAudit)
+function setupWatchersForComposite(composite: CompositeIndex, adrDirRel: string, onAudit: WatcherAuditListener, onTourChange: () => void): void {
+  for (const node of composite.walk()) createRootWatcher(node, adrDirRel, onAudit, onTourChange)
 }
 
 function disposeWatchersForComposite(composite: CompositeIndex): void {
@@ -117,14 +142,21 @@ export async function startRootWatcherLifecycle(
   onRefreshed: (composite: CompositeIndex) => void,
 ): Promise<RootWatcherLifecycleController> {
   let composite = await CompositeIndex.fromWorkspace(workspaceRoot, options)
-  setupWatchersForComposite(composite, options.adrDirRel, onAudit)
 
+  // Declared before the initial setup call so a tour-file event can reuse
+  // the SAME coalesced refresh as the settings/marker meta-watchers below —
+  // referencing `requestTourRefresh` inside this closure is fine even
+  // though it's assigned after: the closure only runs later, once both are
+  // initialized.
   const refresher = new CoalescingRefresher(async () => {
     disposeWatchersForComposite(composite)
     composite = await CompositeIndex.fromWorkspace(workspaceRoot, options)
-    setupWatchersForComposite(composite, options.adrDirRel, onAudit)
+    setupWatchersForComposite(composite, options.adrDirRel, onAudit, requestTourRefresh)
     onRefreshed(composite)
   })
+  const requestTourRefresh = () => { void refresher.request() }
+
+  setupWatchersForComposite(composite, options.adrDirRel, onAudit, requestTourRefresh)
 
   // Meta-watchers: root-SET changes, not file-content changes. The
   // .settings/roots.json config lives at exactly one place (the workspace
