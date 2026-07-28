@@ -85,15 +85,16 @@ describe('AdrTreeProvider reveal prerequisites (structural — vscode wall)', ()
     expect(src).toMatch(/if \(\(opts\.kind === 'question' \|\| opts\.kind === 'tour-entry'\) && opts\.question\)/)
   })
 
-  // Regression (Facet, 2026-07-28 inbox 1337, Jérémie's screenshot): an
-  // already-answered tour-entry isn't part of buildTourQuestions' walk
-  // (openQuestionsPanel.ts deliberately excludes answered entries —
-  // "nothing left to walk"), so routing its click through the normal
-  // tour-mode-entry path silently did nothing — the dialog just kept
-  // showing whatever it last had, no error, no feedback. An answered
-  // tour-entry's click now jumps straight to the file instead.
-  it('an answered tour-entry jumps to the file directly, never through the tour-mode-entry path that silently no-ops', () => {
-    expect(src).toMatch(/if \(opts\.kind === 'tour-entry' && opts\.question\?\.isAnswered\)/)
-    expect(src).toContain("command: 'adrManager.openAdr'")
+  // Regression (ADR-0034 doctrine 9, Riddle's ruling, 2026-07-28): an
+  // earlier interim fix (Facet, inbox 1337) special-cased an answered
+  // tour-entry's click to jump straight to the file, since the walk used
+  // to exclude answered entries entirely ("nothing left to walk"). Doctrine
+  // 9 supersedes that: answered entries are now review stops INSIDE the
+  // walk (buildTourQuestions no longer skips them), so their click must
+  // route through the same shared tour-mode-entry path as every other
+  // tour-entry — never a special file-jump case.
+  it('an answered tour-entry routes through the normal tour-mode-entry path, no special file-jump case', () => {
+    expect(src).not.toMatch(/opts\.kind === 'tour-entry' && opts\.question\?\.isAnswered/)
+    expect(src).not.toContain('Open Answered Question in File')
   })
 })

@@ -140,7 +140,9 @@ describe('Webview script block syntax', () => {
     // The draft-restore block and the focus() call must both be gated on the
     // same-question check — not run unconditionally on every render().
     expect(script).toMatch(/isNewQuestion\s*=\s*q\.draftKey\s*!==\s*lastShownDraftKey/)
-    expect(script).toMatch(/if \(isNewQuestion\)[\s\S]{0,20}\$id\('ans'\)\.focus\(\)/)
+    // ADR-0034 doctrine 9: focus is also withheld for a review stop (there's
+    // no textarea to focus), so the guard grew an extra clause.
+    expect(script).toMatch(/if \(isNewQuestion && !q\.isReviewStop\)[\s\S]{0,20}\$id\('ans'\)\.focus\(\)/)
   })
 
   it('ADR-0023: submit() includes draftKey + fileChecksum for the drift fence', () => {
@@ -770,6 +772,64 @@ describe('Tour-mode skin (ADR-0034)', () => {
     expect(h.element('tour-entry-info').style.display).toBe('none')
   })
 
+  // ADR-0034 doctrine 9 (Riddle's ruling, 2026-07-28): a resolved tour
+  // entry is a review stop, never silence — buildTourQuestions no longer
+  // skips answered entries, and the panel renders the live answer
+  // read-only in place of the answering machinery.
+  describe('Doctrine 9: resolved entries are review stops', () => {
+    const answered = { ...Q1, id: 'q-answered', draftKey: 'key-answered', isReviewStop: true, finalAnswerText: 'We picked option B.' }
+
+    it('a review stop shows the live answer read-only and hides the answering machinery', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
+      expect(h.element('review-stop-block').style.display).toBe('block')
+      expect(h.element('review-stop-answer').textContent).toBe('We picked option B.')
+      expect(h.element('author-row').style.display).toBe('none')
+      expect(h.element('ans').style.display).toBe('none')
+      expect(h.element('answer-hint').style.display).toBe('none')
+      expect(h.element('btn-ans').style.display).toBe('none')
+    })
+
+    it('a still-open entry shows the answering machinery, not the review stop', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+      expect(h.element('review-stop-block').style.display).toBe('none')
+      expect(h.element('author-row').style.display).toBe('')
+      expect(h.element('ans').style.display).toBe('')
+      expect(h.element('answer-hint').style.display).toBe('')
+      expect(h.element('btn-ans').style.display).toBe('')
+    })
+
+    it('the counter shows both truths in tour mode: total stops walked and how many still await an answer', () => {
+      const h = createWebviewHarness()
+      const open2 = { ...Q1, id: 'q2', draftKey: 'key-2' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered, Q1, open2], tour: TOUR })
+      expect(h.element('counter').textContent).toBe('Stop 1 of 3 · 2 awaiting you')
+    })
+
+    it('outside tour mode the counter keeps its plain "Question N of M" form', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: null })
+      expect(h.element('counter').textContent).toBe('Question 1 of 1')
+    })
+
+    it('Skip still walks past a review stop into the next entry', () => {
+      const h = createWebviewHarness()
+      const open2 = { ...Q1, id: 'q2', draftKey: 'key-2' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered, open2], tour: TOUR })
+      expect(h.element('counter').textContent).toContain('Stop 1 of 2')
+      h.click('btn-skip')
+      expect(h.element('counter').textContent).toContain('Stop 2 of 2')
+      expect(h.element('review-stop-block').style.display).toBe('none')
+    })
+
+    it('a review stop never shows a draft-restored banner', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
+      expect(h.element('draft-restored').style.display).toBe('none')
+    })
+  })
+
   // Regression tests (Facet's live click-through report, 2026-07-26 inbox
   // 0349): DEBRIEF-004's relocate-or-clamp idx logic assumed pool
   // CONTINUITY (the same set, possibly reshuffled) — tour mode breaks that
@@ -804,7 +864,7 @@ describe('Tour-mode skin (ADR-0034)', () => {
       const tourPool = makePool('tour', 9, 32) // disjoint draftKeys — none relocate
       h.postToWebview({ type: 'questions', generation: 1, questions: tourPool, tour: TOUR })
 
-      expect(h.element('counter').textContent).toBe('Question 1 of 9')
+      expect(h.element('counter').textContent).toBe('Stop 1 of 9 · 9 awaiting you')
     })
 
     it('exiting a tour back to the full walk also resets idx, not just entering one', () => {
@@ -812,7 +872,7 @@ describe('Tour-mode skin (ADR-0034)', () => {
       const tourPool = makePool('tour', 3, 32)
       h.postToWebview({ type: 'questions', generation: 0, questions: tourPool, tour: TOUR })
       skip(h, 2) // last entry of the tour
-      expect(h.element('counter').textContent).toBe('Question 3 of 3')
+      expect(h.element('counter').textContent).toBe('Stop 3 of 3 · 3 awaiting you')
 
       const bigPool = makePool('full', 28, 32) // disjoint draftKeys — idx=2 would otherwise still "fit"
       h.postToWebview({ type: 'questions', generation: 1, questions: bigPool, tour: null })
@@ -825,12 +885,12 @@ describe('Tour-mode skin (ADR-0034)', () => {
       const tourA = makePool('a', 5, 1)
       h.postToWebview({ type: 'questions', generation: 0, questions: tourA, tour: { ...TOUR, slug: 'tour-a' } })
       skip(h, 3)
-      expect(h.element('counter').textContent).toBe('Question 4 of 5')
+      expect(h.element('counter').textContent).toBe('Stop 4 of 5 · 5 awaiting you')
 
       const tourB = makePool('b', 4, 2) // disjoint draftKeys — idx=3 would otherwise still "fit"
       h.postToWebview({ type: 'questions', generation: 1, questions: tourB, tour: { ...TOUR, slug: 'tour-b' } })
 
-      expect(h.element('counter').textContent).toBe('Question 1 of 4')
+      expect(h.element('counter').textContent).toBe('Stop 1 of 4 · 4 awaiting you')
     })
 
     it('an ordinary reshuffle WITHIN the same tour (no pool change) still uses relocate-by-key, not a blind reset', () => {
@@ -838,14 +898,14 @@ describe('Tour-mode skin (ADR-0034)', () => {
       const tourPool = makePool('tour', 5, 1)
       h.postToWebview({ type: 'questions', generation: 0, questions: tourPool, tour: TOUR })
       skip(h, 3) // now on 'tour-key-3'
-      expect(h.element('counter').textContent).toBe('Question 4 of 5')
+      expect(h.element('counter').textContent).toBe('Stop 4 of 5 · 5 awaiting you')
 
       // Same tour, same entries, reordered (e.g. an unrelated background push) — draftKey 'tour-key-3' still present, just moved.
       const reordered = [tourPool[4], tourPool[3], tourPool[2], tourPool[1], tourPool[0]]
       h.postToWebview({ type: 'questions', generation: 1, questions: reordered, tour: TOUR })
 
       // 'tour-key-3' relocated to its new position (index 1) — not reset to 0.
-      expect(h.element('counter').textContent).toBe('Question 2 of 5')
+      expect(h.element('counter').textContent).toBe('Stop 2 of 5 · 5 awaiting you')
     })
 
     it('an ordinary reshuffle of the full (non-tour) walk is unaffected by the pool-change guard', () => {

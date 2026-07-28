@@ -101,6 +101,10 @@ interface WebviewQuestion {
     answerPath?: string
     mustRespond: boolean
   }
+  /** ADR-0034 doctrine 9: this entry is already answered — render as a read-only review stop, never an input. Tour mode only. */
+  isReviewStop?: boolean
+  /** The live answer text to show in the review stop, when isReviewStop is true. */
+  finalAnswerText?: string
 }
 
 /** ADR-0034: sent alongside `questions` only when the panel is in tour mode. */
@@ -378,6 +382,11 @@ export class OpenQuestionsPanel {
       groupSortKey: opts.groupSortKey,
       groupLabel: opts.groupLabel,
       rootNamespace: opts.rootNamespace,
+      // ADR-0034 doctrine 9: only meaningful in tour mode (buildTourQuestions
+      // overwrites tourEntry right after this call) — an already-answered
+      // question is a review stop, never silence.
+      isReviewStop: q.isAnswered,
+      finalAnswerText: q.isAnswered ? q.answer?.text : undefined,
     }
   }
 
@@ -457,12 +466,13 @@ export class OpenQuestionsPanel {
 
   /**
    * ADR-0034 tour mode: exactly this tour's entries, in tour order,
-   * filtered to those that (a) resolve and (b) resolve to a still-open
-   * question — an already-answered "ratify"-style entry has nothing left
-   * to walk, and a seed-anchored or broken ref isn't walkable in this
-   * slice (doctrine 3's broken-reference visibility is met by
-   * buildTourMeta's brokenRefs list, surfaced in the header, not woven
-   * into the per-question walk sequence).
+   * filtered to those that resolve to a question — a seed-anchored or
+   * broken ref isn't walkable in this slice (doctrine 3's broken-reference
+   * visibility is met by buildTourMeta's brokenRefs list, surfaced in the
+   * header, not woven into the per-question walk sequence). Doctrine 9
+   * (Riddle's ruling, 2026-07-28): an already-answered entry is NOT
+   * skipped — it stays in the walk as a review stop, rendered read-only by
+   * the webview (isReviewStop/finalAnswerText, set in buildRow above).
    */
   private buildTourQuestions(slug: string): WebviewQuestion[] {
     const found = this.composite.findTour(slug)
@@ -471,7 +481,6 @@ export class OpenQuestionsPanel {
     const rows: WebviewQuestion[] = []
     for (const entry of resolved) {
       if (entry.resolution.kind !== 'question') continue
-      if (entry.resolution.question.isAnswered) continue
       const row = this.buildRow(
         entry.resolution.question,
         ...this.tourEntryOrdinal(entry.resolution.adr, entry.resolution.question),
@@ -1326,6 +1335,18 @@ textarea.expanded{min-height:70vh;height:70vh}
   text-transform:uppercase;font-weight:600;letter-spacing:.03em;
   color:var(--vscode-descriptionForeground);
 }
+/* ADR-0034 doctrine 9: the read-only review-stop answer — an already-
+   resolved tour entry's live answer, shown instead of an input box. */
+.review-stop-block{margin-bottom:16px}
+.review-stop-label{
+  font-size:11px;font-style:italic;color:var(--vscode-descriptionForeground);
+  margin-bottom:6px;
+}
+.review-stop-answer{
+  font-size:13px;line-height:1.6;padding:10px 12px;
+  background:var(--vscode-textBlockQuote-background,rgba(127,127,127,.08));
+  border-radius:4px;
+}
 .hint{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -1499,14 +1520,25 @@ textarea.expanded{min-height:70vh;height:70vh}
   <div id="rec-wrap"></div>
   <div class="qst-body" id="body-post" style="display:none"></div>
 
-  <div class="author-row">
+  <!-- ADR-0034 doctrine 9 (Riddle's ruling, 2026-07-28, docs/inbox tour-doctrine-9):
+       a resolved tour entry is a REVIEW STOP, never silence — read-only
+       (the live answer, beside the live question and authored claim
+       already rendered above), no input box, no Answer button. Back/Skip
+       still navigate through it; only the answering machinery below is
+       suppressed. Only ever shown in tour mode. -->
+  <div class="review-stop-block" id="review-stop-block" style="display:none">
+    <div class="review-stop-label" id="review-stop-label"></div>
+    <div class="review-stop-answer" id="review-stop-answer"></div>
+  </div>
+
+  <div class="author-row" id="author-row">
     <label for="author">Answering as:</label>
     <input id="author" type="text" placeholder="Your name" autocomplete="off" />
   </div>
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
   <div class="draft-restored" id="draft-restored" style="display:none"></div>
-  <div class="hint"><span>Cmd+Enter to submit · Skip to come back later</span><a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a></div>
+  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later</span><a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a></div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
@@ -2234,7 +2266,16 @@ function render() {
 
   const q = questions[idx];
   const pct = (idx / questions.length) * 100;
-  $id('counter').textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
+  // ADR-0034 doctrine 9 (Riddle's ruling, 2026-07-28): walk order is author
+  // order over ALL stops (review stops included) — the counter shows both
+  // truths rather than picking one: position in the whole walk, and how
+  // many of those stops still need a real answer.
+  if (activeTour) {
+    const awaiting = questions.filter(qq => !qq.isReviewStop).length;
+    $id('counter').textContent = 'Stop ' + (idx + 1) + ' of ' + questions.length + ' · ' + awaiting + ' awaiting you';
+  } else {
+    $id('counter').textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
+  }
   $id('pbar').style.width = pct + '%';
   $id('adr-link').textContent = q.groupLabel;
 
@@ -2281,6 +2322,25 @@ function render() {
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
   else { $id('body-post').style.display = 'none'; }
 
+  // ADR-0034 doctrine 9 (Riddle's ruling, 2026-07-28): a resolved tour entry
+  // is a review stop, never silence — its live answer renders read-only in
+  // place of the answering machinery below, which this block hides.
+  if (q.isReviewStop) {
+    $id('review-stop-block').style.display = 'block';
+    $id('review-stop-label').textContent = 'Already answered' + (q.tourEntry && q.tourEntry.disposition ? ' · ' + q.tourEntry.disposition : '');
+    $id('review-stop-answer').textContent = q.finalAnswerText || '(no answer text on file)';
+    $id('author-row').style.display = 'none';
+    $id('ans').style.display = 'none';
+    $id('answer-hint').style.display = 'none';
+    $id('btn-ans').style.display = 'none';
+  } else {
+    $id('review-stop-block').style.display = 'none';
+    $id('author-row').style.display = '';
+    $id('ans').style.display = '';
+    $id('answer-hint').style.display = '';
+    $id('btn-ans').style.display = '';
+  }
+
   // ADR-0023: restore an in-progress draft, if one exists for this question's
   // key — but ONLY when this is actually a different question than what's
   // already on screen. render() re-runs on every background 'questions'
@@ -2289,7 +2349,12 @@ function render() {
   // clobbering in-progress typing and yanking the cursor to the end
   // "incessantly" — see the note by lastShownDraftKey's declaration.
   const isNewQuestion = q.draftKey !== lastShownDraftKey;
-  if (isNewQuestion) {
+  if (q.isReviewStop) {
+    // A review stop never shows draft/drift banners — there's no live
+    // answering happening here for them to protect.
+    lastShownDraftKey = q.draftKey;
+    $id('draft-restored').style.display = 'none';
+  } else if (isNewQuestion) {
     if (q.draftText) {
       $id('ans').value = q.draftText;
       const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';
@@ -2363,7 +2428,7 @@ function render() {
   $id('btn-ans').disabled = false;
   $id('btn-back').disabled = idx === 0;
   $id('err').style.display = 'none';
-  if (isNewQuestion) setTimeout(() => $id('ans').focus(), 50);
+  if (isNewQuestion && !q.isReviewStop) setTimeout(() => $id('ans').focus(), 50);
 }
 
 window.addEventListener('message', e => {
