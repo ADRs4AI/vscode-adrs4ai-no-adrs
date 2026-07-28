@@ -1301,11 +1301,25 @@ textarea.expanded{min-height:70vh;height:70vh}
 .tour-header-title{font-size:14px;font-weight:600}
 .tour-header-meta{font-size:11px;opacity:.85}
 .tour-header-broken{font-size:11px;color:var(--vscode-inputValidation-warningForeground,#a9822c)}
-.tour-header a{font-size:11px;color:var(--vscode-textLink-foreground);text-decoration:none;align-self:flex-start}
+/* Bug fix (Jérémie via Facet, 2026-07-28 inbox 1337): was hardcoded to the
+   editor's global link color, independent of the tour's own theme applied
+   to #tour-header above — clashed against a custom theme (his exact
+   report: "the miscolored link that mismatches"). No color here at all
+   now: it INHERITS #tour-header's own color (theme-overridden inline, or
+   the default), matching doctrine 6 — theme colors the chrome, including
+   this link, not just the title text. Underline stands in for the lost
+   link-color affordance so it still reads as clickable.
+*/
+.tour-header a{font-size:11px;text-decoration:underline;align-self:flex-start}
 .tour-entry-info{
-  font-size:11px;margin-top:8px;margin-bottom:8px;padding:8px 10px;
+  font-size:11px;margin-top:4px;margin-bottom:12px;padding:8px 10px;
   background:var(--vscode-textBlockQuote-background,rgba(127,127,127,.08));
-  border-left:3px solid var(--vscode-textBlockQuote-border,rgba(127,127,127,.4));
+  /* Distinct from .why's border color (Jérémie via Facet, 2026-07-28 inbox
+     1337: "visually unparseable... cognitive overload" against the near-
+     identical-looking .why block) — orange ties it to this codebase's
+     existing "needs your attention" accent (badge/question icons), rather
+     than the neutral gray both blocks used to share. */
+  border-left:3px solid var(--vscode-charts-orange,#cc8800);
   border-radius:2px;
 }
 .tour-entry-info .disposition{
@@ -1470,9 +1484,16 @@ textarea.expanded{min-height:70vh;height:70vh}
     <div class="ctx-body" id="ctx-body"></div>
   </details>
 
-  <div class="qtext" id="qtext"></div>
-  <!-- ADR-0034: the authored claim beside the live facts above (doctrine 1) — only present while walking a tour. -->
+  <!-- ADR-0034: the authored claim, shown BEFORE the question title (Jérémie
+       via Facet, 2026-07-28 inbox 1337: it used to sit between the title and
+       #why, nearly identical in styling to #why itself, and read as
+       "visually unparseable... inserted in the most inconspicuous way" —
+       his own fix, taken verbatim: move it above the title so it frames the
+       question as a preface rather than competing with the established
+       title -> why-asking -> body -> recommendation reading order). Only
+       present while walking a tour. -->
   <div class="tour-entry-info" id="tour-entry-info" style="display:none"></div>
+  <div class="qtext" id="qtext"></div>
   <div class="why" id="why" style="display:none"></div>
   <div class="qst-body" id="body" style="display:none"></div>
   <div id="rec-wrap"></div>

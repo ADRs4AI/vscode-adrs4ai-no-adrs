@@ -213,6 +213,33 @@ describe('Webview script block syntax', () => {
     expect(PANEL_SRC).toContain('this.updatePanelTitle()')
   })
 
+  // Regression (Jérémie via Facet, 2026-07-28 inbox 1337): the authored-
+  // claim block used to sit between the question title and #why, styled
+  // almost identically to #why ("visually unparseable... cognitive
+  // overload"). Jérémie's own fix, taken verbatim: move it ABOVE the
+  // title so it prefaces the question instead of competing with the
+  // established title -> why-asking -> body -> recommendation order.
+  it('#tour-entry-info renders BEFORE #qtext in source order, not between the title and #why', () => {
+    const entryInfoPos = PANEL_SRC.indexOf('id="tour-entry-info"')
+    const qtextPos = PANEL_SRC.indexOf('id="qtext"')
+    expect(entryInfoPos).toBeGreaterThan(-1)
+    expect(qtextPos).toBeGreaterThan(-1)
+    expect(entryInfoPos).toBeLessThan(qtextPos)
+  })
+
+  it('.tour-entry-info is visually distinct from .why (Jérémie via Facet, 2026-07-28: "visually unparseable" against .why\'s near-identical border/background)', () => {
+    const match = PANEL_SRC.match(/\.tour-entry-info\{[^}]*\}/)
+    expect(match).toBeTruthy()
+    expect(match![0]).not.toContain('textBlockQuote-border')
+  })
+
+  it('the Exit-tour link inherits the tour header\'s own (possibly themed) color instead of a hardcoded editor link color', () => {
+    expect(PANEL_SRC).not.toContain('.tour-header a{font-size:11px;color:var(--vscode-textLink-foreground)')
+    const match = PANEL_SRC.match(/\.tour-header a\{[^}]*\}/)
+    expect(match).toBeTruthy()
+    expect(match![0]).not.toContain('color:')
+  })
+
   it('ADR-0018 Step 3: writeAnswer branches to parseSeed for seed-sourced questions, never parseAdr for them', () => {
     expect(PANEL_SRC).toContain("msg.sourceKind === 'seed'")
     expect(PANEL_SRC).toContain('parseSeed(currentContent, msg.adrPath)')

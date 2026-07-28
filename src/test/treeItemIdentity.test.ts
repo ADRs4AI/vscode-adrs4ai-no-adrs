@@ -84,4 +84,16 @@ describe('AdrTreeProvider reveal prerequisites (structural — vscode wall)', ()
   it('makeLabel treats tour-entry the same as question — never the empty-label fallthrough', () => {
     expect(src).toMatch(/if \(\(opts\.kind === 'question' \|\| opts\.kind === 'tour-entry'\) && opts\.question\)/)
   })
+
+  // Regression (Facet, 2026-07-28 inbox 1337, Jérémie's screenshot): an
+  // already-answered tour-entry isn't part of buildTourQuestions' walk
+  // (openQuestionsPanel.ts deliberately excludes answered entries —
+  // "nothing left to walk"), so routing its click through the normal
+  // tour-mode-entry path silently did nothing — the dialog just kept
+  // showing whatever it last had, no error, no feedback. An answered
+  // tour-entry's click now jumps straight to the file instead.
+  it('an answered tour-entry jumps to the file directly, never through the tour-mode-entry path that silently no-ops', () => {
+    expect(src).toMatch(/if \(opts\.kind === 'tour-entry' && opts\.question\?\.isAnswered\)/)
+    expect(src).toContain("command: 'adrManager.openAdr'")
+  })
 })

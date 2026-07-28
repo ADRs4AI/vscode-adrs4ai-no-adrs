@@ -186,14 +186,38 @@ export class AdrTreeItem extends vscode.TreeItem {
       this.resourceUri = vscode.Uri.file(opts.adr.path)
     }
 
-    if ((opts.kind === 'question' || opts.kind === 'tour-entry') && opts.question) {
+    if (opts.kind === 'tour-entry' && opts.question?.isAnswered) {
+      // Bug fix (Facet, 2026-07-28 inbox 1337, Jérémie's screenshot):
+      // buildTourQuestions() in openQuestionsPanel.ts deliberately excludes
+      // already-answered entries from the walk ("nothing left to walk") —
+      // so routing an answered tour-entry's click through the normal
+      // tour-mode-entry path silently did nothing: navigateTo() posted a
+      // jump for a question id the panel's questions[] array never
+      // contained, and the dialog just kept showing whatever it last had,
+      // no error, no feedback. Jump straight to the file instead — always
+      // does something visible and correct. Interim, not a doctrine
+      // ruling: whether an already-answered entry should eventually join
+      // the walk read-only, or stay tree-visible-but-walk-absent
+      // permanently, is routed to Riddle (doctrine) per Facet's dispatch —
+      // this fix doesn't foreclose either direction, it just stops the
+      // silent no-op today.
+      this.command = {
+        command: 'adrManager.openAdr',
+        title: 'Open Answered Question in File',
+        arguments: [opts.question.adrPath, opts.question.lineStart],
+      }
+    } else if ((opts.kind === 'question' || opts.kind === 'tour-entry') && opts.question) {
       // adrManager.clickOpensIn: resource-scoped so a multi-root workspace
       // can set it per-folder. question.adrPath is correct for both
       // container kinds (an ADR's path, or a seed's) as the scope resource.
-      // ADR-0034: a tour-entry's click behavior is deliberately IDENTICAL to
-      // an ordinary question's — "no walk machinery in the tree" extends to
-      // navigation too. Entering tour MODE is the tour item's own click
-      // (below), never an individual entry's.
+      // An unanswered tour-entry's click routes through
+      // adrManager.goToQuestionInPanel exactly like an ordinary question's
+      // — that command (extension.ts) is what carries the owning tour's
+      // slug along when the clicked item is a 'tour-entry', entering tour
+      // mode (fixed 2026-07-26, v0.7.39). Entering tour mode via the TREE
+      // is possible from either the tour item's own click or an
+      // unanswered entry's; only an answered entry's click (above) is
+      // special-cased.
       const clickOpensIn = vscode.workspace
         .getConfiguration('adrManager', vscode.Uri.file(opts.question.adrPath))
         .get<ClickOpensIn>('clickOpensIn', 'panel')
