@@ -325,7 +325,8 @@ export type ParseWarningCode =
   | 'NONSTANDARD_STATUS_LINE_FORM'  // QST-block Status field is bold ("- **Status**:") instead of the canonical plain form ("- Status:")
   | 'NONSTANDARD_STATUS_ANNOTATION'  // QST-block Status value is "answered"/"unanswered" plus a trailing annotation (e.g. "answered 2026-07-13 (reason)")
   | 'MALFORMED_QST_HANDLE_ID'        // handle-shaped heading ("### QST-<id>:") whose id fails the grammar — recognized as a question anyway, never silently dropped (ADR-0032 QST-IDCHARSET)
-  | 'EMPHASIZED_STATUS_VALUE';       // status keyword wrapped in Markdown emphasis ("**answered**", "_accepted_") — recognized via stripInlineEmphasis, never defeats token matching (ADR-0052 specimen, 2026-07-22)
+  | 'EMPHASIZED_STATUS_VALUE'        // status keyword wrapped in Markdown emphasis ("**answered**", "_accepted_") — recognized via stripInlineEmphasis, never defeats token matching (ADR-0052 specimen, 2026-07-22)
+  | 'ANS_BYLINE_SCAFFOLD';           // ANS slot's entire content is a bare parenthetical ("(Name)") with no author already captured — read as an unfilled byline scaffold, not an answer (Herald's second tour, prefill noise, 2026-07-28)
 
 export interface ParseWarning {
   code: ParseWarningCode;
