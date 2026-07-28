@@ -335,7 +335,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit",
-    "package": "vsce package",
+    "package": "vsce package && mkdir -p releases && mv *.vsix releases/",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
