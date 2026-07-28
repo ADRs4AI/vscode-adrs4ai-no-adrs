@@ -114,6 +114,18 @@ const QST_HANDLE_MALFORMED_RE = /^QST-([^\s:]{1,64}):\s*(.*)$/iu;
 // Recalled with full handle semantics (id folded, anchor stable) + a
 // fix-it warning toward the canonical hyphen form.
 const QST_HANDLE_SPACED_RE = /^QST\s+([\p{L}\p{N}](?:[\p{L}\p{N}-]{0,22}[\p{L}\p{N}])?)\s*:\s*(.*)$/iu;
+// Annotated form — "### QST (Iteration 2): title" (Facet 5, 2026-07-27
+// dispatch: broken cross-repo tour, root-caused in a system3-conversations
+// ADR). The parenthetical is neither a handle id (QST_HANDLE_SPACED_RE
+// requires a pure alnum token, not "(...)") nor adjacent-colon nav-code
+// form — before this, it matched NOTHING in this cascade at all: no
+// handle, no nav-code, not even the generic tolerant form, so the heading
+// carried no navCode and the question was a TOTAL SILENT DROP (confirmed
+// live: 0 questions, 0 warnings) — worse than the slug-only bug this was
+// first reported as. Separator class mirrors QST_HEADING_LINE_RE's own
+// tolerance (hyphen OR whitespace) so the two can't drift the way this
+// class of bug already did once (see resolveNavHeadingIdentity below).
+const QST_HEADING_ANNOTATED_RE = /^QST[-\s]([^:]{1,64}):\s*(.*)$/i;
 
 /**
  * NFD-normalize, strip combining marks (diacritics), uppercase, keep only
@@ -360,26 +372,27 @@ export function slugify(text: string): string {
 }
 
 function sectionSlug(heading: string): string {
+  // resolveNavHeadingIdentity() is the SAME cascade buildSection() uses to
+  // assign navCode — sharing it is the fix for two drift incidents where
+  // this function's own independent (hand-copied) cascade fell behind:
+  // QST_HANDLE_MALFORMED_RE headings got a correct qstId in buildSection()
+  // but slugged via the whole-heading fallback here (never reported
+  // separately — found investigating the bug below), and
+  // QST_HEADING_ANNOTATED_RE headings (Facet 5, 2026-07-27) matched
+  // nothing here OR in buildSection(), a total silent drop.
+  const match = resolveNavHeadingIdentity(heading);
+  if (!match) {
+    return slugify(heading);
+  }
   // HQ ADR-0012: an explicit QST handle IS the default anchor — "qst-" +
-  // lowercase(folded id) — checked first since it's a more specific match
-  // than the generic nav-code slug below (and must win: the whole point of
-  // an author-chosen id is a stable, predictable anchor, not one derived
-  // from title wording that can drift).
-  const handleMatch = heading.match(QST_HANDLE_RE) ?? heading.match(QST_HANDLE_TOLERANT_RE)
-    ?? heading.match(QST_HANDLE_SPACED_RE);
-  if (handleMatch) {
-    return `qst-${foldQstId(handleMatch[1]).toLowerCase()}`;
+  // lowercase(folded id) — takes priority over the generic nav-code slug
+  // below (the whole point of an author-chosen id is a stable, predictable
+  // anchor, not one derived from title wording that can drift).
+  if (match.qstId !== undefined) {
+    return `qst-${match.qstId.toLowerCase()}`;
   }
   // Nav code headings: "QST: What is the scope?" → "qst-what-is-the-scope"
-  // Falls back to the tolerant match so a glued colon ("QST:What is it") still
-  // slugs as "qst-what-is-it" instead of merging into "qstwhat-is-it" — the
-  // slug must stay canonical regardless of which form the heading used
-  // (deep-link stability, ADR-0002), independent of the ParseWarning below.
-  const navMatch = heading.match(NAV_CODE_HEADING_RE) ?? heading.match(NAV_CODE_HEADING_TOLERANT_RE);
-  if (navMatch) {
-    return slugify(`${navMatch[1].toLowerCase()}-${navMatch[2]}`);
-  }
-  return slugify(heading);
+  return slugify(`${match.code.toLowerCase()}-${match.text}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +425,90 @@ export function hasNonstandardNumbering(filePath: string): boolean {
 const ANCHOR_COMMENT_RE = /^@adr-anchor:\s+(.+)$/;
 
 /**
+ * Which deviation (if any) a heading's nav-code identity carries — drives
+ * buildSection()'s per-tier warning message. sectionSlug() ignores this
+ * entirely; it only needs the matched code/text/qstId below.
+ */
+type NavHeadingDeviation =
+  | { kind: 'handle-lowercase'; rawId: string }
+  | { kind: 'handle-spaced'; rawId: string }
+  | { kind: 'handle-malformed'; rawId: string }
+  | { kind: 'nav-tolerant'; rawCode: string }
+  | { kind: 'nav-annotated'; annotation: string };
+
+interface NavHeadingMatch {
+  /** ADR-0012 handle id (any tier, already folded), when this heading carries an explicit QST handle. */
+  qstId?: string;
+  /** Recognized nav code, uppercased (QST/ANS/COD/API/FIL/DOC/NOT). */
+  code: string;
+  /** Text after the colon (or after the id, for handle forms) — untrimmed. */
+  text: string;
+  deviation?: NavHeadingDeviation;
+}
+
+/**
+ * Single source of truth for "what nav-code identity does this heading
+ * carry" — used by BOTH buildSection() (navCode assignment + warnings) and
+ * sectionSlug() (anchor computation). These two used to maintain
+ * independent, hand-copied cascades of the same regexes, and drifted apart
+ * TWICE silently: once when QST_HANDLE_MALFORMED_RE was added to
+ * buildSection() but never to sectionSlug() (a malformed-handle question
+ * got a correct `qstId` but an ugly whole-heading slug instead of
+ * `qst-<id>` — found while investigating the bug below, not separately
+ * reported), and once with the QST_HEADING_ANNOTATED_RE class Facet 5
+ * reported 2026-07-27 (which turned out to be a full silent DROP, not just
+ * a bad slug — see that regex's own comment). Merging the two cascades
+ * into one function makes this whole class of drift structurally
+ * impossible: a future tolerance tier only needs to be added here once.
+ */
+function resolveNavHeadingIdentity(heading: string): NavHeadingMatch | null {
+  const strictHandle = heading.match(QST_HANDLE_RE);
+  if (strictHandle) {
+    return { qstId: foldQstId(strictHandle[1]) || undefined, code: 'QST', text: strictHandle[2] };
+  }
+  const lowercaseHandle = heading.match(QST_HANDLE_TOLERANT_RE);
+  if (lowercaseHandle) {
+    return {
+      qstId: foldQstId(lowercaseHandle[1]) || undefined, code: 'QST', text: lowercaseHandle[2],
+      deviation: { kind: 'handle-lowercase', rawId: lowercaseHandle[1] },
+    };
+  }
+  const spacedHandle = heading.match(QST_HANDLE_SPACED_RE);
+  if (spacedHandle) {
+    return {
+      qstId: foldQstId(spacedHandle[1]) || undefined, code: 'QST', text: spacedHandle[2],
+      deviation: { kind: 'handle-spaced', rawId: spacedHandle[1] },
+    };
+  }
+  const malformedHandle = heading.match(QST_HANDLE_MALFORMED_RE);
+  if (malformedHandle) {
+    return {
+      qstId: foldQstId(malformedHandle[1]) || undefined, code: 'QST', text: malformedHandle[2],
+      deviation: { kind: 'handle-malformed', rawId: malformedHandle[1] },
+    };
+  }
+  const strictNav = heading.match(NAV_CODE_HEADING_RE);
+  if (strictNav) {
+    return { code: strictNav[1].toUpperCase(), text: strictNav[2] };
+  }
+  const tolerantNav = heading.match(NAV_CODE_HEADING_TOLERANT_RE);
+  if (tolerantNav) {
+    return {
+      code: tolerantNav[1].toUpperCase(), text: tolerantNav[2],
+      deviation: { kind: 'nav-tolerant', rawCode: tolerantNav[1] },
+    };
+  }
+  const annotatedQst = heading.match(QST_HEADING_ANNOTATED_RE);
+  if (annotatedQst) {
+    return {
+      code: 'QST', text: annotatedQst[2],
+      deviation: { kind: 'nav-annotated', annotation: annotatedQst[1] },
+    };
+  }
+  return null;
+}
+
+/**
  * ADR-0018 (QST/ANS Substrate): exported so seedExtractor.ts can build a
  * section — including its navCode/heading-level checks — for a seed's
  * top-level (##) sections the same way parseAdr() does, not a narrower
@@ -429,75 +526,69 @@ export function buildSection(
 ): AdrSection {
   const heading = raw.heading.text;
 
-  // HQ ADR-0012: explicit QST handle — "### QST-<ID>: <title>" — checked
-  // before the generic nav-code regexes, which don't recognize it at all
-  // (the ADR's own motivating incident: "QST-A:" silently dropped). Strict
-  // (uppercase "QST") first; the lowercase/mixed-case fallback still
-  // recovers the id but flags the case deviation, same posture as
-  // NAV_CODE_HEADING_TOLERANT_RE below — never silently drop, never
-  // silently normalize either.
-  let handleMatch = heading.match(QST_HANDLE_RE);
-  if (!handleMatch) {
-    const tolerantHandle = heading.match(QST_HANDLE_TOLERANT_RE);
-    if (tolerantHandle) {
-      handleMatch = tolerantHandle;
-      warnings.push({
-        code: 'NONCANONICAL_NAV_CODE_HEADING',
-        message: `Heading "${heading}" was recognized as a QST handle but "QST" isn't uppercase. Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "QST-${foldQstId(tolerantHandle[1])}: ${tolerantHandle[2].trim()}"`,
-        line: raw.heading.line,
-      })
-    }
-  }
-  // Space-separated ordinal ("### QST 1: title") — full handle semantics,
-  // one fix-it warning. See QST_HANDLE_SPACED_RE's note (system3 ADR-0046).
-  if (!handleMatch) {
-    const spaced = heading.match(QST_HANDLE_SPACED_RE);
-    if (spaced) {
-      handleMatch = spaced;
-      warnings.push({
-        code: 'NONCANONICAL_NAV_CODE_HEADING',
-        message: `Heading "${heading}" was recognized as a QST handle written with a space ("QST ${spaced[1]}:") instead of the canonical hyphen form. Recognized anyway — no data lost, anchor derived from the id — but the canonical form is what other tools (deep links, MCP, grep recipes) expect. SUGGESTED: "QST-${foldQstId(spaced[1])}: ${spaced[2].trim()}"`,
-        line: raw.heading.line,
-      })
-    }
-  }
-  // Recall floor (2026-07-16, ADR-0032 QST-IDCHARSET incident): a handle-
-  // SHAPED heading whose id fails the grammar (bad chars, boundary hyphen,
-  // over-long) still carries the QST token and MUST appear — before this,
-  // it matched nothing anywhere and vanished with zero warnings. The id is
-  // best-effort folded (a usable anchor survives); the warning is the
-  // model-facing letter about what to fix.
-  if (!handleMatch) {
-    const malformed = heading.match(QST_HANDLE_MALFORMED_RE);
-    if (malformed) {
-      handleMatch = malformed;
-      const folded = foldQstId(malformed[1]);
-      warnings.push({
-        code: 'MALFORMED_QST_HANDLE_ID',
-        message: `Heading "${heading}" looks like a QST handle, but the id "${malformed[1]}" doesn't conform to the handle grammar (1-24 characters, letters/digits with interior hyphens only). Recognized as a question anyway — never silently dropped — with the best-effort id "${folded || 'none'}". SUGGESTED: "QST-${folded || '<ID>'}: ${malformed[2].trim()}"`,
-        line: raw.heading.line,
-      })
-    }
-  }
-  const qstId = handleMatch ? (foldQstId(handleMatch[1]) || undefined) : undefined;
+  // HQ ADR-0012 / ADR-0024 / ADR-0031: every heading-shape tolerance this
+  // extractor accepts lives in ONE cascade now (resolveNavHeadingIdentity),
+  // shared with sectionSlug() below — never silently drop, never let the
+  // two consumers of "what does this heading identify as" drift apart.
+  const match = resolveNavHeadingIdentity(heading);
+  const qstId = match?.qstId;
 
-  let navMatch: RegExpMatchArray | null = handleMatch
-    ? (['', 'QST', handleMatch[2]] as unknown as RegExpMatchArray)
-    : heading.match(NAV_CODE_HEADING_RE);
-
-  // Tolerant fallback (ADR-0024): recover navCode for headings that only
-  // deviate in case or colon spacing, so the question doesn't just disappear.
-  // The deviation itself is still surfaced — accept liberally, warn always.
-  // Skipped when the QST handle grammar already matched above.
-  if (!navMatch) {
-    const tolerant = heading.match(NAV_CODE_HEADING_TOLERANT_RE);
-    if (tolerant) {
-      navMatch = tolerant;
-      warnings.push({
-        code: 'NONCANONICAL_NAV_CODE_HEADING',
-        message: `Heading "${heading}" was recognized as ${tolerant[1].toUpperCase()} but doesn't match the canonical "${tolerant[1].toUpperCase()}: text" form (case or colon spacing differs). Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "${tolerant[1].toUpperCase()}: ${tolerant[2].trim()}"`,
-        line: raw.heading.line,
-      });
+  if (match?.deviation) {
+    const d = match.deviation;
+    switch (d.kind) {
+      case 'handle-lowercase':
+        warnings.push({
+          code: 'NONCANONICAL_NAV_CODE_HEADING',
+          message: `Heading "${heading}" was recognized as a QST handle but "QST" isn't uppercase. Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "QST-${foldQstId(d.rawId)}: ${match.text.trim()}"`,
+          line: raw.heading.line,
+        });
+        break;
+      case 'handle-spaced':
+        warnings.push({
+          code: 'NONCANONICAL_NAV_CODE_HEADING',
+          message: `Heading "${heading}" was recognized as a QST handle written with a space ("QST ${d.rawId}:") instead of the canonical hyphen form. Recognized anyway — no data lost, anchor derived from the id — but the canonical form is what other tools (deep links, MCP, grep recipes) expect. SUGGESTED: "QST-${foldQstId(d.rawId)}: ${match.text.trim()}"`,
+          line: raw.heading.line,
+        });
+        break;
+      case 'handle-malformed': {
+        // Recall floor (2026-07-16, ADR-0032 QST-IDCHARSET incident): a
+        // handle-SHAPED heading whose id fails the grammar (bad chars,
+        // boundary hyphen, over-long) still carries the QST token and MUST
+        // appear — before this, it matched nothing anywhere and vanished
+        // with zero warnings. The id is best-effort folded (a usable
+        // anchor survives); the warning is the model-facing letter about
+        // what to fix.
+        const folded = foldQstId(d.rawId);
+        warnings.push({
+          code: 'MALFORMED_QST_HANDLE_ID',
+          message: `Heading "${heading}" looks like a QST handle, but the id "${d.rawId}" doesn't conform to the handle grammar (1-24 characters, letters/digits with interior hyphens only). Recognized as a question anyway — never silently dropped — with the best-effort id "${folded || 'none'}". SUGGESTED: "QST-${folded || '<ID>'}: ${match.text.trim()}"`,
+          line: raw.heading.line,
+        });
+        break;
+      }
+      case 'nav-tolerant':
+        // Tolerant fallback (ADR-0024): recover navCode for headings that
+        // only deviate in case or colon spacing, so the question doesn't
+        // just disappear. The deviation itself is still surfaced — accept
+        // liberally, warn always.
+        warnings.push({
+          code: 'NONCANONICAL_NAV_CODE_HEADING',
+          message: `Heading "${heading}" was recognized as ${match.code} but doesn't match the canonical "${match.code}: text" form (case or colon spacing differs). Recognized anyway — no data lost — but the canonical form is what other tools (deep links, MCP) expect. SUGGESTED: "${match.code}: ${match.text.trim()}"`,
+          line: raw.heading.line,
+        });
+        break;
+      case 'nav-annotated':
+        // Facet 5, 2026-07-27: "### QST (Iteration 2): ..." — the
+        // parenthetical is neither a handle id nor adjacent-colon nav-code
+        // form. Before QST_HEADING_ANNOTATED_RE existed, this was a total
+        // silent drop (0 questions, 0 warnings, confirmed live) — worse
+        // than the bad-slug bug it was first reported as.
+        warnings.push({
+          code: 'NONCANONICAL_NAV_CODE_HEADING',
+          message: `Heading "${heading}" was recognized as QST, but "${d.annotation.trim()}" between "QST" and the colon isn't part of the canonical "QST: text" form (and isn't a recognized handle id either — see ADR-0012). Recognized anyway — no data lost — but the annotation is dropped from the anchor slug. SUGGESTED: either "QST: ${match.text.trim()}" or an explicit handle, "QST-<ID>: ${match.text.trim()}".`,
+          line: raw.heading.line,
+        });
+        break;
     }
   }
 
@@ -512,10 +603,10 @@ export function buildSection(
   // of a child of whatever it was meant to nest under, which can reshape
   // the document's section tree, not just this one heading's recognition.
   // Mapped to DiagnosticSeverity.Warning (not Information) in extension.ts.
-  if (navMatch && raw.heading.level !== 3) {
+  if (match && raw.heading.level !== 3) {
     warnings.push({
       code: 'NONCANONICAL_NAV_CODE_LEVEL',
-      message: `Heading "${heading}" was recognized as ${navMatch[1].toUpperCase()} but is a level-${raw.heading.level} heading (${'#'.repeat(raw.heading.level)}) instead of the canonical level-3 (###). Recognized anyway — no data lost — but a wrong-level heading can silently reshape the surrounding section structure. SUGGESTED: "### ${heading}"`,
+      message: `Heading "${heading}" was recognized as ${match.code} but is a level-${raw.heading.level} heading (${'#'.repeat(raw.heading.level)}) instead of the canonical level-3 (###). Recognized anyway — no data lost — but a wrong-level heading can silently reshape the surrounding section structure. SUGGESTED: "### ${heading}"`,
       line: raw.heading.line,
     });
   }
@@ -570,8 +661,8 @@ export function buildSection(
   return {
     level: raw.heading.level,
     heading,
-    navCode: navMatch ? navMatch[1].toUpperCase() as NavCode : undefined,
-    navCodeText: navMatch ? navMatch[2].trim() : undefined,
+    navCode: match ? match.code as NavCode : undefined,
+    navCodeText: match ? match.text.trim() : undefined,
     body,
     lineStart: raw.heading.line,
     lineEnd,

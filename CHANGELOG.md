@@ -8,6 +8,14 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.40] - 2026-07-28
+
+### Fixed
+- A `### QST (some annotation): ...` heading — a parenthetical between "QST" and the colon — was a total silent drop: no question, no warning, invisible in the panel. Root-caused from a cross-repo tour that broke live; also found and fixed a second, previously-unreported case of the same drift (a malformed handle like `QST-BAD_CHARS:` recognized the question correctly but computed the wrong anchor slug). Both were caused by the same underlying bug: slug computation and question detection each kept their own hand-copied list of recognized heading shapes, and the two had quietly fallen out of sync. They now share one definition, so this can't happen a third time.
+
+### Added
+- **`just tour-lint`**: checks every tour's questions actually exist before you share it, instead of finding out the hard way when someone else clicks a broken link.
+
 ## [0.7.39] - 2026-07-26
 
 ### Fixed
