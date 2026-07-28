@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.45] - 2026-07-28
+
+### Fixed
+- **Byline scaffolds no longer prefill as answers**: an ANS slot whose entire content is one bare parenthetical — `**ANS:** (Jérémie Lumbroso)` with no `by` keyword and nothing else — now reads as an empty scaffold reserving the slot (question stays open, no author invented, nothing prefilled), with an `ANS_BYLINE_SCAFFOLD` diagnostic suggesting the recognized `(by Name)` form. Found live in Herald's second tour, where every open stop's answer box arrived pre-noised with "(Jérémie Lumbroso)". Slots that already carry a keyword byline keep parenthetical content as real draft answers.
+
 All notable changes to the **ADRs for AI** extension are recorded here, loosely following [Keep a Changelog](https://keepachangelog.com/).
 
 This file starts at **v0.5.0** — the first release built from a rebuilt, in-sync `dist/` bundle after several months of the compiled output drifting from source. Development before that point was real (the sidebar, the Open Questions panel, seeds, deep links, ADR Commit all predate it) but wasn't versioned in a way worth reconstructing here; v0.5.0 is where this project's own version numbers became trustworthy.
