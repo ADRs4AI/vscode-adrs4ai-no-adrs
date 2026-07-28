@@ -8,6 +8,13 @@ Several of this project's public incident debriefs (DEBRIEF-003, 004, 006, 007) 
 
 ---
 
+## [0.7.42] - 2026-07-28
+
+### Fixed
+- Clicking an already-answered question inside a tour used to do nothing visible — it now jumps straight to the file (the walk dialog only ever held the tour's still-open questions, so the click had nowhere else correct to go).
+- The tour's authored note ("DECIDE: ...", etc.) now appears above the question instead of being sandwiched between the title and the ADR's own "why asking" text, where it read as near-identical clutter; it also has its own accent color now instead of blending in.
+- The "Exit tour" link no longer clashes with a custom-themed tour's colors — it follows the tour's own theme like the rest of the header.
+
 ## [0.7.41] - 2026-07-28
 
 ### Fixed
