@@ -3,6 +3,7 @@
     "vitest.explorer"
   ],
   "unwantedRecommendations": [
-    "ms-python.debugpy"
+    "ms-python.debugpy",
+    "anthropic.claude-code"
   ]
 }

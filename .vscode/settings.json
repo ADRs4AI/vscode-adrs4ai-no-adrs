@@ -11,14 +11,21 @@
         "statusBar.background": "#b45309",
         "statusBar.foreground": "#e7e7e7",
         "statusBarItem.hoverBackground": "#e5690b",
-        "statusBarItem.remoteBackground": "#b45309",
+        "statusBarItem.remoteBackground": "#033d1c",
         "statusBarItem.remoteForeground": "#e7e7e7",
         "titleBar.activeBackground": "#b45309",
         "titleBar.activeForeground": "#e7e7e7",
         "titleBar.inactiveBackground": "#b4530999",
         "titleBar.inactiveForeground": "#e7e7e799",
         "statusBar.border": "#b45309",
-        "titleBar.border": "#b45309"
+        "titleBar.border": "#b45309",
+        "activityBarTop.activeBackground": "#e5690b",
+        "activityBarTop.background": "#e5690b",
+        "activityBarTop.foreground": "#15202b",
+        "activityBarTop.inactiveForeground": "#15202b99",
+        "commandCenter.foreground": "#e7e7e7",
+        "statusBar.debuggingBackground": "#b45309",
+        "statusBar.debuggingForeground": "#e7e7e7"
     },
     "peacock.color": "#B45309",
     "vitest.enable": true,
@@ -33,10 +40,10 @@
     "python.terminal.activateEnvironment": false,
     "terminal.integrated.env.osx": {
         "PATH": "/opt/homebrew/bin:${env:HOME}/.asdf/shims:${env:PATH}",
-        "ANTHROPIC_MODEL": "claude-sonnet-4-6[1m]"
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6[1m]",
+        "CLAUDE_CODE_AUTO_INSTALL_EXTENSION": "false"
     },
     /* Claude Code configuration */
-    "claudeCode.selectedModel": "claude-sonnet-4-6[1m]",
     "claudeCode.environmentVariables": [
         {
             "name": "PATH",
@@ -51,8 +58,8 @@
             "value": "/opt/homebrew/lib/node_modules"
         },
         {
-            "name": "ANTHROPIC_MODEL",
-            "value": "claude-sonnet-4-6[1m]"
+            "name": "CLAUDE_CODE_AUTO_INSTALL_EXTENSION",
+            "value": "false"
         }
     ],
     // Terminal configuration
@@ -99,5 +106,30 @@
     "terminal.integrated.showLinkHover": false,
     "terminal.integrated.hover.enabled": false,
     "debug.inlineValues": "off",
-    "editor.hover.above": false
+    "editor.hover.above": false,
+    "extensions.allowed": {
+        "anthropic.claude-code": false,
+        "*": true
+    },
+    // 1. Enable MonoLisa's Grade axis to reduce dark-mode glow
+    // Note: You must have the 'Variable' version of MonoLisa installed for this to work.
+    "editor.fontFamily": "MonoLisa",
+    "editor.fontVariations": "'GRAD' -50",
+    // 2. Bump up font size and line height for readability
+    /*"editor.fontSize": 16,
+    "editor.lineHeight": 1.6,*/
+    // 3. Optional: Enable MonoLisa's true italics for comments (if you have them enabled in the font)
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": [
+                    "comment",
+                    "punctuation.definition.comment"
+                ],
+                "settings": {
+                    "fontStyle": "italic"
+                }
+            }
+        ]
+    }
 }
