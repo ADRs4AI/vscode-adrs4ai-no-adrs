@@ -26,3 +26,20 @@ export function resolveWorkspaceRepository<Repo>(
 ): Repo | null {
   return api.getRepository(workspaceFolderUri)
 }
+
+/**
+ * A `Change.status` value that means "this path didn't exist in the repo
+ * before this edit" — INDEX_ADDED (staged as new) or UNTRACKED (not yet
+ * staged), plus INTENT_TO_ADD (`git add -N`). Numeric values match the
+ * git extension's own `Status` enum declaration order (stable, unchanged
+ * for years — but the extension API is untyped here, so this is a
+ * documented assumption, not a compile-time guarantee). Used to pick
+ * commitMessage.ts's "new seed: <topic>" vocabulary over the "human
+ * feedback on seed" one — an unrecognized/undefined status defaults to
+ * `false` (never claims "new" without git actually confirming it).
+ */
+const NEW_FILE_STATUS_CODES = new Set([1 /* INDEX_ADDED */, 7 /* UNTRACKED */, 9 /* INTENT_TO_ADD */])
+
+export function isNewGitStatus(status: number | undefined): boolean {
+  return status !== undefined && NEW_FILE_STATUS_CODES.has(status)
+}

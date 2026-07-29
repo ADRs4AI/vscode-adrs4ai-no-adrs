@@ -49,8 +49,8 @@ import { D96NoncanonicalNavCodeHeadingHandler } from './normalizer/handlers/d9-6
 import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-missing-recommendation'
 import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { D97RecommendationBulletFormHandler } from './normalizer/handlers/d9-7-recommendation-bullet-form'
-import { buildAdrCommitMessage } from './commit/commitMessage'
-import { resolveWorkspaceRepository } from './commit/repositoryResolution'
+import { buildAdrCommitMessage, type ChangedFile } from './commit/commitMessage'
+import { resolveWorkspaceRepository, isNewGitStatus } from './commit/repositoryResolution'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 import { generateSeedTemplate } from './creation/seedTemplate'
 
@@ -877,61 +877,134 @@ grep 'Status: unanswered' docs/adr/
 `;
 }
 
-async function commitAdrChanges(adrDirRel: string): Promise<void> {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder) return;
+interface DirtyRoot {
+  node: RootNode
+  repo: any // eslint-disable-line @typescript-eslint/no-explicit-any -- api/repo come from the untyped vscode.git extension API
+  changes: any[] // eslint-disable-line @typescript-eslint/no-explicit-any
+}
 
-  const adrDir = path.join(workspaceFolder.uri.fsPath, adrDirRel);
+/**
+ * ADR-0025 multi-root fix (Lapidary's 2026-07-29 feedback-seed dispatch,
+ * item A3 — source: docs/adr/seed-2026-07-29-random-feedback-from-
+ * experience.md): the previous implementation only ever looked at
+ * `workspaceFolders[0]` and resolved exactly ONE repository, so a
+ * workspace with more than one discovered ADR root (submodules, a forest
+ * workspace) reported "No ADR changes to commit" the moment that FIRST
+ * root happened to be clean — DEBRIEF-002's own fix (resolve by URI, not
+ * position) went in one level upstream of this call site, which still
+ * only ever asked for one repo.
+ *
+ * Jérémie's own framing (seed-2026-07-29): scan every project; if there's
+ * just one with changes, commit it — no ceremony; if there's several,
+ * show a checkbox palette so more than one can be committed at once.
+ */
+async function commitAdrChanges(adrDirRel: string): Promise<void> {
+  if (!compositeIndex) return;
+
   const gitExtension = vscode.extensions.getExtension('vscode.git');
   if (!gitExtension) {
     vscode.window.showErrorMessage('ADR Manager: Git extension not found.');
     return;
   }
-
   const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
   const api = git.getAPI(1);
-  // DEBRIEF-002: api.repositories[0] is a positional first-approximation —
-  // there is no defined relationship between repository-discovery order and
-  // workspace-folder order, so in a real multi-repo workspace (HQ + several
-  // submodules) it can silently resolve to the wrong repo. Ask for the
-  // repository that owns THIS workspace folder's URI instead of guessing.
-  const repo = resolveWorkspaceRepository<any>(api, workspaceFolder.uri); // eslint-disable-line @typescript-eslint/no-explicit-any -- api/repo come from the untyped vscode.git extension API, same dynamic typing as before this fix
-  if (!repo) {
-    vscode.window.showErrorMessage('ADR Manager: No git repository found.');
-    return;
+
+  const dirtyRoots: DirtyRoot[] = [];
+  for (const node of compositeIndex.walk()) {
+    if (!node.hasAdrDir) continue;
+    const repo = resolveWorkspaceRepository<any>(api, { fsPath: node.path }); // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!repo) continue;
+    const adrDirAbs = path.join(node.path, adrDirRel);
+    const changes = [
+      ...repo.state.workingTreeChanges,
+      ...repo.state.indexChanges,
+    ].filter((c: any) => c.uri.fsPath.startsWith(adrDirAbs)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (changes.length > 0) dirtyRoots.push({ node, repo, changes });
   }
 
-  // Stage only files in the ADR directory
-  const changes = [
-    ...repo.state.workingTreeChanges,
-    ...repo.state.indexChanges,
-  ].filter(c => c.uri.fsPath.startsWith(adrDir));
-
-  if (changes.length === 0) {
+  if (dirtyRoots.length === 0) {
     vscode.window.showInformationMessage('ADR Manager: No ADR changes to commit.');
     return;
   }
 
-  const message = await vscode.window.showInputBox({
-    prompt: 'Commit message for ADR changes',
-    value: buildAdrCommitMessage(changes.map(c => c.uri.fsPath)),
-    placeHolder: 'docs: commit message',
-  });
-  if (!message) return;
+  let toCommit: DirtyRoot[];
+  if (dirtyRoots.length === 1) {
+    toCommit = dirtyRoots;
+  } else {
+    // Multiple dirty roots: canPickMany checkbox palette. Pre-checked —
+    // Lapidary's QST-PALETTEDEFAULT recommendation ("showing the list IS
+    // the consent surface; Enter-through is the common intent"), applied
+    // as the interim default. PROVISIONAL pending Jérémie's own ANS to
+    // that still-open question in the seed — flip `picked` below if he
+    // rules the other way.
+    const picks = await vscode.window.showQuickPick(
+      dirtyRoots.map(dr => ({
+        label: dr.node.namespace || path.basename(dr.node.path),
+        description: `${dr.changes.length} change${dr.changes.length === 1 ? '' : 's'}`,
+        detail: dr.node.path,
+        picked: true,
+        dirtyRoot: dr,
+      })),
+      {
+        title: `Commit ADR changes — ${dirtyRoots.length} projects have changes`,
+        canPickMany: true,
+      },
+    );
+    if (!picks || picks.length === 0) return;
+    toCommit = picks.map(p => p.dirtyRoot);
+  }
+
+  if (toCommit.length === 1) {
+    await commitOneRoot(toCommit[0], true);
+    return;
+  }
+
+  // Batch commit: Jérémie's own speed instinct for the multi-select case
+  // ("select all of the projects to whom you want to commit") — an
+  // auto-generated message per root, no per-repo input-box ceremony.
+  let committedCount = 0;
+  for (const dr of toCommit) {
+    if (await commitOneRoot(dr, false)) committedCount++;
+  }
+  vscode.window.showInformationMessage(
+    `ADR Manager: Committed to ${committedCount} of ${toCommit.length} project${toCommit.length === 1 ? '' : 's'}.`,
+  );
+}
+
+/** Commits one root's already-collected changes. `interactive`: show the editable message input box and the single-root confirmation (the existing, unchanged single-root UX); false for the batch multi-root path, which stays silent per-root and reports one aggregate count instead. */
+async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boolean> {
+  const changedFiles: ChangedFile[] = dr.changes.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+    path: c.uri.fsPath,
+    isNew: isNewGitStatus(c.status),
+  }));
+  const generated = buildAdrCommitMessage(changedFiles);
+
+  let message: string | undefined = generated;
+  if (interactive) {
+    message = await vscode.window.showInputBox({
+      prompt: 'Commit message for ADR changes',
+      value: generated,
+      placeHolder: 'docs: commit message',
+    });
+  }
+  if (!message) return false;
 
   try {
-    // Stage the ADR files
-    await repo.add(changes.map(c => c.uri.fsPath));
-    // Commit
-    await repo.commit(message);
+    await dr.repo.add(dr.changes.map((c: any) => c.uri.fsPath)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    await dr.repo.commit(message);
 
-    // Jérémie's report (2026-07-12): every staged path used to get called
-    // an "ADR" in this confirmation, including docs/adr/.working/* draft
-    // state — not a decision record. Classify instead of counting blind.
-    const summary = summarizeCommittedArtifacts(changes.map(c => c.uri.fsPath));
-    vscode.window.showInformationMessage(`ADR Manager: Committed ${summary}.`);
+    if (interactive) {
+      // Jérémie's report (2026-07-12): every staged path used to get called
+      // an "ADR" in this confirmation, including docs/adr/.working/* draft
+      // state — not a decision record. Classify instead of counting blind.
+      const summary = summarizeCommittedArtifacts(dr.changes.map((c: any) => c.uri.fsPath)); // eslint-disable-line @typescript-eslint/no-explicit-any
+      vscode.window.showInformationMessage(`ADR Manager: Committed ${summary}.`);
+    }
+    return true;
   } catch (err) {
-    vscode.window.showErrorMessage(`ADR Manager: Commit failed — ${err}`);
+    const label = dr.node.namespace || path.basename(dr.node.path);
+    vscode.window.showErrorMessage(`ADR Manager: Commit failed (${label}) — ${err}`);
+    return false;
   }
 }
 

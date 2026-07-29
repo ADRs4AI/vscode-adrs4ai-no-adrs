@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { resolveWorkspaceRepository, type GitApiLike } from '../commit/repositoryResolution'
+import { resolveWorkspaceRepository, isNewGitStatus, type GitApiLike } from '../commit/repositoryResolution'
 
 interface FakeRepo {
   name: string
@@ -55,5 +55,27 @@ describe('resolveWorkspaceRepository (DEBRIEF-002)', () => {
     const api = fakeApi([{ name: 'unrelated', rootUri: { fsPath: '/work/unrelated' } }])
 
     expect(resolveWorkspaceRepository(api, { fsPath: '/work/not-a-repo' })).toBeNull()
+  })
+})
+
+// commitMessage.ts's A1 (Lapidary's 2026-07-29 dispatch): "new seed: <topic>"
+// vs "human feedback on seed" hinges on whether git considers the path new.
+describe('isNewGitStatus', () => {
+  it('INDEX_ADDED (1) and UNTRACKED (7) both count as new', () => {
+    expect(isNewGitStatus(1)).toBe(true)
+    expect(isNewGitStatus(7)).toBe(true)
+  })
+
+  it('INTENT_TO_ADD (9, "git add -N") counts as new', () => {
+    expect(isNewGitStatus(9)).toBe(true)
+  })
+
+  it('MODIFIED (5) and INDEX_MODIFIED (0) are not new', () => {
+    expect(isNewGitStatus(5)).toBe(false)
+    expect(isNewGitStatus(0)).toBe(false)
+  })
+
+  it('undefined defaults to false — never claims "new" without git confirming it', () => {
+    expect(isNewGitStatus(undefined)).toBe(false)
   })
 })
