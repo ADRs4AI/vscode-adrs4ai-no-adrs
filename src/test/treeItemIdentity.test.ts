@@ -97,4 +97,24 @@ describe('AdrTreeProvider reveal prerequisites (structural — vscode wall)', ()
     expect(src).not.toMatch(/opts\.kind === 'tour-entry' && opts\.question\?\.isAnswered/)
     expect(src).not.toContain('Open Answered Question in File')
   })
+
+  // C4 (2026-07-29 feedback seed): a tour-entry's lean-verb prefix comes
+  // from the tour schema's own controlled TourDisposition vocabulary
+  // (decide/ratify/acknowledge/delegate), read off opts.entry — never free
+  // text, and never applied to a plain (non-tour) question.
+  describe('C4: tour lean-verb prefix', () => {
+    it('the setting defaults to on, reads opts.entry.disposition, and gates on the tour-entry kind specifically', () => {
+      expect(src).toContain("get<boolean>('tours.showLeanVerbPrefix', true)")
+      expect(src).toMatch(/opts\.kind === 'tour-entry' && opts\.entry\?\.disposition/)
+      expect(src).toContain('opts.entry.disposition.toUpperCase()')
+    })
+
+    it('package.json declares the setting, resource-scoped, default true', () => {
+      const pkg = fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8')
+      const match = pkg.match(/"adrManager\.tours\.showLeanVerbPrefix":\s*\{[^}]*\}/)
+      expect(match).toBeTruthy()
+      expect(match![0]).toContain('"default": true')
+      expect(match![0]).toContain('"scope": "resource"')
+    })
+  })
 })

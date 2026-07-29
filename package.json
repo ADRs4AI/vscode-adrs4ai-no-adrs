@@ -331,6 +331,12 @@
           },
           "default": ["tours", "adrs", "seeds"],
           "description": "Order of the Tours/ADRs/Seeds categories in the sidebar tree. A category with nothing in it (e.g. no tours minted yet) is still omitted entirely, same as before — this only controls the order of whichever categories are actually showing."
+        },
+        "adrManager.tours.showLeanVerbPrefix": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "In a tour's treeview entries, prefix each question with its authored disposition — DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE — when the tour sets one. An entry with no disposition set gets no prefix."
         }
       }
     }

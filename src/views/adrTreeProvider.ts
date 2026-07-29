@@ -312,7 +312,23 @@ export class AdrTreeItem extends vscode.TreeItem {
       // invisible, which is the more likely explanation for "missing"
       // entries than a second, separate bug — they were rendering the
       // whole time, just as unlabeled gray ghosts.
-      return `? ${opts.question.text.replace(/`/g, '')}`
+      const base = `? ${opts.question.text.replace(/`/g, '')}`
+
+      // Lean-verb prefix (2026-07-29 feedback seed, item C4): Jérémie's
+      // ask, "the questions should have a prefix the word DEFINE/RATIFY or
+      // whatever capital letter verb we allow as a first word." Per
+      // Lapidary's dispatch, the vocabulary is the tour schema's own
+      // controlled TourDisposition list (decide/ratify/acknowledge/
+      // delegate), not free text — a tour-entry with no disposition set
+      // gets no prefix rather than inventing one. Setting default on.
+      if (opts.kind === 'tour-entry' && opts.entry?.disposition) {
+        const showVerb = vscode.workspace
+          .getConfiguration('adrManager', vscode.Uri.file(opts.question.adrPath))
+          .get<boolean>('tours.showLeanVerbPrefix', true)
+        if (showVerb) return `${opts.entry.disposition.toUpperCase()} ${base}`
+      }
+
+      return base
     }
     if (opts.kind === 'open-questions-header') {
       const c = opts.count ?? 0
