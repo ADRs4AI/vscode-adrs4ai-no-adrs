@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.48] - 2026-07-29
+
+### Added
+- **The ADR Commit button now understands seeds and multi-root projects**: a seed-only changeset gets its own message ("new seed: `<topic>`" for a brand-new file, "human feedback on seed" for a first response, "human iterated on seed" once a Thread conversation is already underway) instead of the generic ADR fallback; a mixed ADR+seed commit composes both ("human feedback on ADRs 0031, 0034 + one seed"). The command now scans every discovered project root instead of only the first — a workspace with more than one root (submodules, a forest workspace) used to report "No ADR changes to commit" the moment the first root happened to be clean. Exactly one dirty root still commits directly, no extra steps; more than one shows a checkbox picker (pre-checked) so several can be committed at once.
+- **Configurable sidebar category order**: `adrManager.sidebar.categoryOrder` controls the Tours/ADRs/Seeds order in the tree, default Tours-ADRs-Seeds.
+- **Tour questions can show their disposition as a lean-verb prefix** (DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE) in the sidebar — `adrManager.tours.showLeanVerbPrefix`, on by default.
+
+### Changed
+- ADRs now use the `law` category icon (in place of `list-tree`); Seeds use `thinking` (in place of the braces-like `symbol-namespace`). Tours keep the compass.
+
 ## [0.7.47] - 2026-07-28
 
 ### Fixed
