@@ -17,7 +17,10 @@ import {
   errorLogPathFor,
   buildErrorRecord,
   appendErrorRecord,
+  appendLedgerRecord,
+  captureDocument,
   type PanelErrorRecord,
+  type LedgerRecord,
 } from '../drafts/errorLog'
 
 let tmpDir: string
@@ -120,5 +123,48 @@ describe('appendErrorRecord — JSONL streaming shape', () => {
     const rec = buildErrorRecord('unhandled-exception', 'boom', path.join(adrDir, '0101-x.md'))
     expect(() => appendErrorRecord(rec)).not.toThrow()
     expect(appendErrorRecord(rec)).toBeUndefined()
+  })
+})
+
+describe('error-record/2 — the ledger generalized to many writers (seed 2026-07-29, QST-ERRLEDGER)', () => {
+  it('a tour-resolver record round-trips: full tour payload + referenced documents with MD5s', () => {
+    const adrContent = '# ADR-0028\n\n### QST: Q?\n- Status: unanswered\n'
+    const adrPath = adrAt('docs/adr/0028-identity.md', adrContent)
+    const doc = captureDocument(adrPath)!
+    expect(doc.text).toBe(adrContent)
+    expect(doc.md5).toMatch(/^[0-9a-f]{32}$/)
+
+    const logPath = appendLedgerRecord({
+      schema: 'error-record/2',
+      ts: '2026-07-29T00:00:00.000Z',
+      source: 'tour-resolver',
+      kind: 'tour-unresolved-refs',
+      message: '2 of 9 entries failed to resolve',
+      anchorPath: adrPath,
+      payload: {
+        tourJson: '{"schema":"question-tour/1","entries":[]}',
+        unresolved: [{ ref: 'adr:0028#qst-gone', reason: 'no such anchor' }],
+      },
+      documents: { [adrPath]: doc },
+    })
+    const rec = JSON.parse(fs.readFileSync(logPath!, 'utf8').trimEnd()) as LedgerRecord
+    expect(rec.source).toBe('tour-resolver')
+    expect(rec.documents![adrPath].text).toBe(adrContent) // scoped reconstruction guarantee
+    expect((rec.payload!.unresolved as unknown[]).length).toBe(1)
+  })
+
+  it('v1 and v2 records coexist in one ledger — same file, distinguishable by schema', () => {
+    const adrPath = adrAt('docs/adr/0001-x.md', 'content')
+    appendErrorRecord(buildErrorRecord('drift-detected', 'moved', adrPath, {}))
+    const logPath = appendLedgerRecord({
+      schema: 'error-record/2', ts: '2026-07-29T00:00:00.000Z', source: 'census',
+      kind: 'orphan-signal', message: 'S2 signal with no candidate', anchorPath: adrPath,
+    })
+    const lines = fs.readFileSync(logPath!, 'utf8').trimEnd().split('\n').map(l => JSON.parse(l))
+    expect(lines.map(r => r.schema)).toEqual(['panel-error/1', 'error-record/2'])
+  })
+
+  it('captureDocument is failure-soft: missing file returns undefined, never throws', () => {
+    expect(captureDocument(path.join(tmpDir, 'nope.md'))).toBeUndefined()
   })
 })

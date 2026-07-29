@@ -24,6 +24,7 @@
  *   triggering message, and the parsed-question snapshot.
  */
 
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -44,6 +45,61 @@ export interface PanelErrorRecord {
   adrContent?: string
   /** The complete triggering webview message and any extra diagnostic state. */
   meta?: Record<string, unknown>
+}
+
+/**
+ * error-record/2 — the ledger generalized to MANY WRITERS (Jérémie's seed
+ * 2026-07-29 "other opportunities to log errors... and therefore learn
+ * faster" + Lapidary's QST-ERRLEDGER lean, reconciled with the shipped
+ * ADR-0035 primitive rather than re-invented beside it). One ledger file,
+ * one line-shape, N sources: 'panel' (v1 records remain valid history),
+ * 'tour-resolver', 'census', 'write-fidelity', 'roots-config', 'mcp'.
+ *
+ * Capture policy (Lapidary's size guard, adopted): a record embeds the
+ * full text of the documents the incident REFERENCES — never "all ADRs" —
+ * each with an MD5 so harvest tooling can dedupe and verify against git.
+ * The reconstruction guarantee is scoped, not unbounded.
+ */
+export interface LedgerRecord {
+  schema: 'error-record/2'
+  ts: string
+  extensionVersion?: string
+  /** Which subsystem wrote this record. */
+  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp'
+  kind: string
+  message: string
+  /** Any file inside the owning root's docs/adr — decides which ledger this lands in. */
+  anchorPath: string
+  /** Kind-specific structured payload (e.g. the full tour JSON string + unresolved refs). */
+  payload?: Record<string, unknown>
+  /** Full text of each REFERENCED document at incident time, keyed by path. */
+  documents?: Record<string, { text: string; md5: string }>
+}
+
+/** Capture one referenced document: full text + MD5, best-effort. */
+export function captureDocument(filePath: string): { text: string; md5: string } | undefined {
+  try {
+    const text = fs.readFileSync(filePath, 'utf8')
+    const md5 = crypto.createHash('md5').update(text).digest('hex')
+    return { text, md5 }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Append an error-record/2 line to the anchor's owning ledger. Failure-soft,
+ * same contract as v1. Returns the ledger path, or undefined on any failure.
+ */
+export function appendLedgerRecord(record: LedgerRecord): string | undefined {
+  try {
+    const logPath = errorLogPathFor(record.anchorPath)
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    fs.appendFileSync(logPath, JSON.stringify(record) + '\n', 'utf8')
+    return logPath
+  } catch {
+    return undefined
+  }
 }
 
 /** The owning root's error log path for a given ADR/seed file. */
