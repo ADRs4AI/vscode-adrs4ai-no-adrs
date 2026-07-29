@@ -322,6 +322,15 @@
           "default": 0,
           "minimum": 0,
           "description": "When a question has stacked recommendations (ADR-0019), collapse all but the most recent N behind an \"N earlier recommendation(s)\" disclosure. 0 (default) never collapses — every recommendation stays expanded, like an LLM harness's thinking traces."
+        },
+        "adrManager.sidebar.categoryOrder": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["tours", "adrs", "seeds"]
+          },
+          "default": ["tours", "adrs", "seeds"],
+          "description": "Order of the Tours/ADRs/Seeds categories in the sidebar tree. A category with nothing in it (e.g. no tours minted yet) is still omitted entirely, same as before — this only controls the order of whichever categories are actually showing."
         }
       }
     }

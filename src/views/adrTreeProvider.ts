@@ -43,6 +43,7 @@ import { pathFragmentFor } from './rootPathFragment'
 import { stableTreeItemId } from './treeItemIdentity'
 import { openQuestionCountForNode, QUESTION_SOURCES, type SourceInclusion } from '../index/questionSource'
 import { resolveTourEntries, isTourDone, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
+import { orderCategories, DEFAULT_CATEGORY_ORDER, type SidebarCategory } from './categoryOrder'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 
 // ---------------------------------------------------------------------------
@@ -458,10 +459,14 @@ export class AdrTreeItem extends vscode.TreeItem {
       return new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('charts.orange'))
     }
     if (opts.kind === 'adr-group') {
-      return new vscode.ThemeIcon('list-tree')
+      // Jérémie's ask (2026-07-29 feedback seed, item B): 'law' — ADRs are
+      // jurisprudential, deliberative records. Replaces 'list-tree'.
+      return new vscode.ThemeIcon('law')
     }
     if (opts.kind === 'seed-group') {
-      return new vscode.ThemeIcon('symbol-namespace', new vscode.ThemeColor('charts.orange'))
+      // Jérémie's ask (same seed): 'thinking' — the bubble manifests
+      // brainstorming, replacing 'symbol-namespace' ("the braces").
+      return new vscode.ThemeIcon('thinking', new vscode.ThemeColor('charts.orange'))
     }
     if (opts.kind === 'seed' && opts.seed) {
       // Orange wrench = unprocessed (needs attention); green check = processed into ADRs
@@ -666,17 +671,28 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     }
 
     const adrCount = node.adrs.allAdrs().filter(a => !a.isSeed).length
-    items.push(new AdrTreeItem({ kind: 'adr-group', count: adrCount, rootNode: rootNodeArg }))
-
     const seedCount = node.seeds.size
-    if (seedCount > 0) {
-      items.push(new AdrTreeItem({ kind: 'seed-group', count: seedCount, rootNode: rootNodeArg }))
-    }
-
     const tourCount = node.tours.length
-    if (tourCount > 0) {
-      items.push(new AdrTreeItem({ kind: 'tour-group', count: tourCount, rootNode: rootNodeArg }))
+
+    // Jérémie's ask (2026-07-29 feedback seed, item B): the ADRs/Seeds/Tours
+    // category order is configurable, default Tours-ADRs-Seeds. ADRs group
+    // is always present (even at zero count, matching pre-existing
+    // behavior); Seeds/Tours are omitted entirely at zero, same as before —
+    // orderCategories only ever reorders what's actually present, never
+    // conjures an empty group into existence.
+    const present: SidebarCategory[] = ['adrs']
+    if (seedCount > 0) present.push('seeds')
+    if (tourCount > 0) present.push('tours')
+
+    const configuredOrder = vscode.workspace.getConfiguration('adrManager').get<unknown>('sidebar.categoryOrder', DEFAULT_CATEGORY_ORDER)
+    const order = orderCategories(configuredOrder, present)
+
+    const groupItem: Record<SidebarCategory, AdrTreeItem> = {
+      adrs: new AdrTreeItem({ kind: 'adr-group', count: adrCount, rootNode: rootNodeArg }),
+      seeds: new AdrTreeItem({ kind: 'seed-group', count: seedCount, rootNode: rootNodeArg }),
+      tours: new AdrTreeItem({ kind: 'tour-group', count: tourCount, rootNode: rootNodeArg }),
     }
+    for (const cat of order) items.push(groupItem[cat])
 
     return items
   }
