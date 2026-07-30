@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.56] - 2026-07-30
+
+### Added
+- **The ADR Commit button now catches untracked files you referenced but forgot to stage** — a screenshot linked from a seed/ADR, say. Before committing, it checks whether any untracked file's name is mentioned in what you're about to commit, and offers a pre-checked list to include them too. `adrManager.commit.untrackedReferences`: `ask` (default) / `auto-commit` / `auto-ignore`. Only prompts in the single-file commit case — the multi-root batch commit stays one gesture.
+- **A commit of only draft answers or the error ledger now gets a real message** instead of the generic fallback — "docs: sync draft answers", "docs: sync error ledger", or both. The confirmation toast also stopped calling a harvested error record "draft state" — it's now its own "error ledger" class.
+
 ## [0.7.55] - 2026-07-30
 
 ### Fixed
