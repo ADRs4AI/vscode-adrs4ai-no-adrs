@@ -360,4 +360,47 @@ describe('list_open_questions', () => {
     expect(result).toContain('5 open across 1 ADRs (limit: 2)')
     expect(result.match(/\[adr:0001#qst-\d\]/g)?.length).toBe(2)
   })
+
+  // ADR-0036 ("Unresolved: Returning the Ball"): court: 'model' scopes to
+  // the model's own docket — unresolved questions, the ball in its court.
+  describe("court: 'model' filter (ADR-0036)", () => {
+    const unresolvedQuestion: Question = {
+      ...SCOPE_QUESTION,
+      id: 'adr-0001-qst-unresolved-one',
+      slug: 'qst-unresolved-one',
+      text: 'Which court is this in?',
+      statusText: 'unresolved',
+      isAnswered: false,
+    }
+    const deferredQuestion: Question = {
+      ...SCOPE_QUESTION,
+      id: 'adr-0001-qst-deferred-one',
+      slug: 'qst-deferred-one',
+      text: 'Blocked on data?',
+      statusText: 'deferred',
+      isAnswered: false,
+    }
+
+    it('scopes to unresolved questions only, excluding unanswered and deferred', () => {
+      const adr = makeAdr({ questions: [SCOPE_QUESTION, unresolvedQuestion, deferredQuestion] })
+      const result = listOpenQuestions(makeContext([adr]), { court: 'model' })
+      expect(result).toContain('1 open across 1 ADRs (court: model)')
+      expect(result).toContain('qst-unresolved-one')
+      expect(result).not.toContain('qst-deferred-one')
+      expect(result).not.toContain(SCOPE_QUESTION.slug)
+    })
+
+    it('is case-insensitive and tolerates trailing annotation, matching the leading-token discipline used elsewhere in this grammar', () => {
+      const annotated: Question = { ...unresolvedQuestion, statusText: 'Unresolved (pending model review)' }
+      const adr = makeAdr({ questions: [annotated] })
+      const result = listOpenQuestions(makeContext([adr]), { court: 'model' })
+      expect(result).toContain('1 open across 1 ADRs (court: model)')
+    })
+
+    it('without the court filter, unresolved and deferred questions still show — the hide-allowlist doctrine (nothing hides by default)', () => {
+      const adr = makeAdr({ questions: [SCOPE_QUESTION, unresolvedQuestion, deferredQuestion] })
+      const result = listOpenQuestions(makeContext([adr]))
+      expect(result).toContain('3 open across 1 ADRs')
+    })
+  })
 })

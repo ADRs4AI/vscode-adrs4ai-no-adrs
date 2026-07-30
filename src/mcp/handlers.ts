@@ -10,6 +10,7 @@
  */
 
 import { createHash } from 'crypto'
+import { UNRESOLVED_LEADING_TOKEN_RE } from '../parser/extractor'
 import type { RepositoryContext } from './repositoryContext'
 import type { AdrFile, AdrSection, Question, SeedFile } from '../parser/types'
 import {
@@ -270,6 +271,15 @@ export interface ListOpenQuestionsOptions {
   adrRef?: string
   priority?: 1 | 2 | 3 | 4
   status?: string
+  /**
+   * ADR-0036 ("Unresolved: Returning the Ball"): `court: 'model'` scopes to
+   * `unresolved` questions — open, human has contributed, the model's move
+   * next. This is the model's own docket, distinct from the full open-list
+   * (which already includes unresolved/deferred/unanswered together, per
+   * the hide-allowlist doctrine — nothing hides by default). Matches via
+   * the shared `UNRESOLVED_LEADING_TOKEN_RE`, never a private re-derivation.
+   */
+  court?: 'model'
   limit?: number
   tokenBudget?: number
 }
@@ -290,6 +300,7 @@ export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuest
       if (question.isAnswered) continue
       if (options.priority !== undefined && question.priority !== options.priority) continue
       if (options.status !== undefined && question.statusText !== options.status) continue
+      if (options.court === 'model' && !UNRESOLVED_LEADING_TOKEN_RE.test(question.statusText.trim())) continue
       rows.push({ adr, question })
     }
   }
@@ -298,7 +309,8 @@ export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuest
   const total = rows.length
   if (options.limit !== undefined) rows = rows.slice(0, options.limit)
 
-  const lines = [`${total} open across ${adrsWithOpen} ADRs${options.limit !== undefined ? ` (limit: ${options.limit})` : ''}`]
+  const courtSuffix = options.court === 'model' ? ' (court: model)' : ''
+  const lines = [`${total} open across ${adrsWithOpen} ADRs${options.limit !== undefined ? ` (limit: ${options.limit})` : ''}${courtSuffix}`]
   for (const { adr, question } of rows) {
     lines.push(
       `${bracket(`${adrRefString(adr)}#${question.slug}`)} ${question.text} — status: ${question.statusText} | priority: ${question.priority ?? '[none]'}`,

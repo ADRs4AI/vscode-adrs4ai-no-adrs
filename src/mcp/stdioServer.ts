@@ -126,16 +126,17 @@ async function main() {
   server.registerTool(
     'list_open_questions',
     {
-      description: 'Summary line first, then one row per open (unanswered) question across all ADRs, or scoped to one adr_ref.',
+      description: "Summary line first, then one row per open question across all ADRs, or scoped to one adr_ref. court: 'model' scopes to unresolved questions — the model's own docket (ADR-0036), the ball in its court.",
       inputSchema: {
         adr_ref: z.string().optional(),
         priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
         status: z.string().optional(),
+        court: z.literal('model').optional(),
         limit: z.number().optional(),
       },
     },
-    async ({ adr_ref, priority, status, limit }) =>
-      text(listOpenQuestions(ctx, { adrRef: adr_ref, priority, status, limit })),
+    async ({ adr_ref, priority, status, court, limit }) =>
+      text(listOpenQuestions(ctx, { adrRef: adr_ref, priority, status, court, limit })),
   )
 
   server.registerTool(

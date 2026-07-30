@@ -808,6 +808,20 @@ export const QST_HEADING_LINE_RE = /^#{1,6}\s+QST(?:[-\s][^:]{0,64})?:/iu;
 const ANSWERED_LEADING_TOKEN_RE = /^answered\b/i;
 
 /**
+ * ADR-0036 ("Unresolved: Returning the Ball", Riddle 5, ratified 2026-07-29):
+ * the fourth status token — open, but the ball is in the MODEL's court (the
+ * human has contributed content; the next move is the model's). Exported
+ * so every consumer (the MCP court filter, the panel's future visibility
+ * attributes) matches the SAME leading-token rule rather than each growing
+ * a private copy — the exact class of drift this project keeps re-learning
+ * the cost of. No change to `isAnswered`/read-side needed beyond this: the
+ * hide-allowlist doctrine already reads an unrecognized-as-closing token as
+ * open, so `unresolved` was already open before this constant existed —
+ * this just gives consumers a way to recognize WHICH open state it is.
+ */
+export const UNRESOLVED_LEADING_TOKEN_RE = /^unresolved\b/i;
+
+/**
  * Markdown-emphasis robustness for KEYWORDS (Jérémie's ruling, 2026-07-22,
  * caring-form ADR-0052: "- Status: **answered** (…)" read as open because
  * the leading-token check saw literal asterisks — "we should be robust to
