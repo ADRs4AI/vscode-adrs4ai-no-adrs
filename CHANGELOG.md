@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.51] - 2026-07-30
+
+### Added
+- **"Respond (unresolved)"** (ADR-0036): a new way to submit an answer that doesn't close the question — the human has contributed content, but the next move is the model's. Button next to Answer, or Cmd+Shift+Enter. Sets `Status: unresolved` instead of `answered`; the vocabulary also recognizes `deferred` (nobody's ball right now, blocked on data/build/users). Both show in the sidebar with their own icon, and can optionally be hidden from the Open Questions panel (`adrManager.unresolved.hideFromPanel`, `adrManager.deferred.hideFromPanel` — both off by default, matching how they already behaved before these settings existed).
+
 ## [0.7.50] - 2026-07-30
 
 ### Added
