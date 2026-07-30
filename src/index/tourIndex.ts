@@ -187,3 +187,49 @@ export function isTourDone(resolved: ResolvedTourEntry[]): boolean {
   if (required.length === 0) return true
   return required.every(e => e.resolution.kind === 'question' && e.resolution.question.isAnswered)
 }
+
+// ---------------------------------------------------------------------------
+// ADR-0035 Iteration 2 (Riddle's design, 2026-07-29 feedback seed, item C5):
+// tour-unresolved-ref logging + the VS Code Problems surface. Both consumers
+// (openQuestionsPanel.ts's ledger writer, extension.ts's diagnostics) need
+// the same "which entries are broken, and why" and "which real files does
+// this tour touch" facts — computed once here, pure, rather than each
+// consumer re-deriving its own copy.
+// ---------------------------------------------------------------------------
+
+export interface TourUnresolvedRef {
+  ref: string
+  reason: string
+}
+
+/** Every entry that failed to resolve, with its human-readable reason — the richer sibling of buildTourMeta's brokenRefs (ref strings only, for the webview header). */
+export function unresolvedTourRefs(resolved: ResolvedTourEntry[]): TourUnresolvedRef[] {
+  return resolved
+    .filter((e): e is ResolvedTourEntry & { resolution: RefError } => e.resolution.kind === 'error')
+    .map(e => ({ ref: e.ref, reason: e.resolution.message }))
+}
+
+/** Absolute paths of every real ADR/seed file at least one entry actually resolved to — deduplicated, order of first appearance. The reconstruction context alongside the unresolved list: what DID resolve often explains why the one that didn't couldn't (e.g. every sibling entry in the same ADR resolves fine, isolating the break to one stale slug). */
+export function referencedDocumentPaths(resolved: ResolvedTourEntry[]): string[] {
+  const seen = new Set<string>()
+  for (const e of resolved) {
+    const r = e.resolution
+    if (r.kind === 'question' || r.kind === 'section' || r.kind === 'adr') seen.add(r.adr.path)
+    else if (r.kind === 'seed') seen.add(r.seed.path)
+  }
+  return [...seen]
+}
+
+/**
+ * A synthetic path whose dirname is the tour's own `docs/adr` (not
+ * `docs/adr/tours`) — errorLog.ts's `errorLogPathFor` picks the owning
+ * ledger by taking `path.dirname()` of whatever anchor it's given, and a
+ * tour file's own path is one directory too deep for that to resolve
+ * correctly on its own. Reliable because `discoverTourFiles` hardcodes the
+ * `<adrDir>/tours/` layout — `tourPath`'s grandparent is always the real
+ * ADR dir, tours-subdirectory notwithstanding. The returned path is never
+ * read or written; it exists only to pick the right ledger file.
+ */
+export function tourLedgerAnchor(tourPath: string): string {
+  return path.join(path.dirname(path.dirname(tourPath)), path.basename(tourPath))
+}

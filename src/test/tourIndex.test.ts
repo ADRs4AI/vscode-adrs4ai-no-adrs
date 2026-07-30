@@ -13,6 +13,7 @@ import { parseAdr } from '../parser/extractor'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import {
   parseTourFile, discoverTourFiles, resolveTourEntries, isTourDone,
+  unresolvedTourRefs, referencedDocumentPaths, tourLedgerAnchor,
 } from '../index/tourIndex'
 
 const ADR_TWO_QUESTIONS = `# ADR-0001: Storage backend
@@ -233,5 +234,63 @@ describe('resolveTourEntries + isTourDone (doctrine 1: facts read live, doctrine
   it('an empty tour is vacuously done', () => {
     const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({ schema: 'question-tour/1', entries: [] }))!
     expect(isTourDone(resolveTourEntries(tour, makeCtx()))).toBe(true)
+  })
+})
+
+// ADR-0035 Iteration 2 (Riddle's design, 2026-07-29 feedback seed, item C5):
+// tour-unresolved-ref logging + the VS Code Problems surface both build on
+// these three pure facts.
+describe('unresolvedTourRefs', () => {
+  it('collects every broken entry with its human-readable reason, in tour order', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1',
+      entries: [
+        { ref: 'adr:0001#qst-which-database' }, // resolves fine
+        { ref: 'adr:9999#nope' },
+        { ref: 'adr:0001#not-a-real-slug' },
+      ],
+    }))!
+    const resolved = resolveTourEntries(tour, makeCtx())
+    const unresolved = unresolvedTourRefs(resolved)
+    expect(unresolved).toHaveLength(2)
+    expect(unresolved[0].ref).toBe('adr:9999#nope')
+    expect(unresolved[0].reason.length).toBeGreaterThan(0)
+    expect(unresolved[1].ref).toBe('adr:0001#not-a-real-slug')
+  })
+
+  it('an empty array when every entry resolves', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1', entries: [{ ref: 'adr:0001#qst-which-database' }],
+    }))!
+    expect(unresolvedTourRefs(resolveTourEntries(tour, makeCtx()))).toEqual([])
+  })
+})
+
+describe('referencedDocumentPaths', () => {
+  it('collects the real file path behind every resolved entry, deduplicated', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1',
+      entries: [
+        { ref: 'adr:0001#qst-which-database' },
+        { ref: 'adr:0001#qst-which-host' }, // same ADR — must not duplicate
+        { ref: 'adr:9999#nope' }, // broken — contributes nothing
+      ],
+    }))!
+    const resolved = resolveTourEntries(tour, makeCtx())
+    expect(referencedDocumentPaths(resolved)).toEqual(['/fake/root/docs/adr/0001-storage.md'])
+  })
+
+  it('an empty array when nothing resolved', () => {
+    const tour = parseTourFile('/fake/x.tour.json', JSON.stringify({
+      schema: 'question-tour/1', entries: [{ ref: 'adr:9999#nope' }],
+    }))!
+    expect(referencedDocumentPaths(resolveTourEntries(tour, makeCtx()))).toEqual([])
+  })
+})
+
+describe('tourLedgerAnchor', () => {
+  it('strips the tours/ segment so errorLogPathFor resolves to the real docs/adr/.working ledger, not docs/adr/tours/.working', () => {
+    const anchor = tourLedgerAnchor('/repo/docs/adr/tours/2026-07-29-morning-brief.tour.json')
+    expect(path.dirname(anchor)).toBe('/repo/docs/adr')
   })
 })

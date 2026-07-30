@@ -35,6 +35,7 @@ import { buildTourJson, serializeTourJson, tourFilename, tourFilePath } from './
 import type { RootNode } from './index/compositeIndex'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
+import { resolveTourEntries, unresolvedTourRefs } from './index/tourIndex'
 import { resolveReference } from './mcp/reference'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
@@ -176,6 +177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   diagnosticsSubscription = subscribeDiagnostics(compositeIndex, diagnosticCollection);
   for (const adr of compositeIndex.allAdrs()) updateDiagnostics(diagnosticCollection, adr);
   for (const node of compositeIndex.walk()) updateAllSeedDiagnostics(diagnosticCollection, node.seeds, node.adrs);
+  updateTourDiagnostics(diagnosticCollection, compositeIndex);
 
   // ── Status bar item ──────────────────────────────────────────────────────
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -530,9 +532,13 @@ function subscribeDiagnostics(composite: CompositeIndex, collection: vscode.Diag
       // ADR-0016: an ADR add/update may be the first cross-reference that
       // resolves a seed's SEED_INCOMPLETE — recompute this root's seed diagnostics too.
       updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
+      // ADR-0035 Iteration 2: an ADR edit can rename/remove the very
+      // question a tour references — recompute this root's tour diagnostics too.
+      updateTourDiagnosticsForNode(collection, composite, node);
     });
     const unsubSeeds = node.seeds.onChange(() => {
       updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
+      updateTourDiagnosticsForNode(collection, composite, node);
     });
     disposables.push({ dispose: unsubAdrs }, { dispose: unsubSeeds });
   }
@@ -562,6 +568,7 @@ function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefine
     diagnosticsSubscription = subscribeDiagnostics(compositeIndex, collection);
     for (const adr of compositeIndex.allAdrs()) updateDiagnostics(collection, adr);
     for (const node of compositeIndex.walk()) updateAllSeedDiagnostics(collection, node.seeds, node.adrs);
+    updateTourDiagnostics(collection, compositeIndex);
   }
   // Flint 5's review finding (2026-07-16): compositeIndex.onChange() is a
   // one-time subscription against the node instances live at call time, not
@@ -1176,6 +1183,57 @@ function updateSeedDiagnostics(
   diag.code = 'SEED_INCOMPLETE';
   diags.push(diag);
   collection.set(uri, diags);
+}
+
+// ---------------------------------------------------------------------------
+// Tour diagnostics — TOUR_UNRESOLVED_REFS (ADR-0035 Iteration 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * One aggregated Error diagnostic per `.tour.json` with any unresolved
+ * entry — the model-facing surface Riddle's design names explicitly: an
+ * LLM reading diagnostics (via the editor or MCP) sees a broken tour
+ * without a human having to tell it. Recomputed for every tour on every
+ * composite build/refresh, independent of whether any panel has that tour
+ * open — unlike the ledger writer (openQuestionsPanel.ts's
+ * logTourUnresolvedIfNeeded), which only fires when a tour is actually
+ * being walked.
+ */
+function updateTourDiagnosticsForNode(collection: vscode.DiagnosticCollection, composite: CompositeIndex, node: RootNode): void {
+  const ctx = createRepositoryContextAdapter(composite);
+  for (const tour of node.tours) {
+    const uri = vscode.Uri.file(tour.path);
+    const resolved = resolveTourEntries(tour, ctx);
+    const unresolved = unresolvedTourRefs(resolved);
+    if (unresolved.length === 0) {
+      collection.delete(uri); // clear a stale diagnostic from a since-fixed tour
+      continue;
+    }
+    const message = `TOUR_UNRESOLVED_REFS: ${unresolved.length} entr${unresolved.length === 1 ? 'y' : 'ies'} in "${tour.title}" could not be resolved\n\n` +
+      unresolved.map(u => `  - ${u.ref}: ${u.reason}`).join('\n');
+    const range = new vscode.Range(0, 0, 0, 999);
+    const diag = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error);
+    diag.source = 'ADR Manager';
+    diag.code = 'TOUR_UNRESOLVED_REFS';
+    collection.set(uri, [diag]);
+  }
+}
+
+/**
+ * Recomputed for every tour on every composite build/refresh (activation,
+ * root-set change, a `.tour.json` created/changed/deleted — the last now
+ * routes here via rootWatcherLifecycle.ts's tour watcher parity), plus
+ * per-node whenever THAT node's own ADR/seed content changes
+ * (subscribeDiagnostics below) — an ADR edit can rename/remove the very
+ * question a tour references. Scoped to the changed node only, same
+ * simplification updateAllSeedDiagnostics' cross-reference recompute
+ * already makes for SEED_INCOMPLETE: a tour in a DIFFERENT root
+ * referencing an ADR in this one won't be caught by that per-node path —
+ * rare enough (and no worse than the pre-existing seed-diagnostic scoping)
+ * not to warrant a full composite-wide re-scan on every single ADR save.
+ */
+function updateTourDiagnostics(collection: vscode.DiagnosticCollection, composite: CompositeIndex): void {
+  for (const node of composite.walk()) updateTourDiagnosticsForNode(collection, composite, node);
 }
 
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {

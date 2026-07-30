@@ -27,9 +27,9 @@ import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
-import { resolveTourEntries, isTourDone } from '../index/tourIndex'
+import { resolveTourEntries, isTourDone, unresolvedTourRefs, referencedDocumentPaths, tourLedgerAnchor, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
-import { appendErrorRecord, buildErrorRecord } from '../drafts/errorLog'
+import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 
 // ---------------------------------------------------------------------------
@@ -180,6 +180,9 @@ export class OpenQuestionsPanel {
 
   /** ADR-0034: when set, sendQuestions() walks exactly this tour's unanswered, resolvable entries, in tour order, instead of every open question. Same executor, tour-mode dress — never a second component. */
   private activeTourSlug: string | undefined
+
+  /** ADR-0035 Iteration 2: signatures of tour-unresolved-refs ledger records already written THIS session — re-opening the same broken tour five times writes one record, not five. Session-scoped by design (a fresh panel instance re-logs, since the whole point is "the human/model is looking at this broken tour right now"). */
+  private tourUnresolvedSignaturesLogged = new Set<string>()
 
   // ---------------------------------------------------------------------------
 
@@ -505,6 +508,7 @@ export class OpenQuestionsPanel {
     const found = this.composite.findTour(slug)
     if (!found) return null
     const resolved = resolveTourEntries(found.tour, createRepositoryContextAdapter(this.composite))
+    this.logTourUnresolvedIfNeeded(found.tour, resolved)
     return {
       slug: found.tour.slug,
       title: found.tour.title,
@@ -514,6 +518,57 @@ export class OpenQuestionsPanel {
       retired: found.tour.retired,
       done: isTourDone(resolved),
       brokenRefs: resolved.filter(e => e.resolution.kind === 'error').map(e => e.ref),
+    }
+  }
+
+  /**
+   * ADR-0035 Iteration 2 (Riddle's design, 2026-07-29 feedback seed, item
+   * C5): a tour opened/refreshed with unresolved entries appends one
+   * error-record/2 (source: 'tour-resolver') with full reconstruction
+   * context — the tour's own JSON, every unresolved ref with its reason,
+   * and the full text (+ MD5) of every real file the tour DID successfully
+   * touch (Lapidary's size guard: referenced documents only, never "all
+   * ADRs"). Deduped per session by signature so re-opening the same broken
+   * tour repeatedly writes one record. Gated by the same adrManager.logErrors
+   * kill switch harvestError() already uses — one setting, not a second one
+   * for a second writer. Failure-soft by contract, same as harvestError().
+   */
+  private logTourUnresolvedIfNeeded(tour: TourFile, resolved: ResolvedTourEntry[]): void {
+    try {
+      const unresolved = unresolvedTourRefs(resolved)
+      if (unresolved.length === 0) return
+      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logErrors', true)) return
+
+      const tourDoc = captureDocument(tour.path)
+      const refDocs = referencedDocumentPaths(resolved)
+        .map(p => ({ path: p, doc: captureDocument(p) }))
+        .filter((d): d is { path: string; doc: { text: string; md5: string } } => !!d.doc)
+
+      const signature = [
+        tourDoc?.md5 ?? '',
+        ...refDocs.map(d => d.doc.md5).sort(),
+        ...unresolved.map(u => u.ref).sort(),
+      ].join('|')
+      if (this.tourUnresolvedSignaturesLogged.has(signature)) return
+      this.tourUnresolvedSignaturesLogged.add(signature)
+
+      const documents: Record<string, { text: string; md5: string }> = {}
+      if (tourDoc) documents[tour.path] = tourDoc
+      for (const d of refDocs) documents[d.path] = d.doc
+
+      appendLedgerRecord({
+        schema: 'error-record/2',
+        ts: new Date().toISOString(),
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        source: 'tour-resolver',
+        kind: 'tour-unresolved-refs',
+        message: `${unresolved.length} entr${unresolved.length === 1 ? 'y' : 'ies'} in tour "${tour.title}" could not be resolved`,
+        anchorPath: tourLedgerAnchor(tour.path),
+        payload: { tourJson: tourDoc?.text, unresolved },
+        documents,
+      })
+    } catch {
+      /* failure-soft: never let the audit trail take down the panel */
     }
   }
 
