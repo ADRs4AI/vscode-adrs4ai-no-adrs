@@ -802,6 +802,50 @@ describe('Tour-mode skin (ADR-0034)', () => {
     expect(h.element('tour-entry-info').style.display).toBe('none')
   })
 
+  // Layout surgery (Lapidary's spec, 2026-07-30 inbox 2020, "fine surgery
+  // — build EXACTLY this"): "Draft saved" used to share the button row
+  // with Report, shifting the whole row on every autosave — Jérémie's own
+  // words, "IT'S SUPER DISTRACTING." The paradigm: controls never share a
+  // line with transients; transients get reserved, dedicated space.
+  describe('Layout surgery: controls never share a line with transients (2026-07-30 inbox 2020)', () => {
+    it('"Draft saved" is structurally in the hint row (the expand-field link\'s vacated slot), never in the button row', () => {
+      const rowBlock = PANEL_SRC.match(/<div class="row">[\s\S]*?<\/div>/)![0]
+      const hintBlock = PANEL_SRC.match(/<div class="hint" id="answer-hint">[\s\S]*?<\/div>/)![0]
+      expect(rowBlock).not.toContain('id="draft-flash"')
+      expect(hintBlock).toContain('id="draft-flash"')
+    })
+
+    it('the expand-field link has its own row, above the textarea — one home regardless of the authorship row', () => {
+      const expandRowIdx = PANEL_SRC.indexOf('id="expand-row"')
+      const authorRowIdx = PANEL_SRC.indexOf('id="author-row"')
+      const textareaIdx = PANEL_SRC.indexOf('id="ans"')
+      expect(authorRowIdx).toBeGreaterThan(-1)
+      expect(expandRowIdx).toBeGreaterThan(authorRowIdx) // document order: authorship row, then link row
+      expect(textareaIdx).toBeGreaterThan(expandRowIdx) // then the textarea
+      const hintBlock = PANEL_SRC.match(/<div class="hint" id="answer-hint">[\s\S]*?<\/div>/)![0]
+      expect(hintBlock).not.toContain('id="expand-field"')
+    })
+
+    it('toggling the draft-saved flash never touches the button row\'s own children', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      expect(h.element('btn-report').style.display).toBeDefined()
+      const before = { ans: h.element('btn-ans').style.display, back: h.element('btn-back').style.display, skip: h.element('btn-skip').style.display }
+      h.element('draft-flash').style.display = 'inline-flex' // simulates the autosave flash firing
+      expect(h.element('btn-ans').style.display).toBe(before.ans)
+      expect(h.element('btn-back').style.display).toBe(before.back)
+      expect(h.element('btn-skip').style.display).toBe(before.skip)
+    })
+
+    it('adrManager.showAuthorshipField: capability kept, chrome gone by default', () => {
+      const pkg = readFileSync(resolve(__dirname, '../../package.json'), 'utf8')
+      const match = pkg.match(/"adrManager\.showAuthorshipField":\s*\{[^}]*\}/)
+      expect(match).toBeTruthy()
+      expect(match![0]).toContain('"default": false')
+      expect(match![0]).toContain('"scope": "resource"')
+    })
+  })
+
   // ADR-0036 ("Unresolved: Returning the Ball", ratified 2026-07-29): the
   // panel gesture — "Respond (unresolved)" writes the same ANS layer but
   // sets Status: unresolved instead of answered, so the ball moves to the
@@ -887,14 +931,24 @@ describe('Tour-mode skin (ADR-0034)', () => {
       expect(h.element('review-stop-answer').innerHTML).toContain('(no answer text on file)')
     })
 
-    it('a still-open entry shows the answering machinery, not the review stop', () => {
+    it('a still-open entry shows the answering machinery (not the authorship row, off by default), not the review stop', () => {
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
       expect(h.element('review-stop-block').style.display).toBe('none')
-      expect(h.element('author-row').style.display).toBe('')
+      // Layout surgery (2026-07-30 inbox 2020): authorship row is chrome
+      // gone by default — capability kept (author name still prefilled/sent),
+      // just not shown unless adrManager.showAuthorshipField is on.
+      expect(h.element('author-row').style.display).toBe('none')
+      expect(h.element('expand-row').style.display).toBe('')
       expect(h.element('ans').style.display).toBe('')
       expect(h.element('answer-hint').style.display).toBe('')
       expect(h.element('btn-ans').style.display).toBe('')
+    })
+
+    it('the authorship row shows when adrManager.showAuthorshipField is on', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR, showAuthorshipField: true })
+      expect(h.element('author-row').style.display).toBe('')
     })
 
     it('the counter shows both truths in tour mode: total stops walked and how many still await an answer', () => {

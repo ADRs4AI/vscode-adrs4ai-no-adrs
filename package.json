@@ -228,6 +228,12 @@
           "default": "",
           "description": "Your name as the human collaborator. Pre-fills the 'Deciders' field in new ADRs and the 'Answering as:' field in the Open Questions panel. Falls back to git config user.name if empty."
         },
+        "adrManager.showAuthorshipField": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": false,
+          "description": "Show the 'Answering as:' name field in the Open Questions panel. Off by default — the capability is unchanged (adrManager.humanName / git config still supply the author name either way); this only controls whether the field itself takes up space in the dialog."
+        },
         "adrManager.aiModel": {
           "type": "string",
           "default": "Sonnet 4.6 (1M)",

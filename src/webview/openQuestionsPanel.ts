@@ -453,6 +453,8 @@ export class OpenQuestionsPanel {
       gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
       recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
       reportButtonEnabled: cfg.get<boolean>('reportButton.enabled', false),
+      // Layout surgery (2026-07-30 inbox 2020): chrome gone by default, capability kept.
+      showAuthorshipField: cfg.get<boolean>('showAuthorshipField', false),
       generation: this.questionsGeneration,
     })
   }
@@ -1398,11 +1400,16 @@ textarea:focus{border-color:var(--vscode-focusBorder)}
    most of the panel viewport. */
 textarea.expanded{min-height:70vh;height:70vh}
 .hint{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.hint .expand-link{
+/* Layout surgery (2026-07-30 inbox 2020): the expand-field link's own
+   row, flush right, directly above the textarea — its one home,
+   regardless of whether the authorship row above it is shown or not. */
+.expand-row{display:flex;justify-content:flex-end;margin-bottom:6px}
+.expand-link{
   cursor:pointer;text-decoration:none;white-space:nowrap;
   color:var(--vscode-textLink-foreground);
+  font-size:11px;
 }
-.hint .expand-link:hover{text-decoration:underline}
+.expand-link:hover{text-decoration:underline}
 /* ADR-0023: draft restored indicator — grey, never red (penn-cv 039 It.5) */
 .draft-restored{
   font-size:11px;
@@ -1712,14 +1719,29 @@ textarea.expanded{min-height:70vh;height:70vh}
     <div class="review-stop-answer" id="review-stop-answer"></div>
   </div>
 
+  <!-- Layout surgery (Lapidary's spec, 2026-07-30 inbox 2020, "fine
+       surgery — build EXACTLY this"): controls never share a line with
+       transients; transient messages get reserved, dedicated space, so
+       the hand reaching for a button never finds it moved. Document
+       order composes the same way whether the authorship row is shown or
+       not — one rule, no cases: authorship row (conditional) → expand-
+       field link (always, its own row, flush right) → textarea. -->
   <div class="author-row" id="author-row">
     <label for="author">Answering as:</label>
     <input id="author" type="text" placeholder="Your name" autocomplete="off" />
   </div>
 
+  <div class="expand-row" id="expand-row">
+    <a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a>
+  </div>
+
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
   <div class="draft-restored" id="draft-restored" style="display:none"></div>
-  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later · Cmd+Shift+Enter: respond and return the partial answer to the model for consideration</span><a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a></div>
+  <!-- "Draft saved" lives here now — the expand-field link's vacated
+       flush-right slot in this row is ITS reserved home; nothing else
+       ever occupies it, so autosave firing/clearing never shifts the
+       button row below. -->
+  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later · Cmd+Shift+Enter: respond and return the partial answer to the model for consideration</span><span class="draft-flash" id="draft-flash">✓ draft saved</span></div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
@@ -1732,7 +1754,6 @@ textarea.expanded{min-height:70vh;height:70vh}
     <button class="btn-skip" id="btn-skip">Skip</button>
     <button class="btn-report" id="btn-report" style="display:none" title="Report an observation about this question/ADR — saved for later review, doesn't affect your answer">🚩 Report</button>
     <span class="flash" id="flash">✓ Answered</span>
-    <span class="draft-flash" id="draft-flash">✓ draft saved</span>
   </div>
   <div class="error-msg" id="err"></div>
 
@@ -1785,6 +1806,7 @@ const vscode = acquireVsCodeApi();
 let questions = [], idx = 0;
 let recCollapseThreshold = 0;
 let reportButtonEnabled = false;
+let showAuthorshipField = false;
 // Insertion-preview protocol (DEBRIEF-006): the exact 'answer' message the
 // panel is waiting to resend with confirmedInsertion:true once the human
 // approves the previewed insertion point, or null when no preview is open.
@@ -2544,13 +2566,19 @@ function render() {
     // up) rather than making this one field a plain-text special case.
     $id('review-stop-answer').innerHTML = q.finalAnswerText ? renderMarkdown(q.finalAnswerText) : '<em>(no answer text on file)</em>';
     $id('author-row').style.display = 'none';
+    $id('expand-row').style.display = 'none';
     $id('ans').style.display = 'none';
     $id('answer-hint').style.display = 'none';
     $id('btn-ans').style.display = 'none';
     $id('btn-respond-unresolved').style.display = 'none';
   } else {
     $id('review-stop-block').style.display = 'none';
-    $id('author-row').style.display = '';
+    // Layout surgery (2026-07-30 inbox 2020): authorship row is chrome
+    // gone by default — the setting controls whether it ever takes up
+    // space, independent of review-stop state. The expand-field link
+    // always shows here (its one home, above the textarea).
+    $id('author-row').style.display = showAuthorshipField ? '' : 'none';
+    $id('expand-row').style.display = '';
     $id('ans').style.display = '';
     $id('answer-hint').style.display = '';
     $id('btn-ans').style.display = '';
@@ -2688,6 +2716,7 @@ window.addEventListener('message', e => {
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
     reportButtonEnabled = !!msg.reportButtonEnabled;
     $id('btn-report').style.display = reportButtonEnabled ? '' : 'none';
+    showAuthorshipField = !!msg.showAuthorshipField;
     if (questions.length === 0) {
       idx = 0;
     } else {
