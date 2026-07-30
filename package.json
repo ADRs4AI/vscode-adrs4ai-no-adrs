@@ -337,6 +337,11 @@
           "scope": "resource",
           "default": true,
           "description": "In a tour's treeview entries, prefix each question with its authored disposition — DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE — when the tour sets one. An entry with no disposition set gets no prefix."
+        },
+        "adrManager.reportButton.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a 'Report' button in the Open Questions panel — captures the current ADR's full content, a note you type, and basic panel state to the project's error ledger (docs/adr/.working/errors.jsonl), without touching your in-progress answer. Off by default; turn on if you want a frictionless way to flag a problem without leaving the panel."
         }
       }
     }

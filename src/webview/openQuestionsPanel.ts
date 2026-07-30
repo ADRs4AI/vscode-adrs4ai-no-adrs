@@ -152,6 +152,8 @@ type WebviewMessage =
   | { type: 'showDraftDiff'; mine: string; theirs: string; questionText: string }
   /** ADR-0034: leave tour mode, back to the full open-questions walk. */
   | { type: 'exitTour' }
+  /** ADR-0035 Iteration 3 (seed-2026-07-30, "frictionless observation reporting"): a human-authored observation about the current question/ADR — appended to the error ledger, doesn't touch the question itself. */
+  | { type: 'reportObservation'; adrPath: string; questionId?: string; draftKey?: string }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -429,6 +431,7 @@ export class OpenQuestionsPanel {
       // Priority: settings > git config > top name from ADR index
       gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
       recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
+      reportButtonEnabled: cfg.get<boolean>('reportButton.enabled', false),
       generation: this.questionsGeneration,
     })
   }
@@ -572,6 +575,43 @@ export class OpenQuestionsPanel {
     }
   }
 
+  /**
+   * ADR-0035 Iteration 3 (Lapidary's design, seed-2026-07-30 "frictionless
+   * observation reporting"): "the report button is a human writer for
+   * ADR-0035's error ledger." Jérémie's own words: preserving a problem for
+   * later report used to fight with actually answering the question — this
+   * is the freeze-evidence-free version. One command, one input box: type
+   * the note, the current ADR's full content + hash is captured
+   * automatically, nothing about the in-flight answer draft is touched.
+   * Reuses error-record/2 as-is (source: 'panel', kind: 'observation') —
+   * no schema addition, so no separate blessing gate the way a new field
+   * would need (rootsConfigWriter.ts's `names` precedent).
+   */
+  private async reportObservation(msg: { adrPath: string; questionId?: string; draftKey?: string }): Promise<void> {
+    const note = await vscode.window.showInputBox({
+      prompt: 'Report an observation about this question/ADR — saved for later review, does not affect your answer',
+      placeHolder: 'What did you notice?',
+    })
+    if (!note) return // cancelled — nothing recorded, no partial/empty entries
+    try {
+      const doc = captureDocument(msg.adrPath)
+      appendLedgerRecord({
+        schema: 'error-record/2',
+        ts: new Date().toISOString(),
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        source: 'panel',
+        kind: 'observation',
+        message: note,
+        anchorPath: msg.adrPath,
+        payload: { questionId: msg.questionId, draftKey: msg.draftKey, note },
+        documents: doc ? { [msg.adrPath]: doc } : undefined,
+      })
+      vscode.window.setStatusBarMessage('ADR Manager: Observation recorded.', 3000)
+    } catch {
+      /* failure-soft: reporting a problem must never itself become one */
+    }
+  }
+
   private async handleMessage(msg: WebviewMessage): Promise<void> {
     switch (msg.type) {
       case 'answer': await this.writeAnswer(msg); break
@@ -598,6 +638,7 @@ export class OpenQuestionsPanel {
       case 'retrySave': await this.retrySave(msg.adrPath); break
       case 'showDraftDiff': await this.showDraftDiff(msg.mine, msg.theirs, msg.questionText); break
       case 'exitTour': this.setTour(undefined); break
+      case 'reportObservation': await this.reportObservation(msg); break
     }
   }
 
@@ -1434,6 +1475,21 @@ textarea.expanded{min-height:70vh;height:70vh}
   opacity:.8;
 }
 .btn-skip:hover{opacity:1}
+/* ADR-0035 Iteration 3 (frictionless observation reporting): flushed right
+   in the button row, per Jérémie's own sketch of this idea — a rare,
+   secondary action, visually separated from Answer/Back/Skip rather than
+   competing with them for attention. */
+.btn-report{
+  margin-left:auto;
+  padding:7px 14px;
+  background:transparent;
+  color:var(--vscode-descriptionForeground);
+  border:1px solid var(--vscode-descriptionForeground);
+  border-radius:3px;cursor:pointer;
+  font-family:var(--vscode-font-family);font-size:13px;
+  opacity:.7;
+}
+.btn-report:hover{opacity:1}
 .btn-back{
   padding:7px 14px;
   background:transparent;
@@ -1606,6 +1662,7 @@ textarea.expanded{min-height:70vh;height:70vh}
     <button class="btn-answer" id="btn-ans">Answer →</button>
     <button class="btn-back" id="btn-back">← Back</button>
     <button class="btn-skip" id="btn-skip">Skip</button>
+    <button class="btn-report" id="btn-report" style="display:none" title="Report an observation about this question/ADR — saved for later review, doesn't affect your answer">🚩 Report</button>
     <span class="flash" id="flash">✓ Answered</span>
     <span class="draft-flash" id="draft-flash">✓ draft saved</span>
   </div>
@@ -1659,6 +1716,7 @@ textarea.expanded{min-height:70vh;height:70vh}
 const vscode = acquireVsCodeApi();
 let questions = [], idx = 0;
 let recCollapseThreshold = 0;
+let reportButtonEnabled = false;
 // Insertion-preview protocol (DEBRIEF-006): the exact 'answer' message the
 // panel is waiting to resend with confirmedInsertion:true once the human
 // approves the previewed insertion point, or null when no preview is open.
@@ -2073,6 +2131,15 @@ $id('btn-skip').addEventListener('click', () => {
   idx = (idx + 1) % Math.max(questions.length, 1);
   render();
   vscode.postMessage({ type: 'skip' });
+});
+
+// ADR-0035 Iteration 3 (frictionless observation reporting): doesn't touch
+// idx, the draft, or anything else in flight — the note capture itself
+// happens host-side (a VS Code input box), so this is a fire-and-forget post.
+$id('btn-report').addEventListener('click', () => {
+  const q = questions[idx];
+  if (!q) return;
+  vscode.postMessage({ type: 'reportObservation', adrPath: q.adrPath, questionId: q.id, draftKey: q.draftKey });
 });
 
 $id('btn-back').addEventListener('click', () => {
@@ -2531,6 +2598,8 @@ window.addEventListener('message', e => {
     renderTourHeader();
     const poolChanged = previousTourSlug !== (activeTour ? activeTour.slug : null);
     recCollapseThreshold = msg.recommendationCollapseThreshold || 0;
+    reportButtonEnabled = !!msg.reportButtonEnabled;
+    $id('btn-report').style.display = reportButtonEnabled ? '' : 'none';
     if (questions.length === 0) {
       idx = 0;
     } else {

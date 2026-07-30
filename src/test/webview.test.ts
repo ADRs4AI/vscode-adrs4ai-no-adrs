@@ -985,6 +985,39 @@ describe('Tour-mode skin (ADR-0034)', () => {
 // description of intended behavior.
 // ---------------------------------------------------------------------------
 
+// ADR-0035 Iteration 3 (seed-2026-07-30, "frictionless observation
+// reporting"): off-by-default report button — hidden unless the host says
+// reportButtonEnabled, and posts the current question's identity when clicked.
+describe('Report button (ADR-0035 Iteration 3)', () => {
+  const Q1 = { id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' }
+
+  it('hidden by default (reportButtonEnabled omitted/false)', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+    expect(h.element('btn-report').style.display).toBe('none')
+  })
+
+  it('shown when the host reports the setting is on', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], reportButtonEnabled: true })
+    expect(h.element('btn-report').style.display).toBe('')
+  })
+
+  it('hides again on a later push where the setting reads off', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], reportButtonEnabled: true })
+    h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], reportButtonEnabled: false })
+    expect(h.element('btn-report').style.display).toBe('none')
+  })
+
+  it('clicking posts reportObservation with the current question\'s identity, nothing else', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], reportButtonEnabled: true })
+    h.click('btn-report')
+    expect(h.sentMessages).toContainEqual({ type: 'reportObservation', adrPath: '/fake/a.md', questionId: 'q1', draftKey: 'key-1' })
+  })
+})
+
 type WordDiffCounts = (oldText: string, newText: string) => { added: number; removed: number }
 type DraftSourceLabel = (source: string | undefined) => string | null
 
