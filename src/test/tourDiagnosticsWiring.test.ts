@@ -20,10 +20,13 @@ describe('openQuestionsPanel.ts: tour-unresolved-refs ledger writer', () => {
     expect(PANEL_SRC).toMatch(/this\.logTourUnresolvedIfNeeded\(found\.tour, resolved\)/)
   })
 
-  it('gated by the SAME adrManager.logErrors kill switch harvestError() already uses — not a second setting', () => {
+  // 2026-07-30 addendum (Lapidary): granular per-writer sublog keys, not one
+  // shared switch — this writer now gates on its OWN setting, split from
+  // the panelErrors key harvestError() uses.
+  it('gated by its own sublog key, adrManager.logging.tourUnresolvedRefs', () => {
     const method = PANEL_SRC.match(/private logTourUnresolvedIfNeeded\([\s\S]*?\n  \}/)
     expect(method).toBeTruthy()
-    expect(method![0]).toContain("get<boolean>('logErrors', true)")
+    expect(method![0]).toContain("get<boolean>('logging.tourUnresolvedRefs', true)")
   })
 
   it('writes error-record/2, source tour-resolver, kind tour-unresolved-refs', () => {

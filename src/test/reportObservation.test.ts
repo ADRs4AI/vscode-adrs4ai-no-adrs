@@ -22,8 +22,16 @@ describe('openQuestionsPanel.ts: reportObservation (ADR-0035 Iteration 3)', () =
     expect(PANEL_SRC).toContain("case 'reportObservation': await this.reportObservation(msg); break")
   })
 
-  it('cancelling the input box (empty/undefined note) records nothing', () => {
-    expect(method).toMatch(/if \(!note\) return/)
+  // Recovered spec (Lapidary's 2026-07-30 addendum, item 2 — the original:
+  // "if you say yes OR NO [to the optional comment]... that would create
+  // an entry"): pressing Report always logs something; the comment is
+  // optional content on top, not a gate. Only a true Escape/cancel
+  // (showInputBox resolving `undefined`) skips logging — submitting an
+  // empty field ('') still logs, with a generic message.
+  it('only Escape/cancel (undefined) skips logging — an empty-but-submitted note still logs', () => {
+    expect(method).toMatch(/if \(note === undefined\) return/)
+    expect(method).not.toMatch(/if \(!note\) return/)
+    expect(method).toContain("const message = note || 'manual user report from open dialog'")
   })
 
   it('reuses error-record/2 as-is — source: panel, kind: observation, no new schema field', () => {

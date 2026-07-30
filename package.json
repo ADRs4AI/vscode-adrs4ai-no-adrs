@@ -233,10 +233,20 @@
           "default": "Sonnet 4.6 (1M)",
           "description": "The AI model name used in new ADR templates (e.g., 'Sonnet 4.6 (1M)', 'Claude Opus 4.6')."
         },
-        "adrManager.logErrors": {
+        "adrManager.logging.panelErrors": {
           "type": "boolean",
           "default": true,
-          "description": "When an error occurs in the Open Questions panel, append a full-reconstruction record (entire ADR text, entire answer box, all metadata) to the owning project's docs/adr/.working/errors.jsonl. Default is ON during the error-collection era; will flip to OFF once the format stabilizes."
+          "description": "When an error occurs in the Open Questions panel, append a full-reconstruction record (entire ADR text, entire answer box, all metadata) to the owning project's docs/adr/.working/errors.jsonl. Default is ON during the error-collection era — see docs/RELEASE-CHECKLIST.md's ship-flip item, which flips every adrManager.logging.* default OFF before the first public release."
+        },
+        "adrManager.logging.tourUnresolvedRefs": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a tour is opened/refreshed with an unresolvable reference, append a full-reconstruction record (the tour's own JSON, every unresolved ref with its reason, and every real file the tour touched) to the project's error ledger. Default ON during the collection era — see docs/RELEASE-CHECKLIST.md's ship-flip item."
+        },
+        "adrManager.logging.observations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the Report button (adrManager.reportButton.enabled) actually writes to the error ledger. Default ON during the collection era — see docs/RELEASE-CHECKLIST.md's ship-flip item. Turning this off keeps the button visible but disables the write, e.g. if you want the gesture without the disk cost."
         },
         "adrManager.renderMarkdownInQuestionTitles": {
           "type": "boolean",

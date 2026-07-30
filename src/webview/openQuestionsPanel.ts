@@ -553,15 +553,16 @@ export class OpenQuestionsPanel {
    * and the full text (+ MD5) of every real file the tour DID successfully
    * touch (Lapidary's size guard: referenced documents only, never "all
    * ADRs"). Deduped per session by signature so re-opening the same broken
-   * tour repeatedly writes one record. Gated by the same adrManager.logErrors
-   * kill switch harvestError() already uses — one setting, not a second one
-   * for a second writer. Failure-soft by contract, same as harvestError().
+   * tour repeatedly writes one record. Gated by its own sublog key,
+   * `adrManager.logging.tourUnresolvedRefs` (2026-07-30 addendum: granular
+   * per-writer toggles, not one shared switch) — default true, SHIP-FLIP
+   * per RELEASE-CHECKLIST.md. Failure-soft by contract, same as harvestError().
    */
   private logTourUnresolvedIfNeeded(tour: TourFile, resolved: ResolvedTourEntry[]): void {
     try {
       const unresolved = unresolvedTourRefs(resolved)
       if (unresolved.length === 0) return
-      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logErrors', true)) return
+      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.tourUnresolvedRefs', true)) return
 
       const tourDoc = captureDocument(tour.path)
       const refDocs = referencedDocumentPaths(resolved)
@@ -609,11 +610,29 @@ export class OpenQuestionsPanel {
    * would need (rootsConfigWriter.ts's `names` precedent).
    */
   private async reportObservation(msg: { adrPath: string; questionId?: string; draftKey?: string }): Promise<void> {
+    // Its own sublog key (2026-07-30 addendum: granular per-writer toggles,
+    // not one shared switch) — checked BEFORE prompting, so a disabled
+    // writer never invites a note it's about to discard.
+    if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.observations', true)) {
+      vscode.window.setStatusBarMessage('ADR Manager: Observation logging is turned off (adrManager.logging.observations).', 4000)
+      return
+    }
+    // Recovered spec (Lapidary's 2026-07-30 addendum to the report-button
+    // seed, item 2 — the original: "a dialog opens that says do you want to
+    // attach an optional comment and if you say yes OR NO... that would
+    // create an entry"): the entry happens either way — the comment is
+    // optional content ON TOP of pressing Report, not a gate on whether
+    // anything gets recorded at all. showInputBox distinguishes Escape/
+    // cancel (undefined — true "never mind, don't log this") from Enter on
+    // an empty field ('' — "log it, I just have nothing to add"); the
+    // original bug (a bare falsy check on the returned string) treated both
+    // the same, silently dropping the no-comment case entirely.
     const note = await vscode.window.showInputBox({
-      prompt: 'Report an observation about this question/ADR — saved for later review, does not affect your answer',
-      placeHolder: 'What did you notice?',
+      prompt: 'Report an observation about this question/ADR (optional comment) — saved for later review, does not affect your answer',
+      placeHolder: 'What did you notice? (leave blank to just mark this moment)',
     })
-    if (!note) return // cancelled — nothing recorded, no partial/empty entries
+    if (note === undefined) return // Escape/cancel — nothing recorded
+    const message = note || 'manual user report from open dialog'
     try {
       const doc = captureDocument(msg.adrPath)
       appendLedgerRecord({
@@ -622,9 +641,9 @@ export class OpenQuestionsPanel {
         extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
         source: 'panel',
         kind: 'observation',
-        message: note,
+        message,
         anchorPath: msg.adrPath,
-        payload: { questionId: msg.questionId, draftKey: msg.draftKey, note },
+        payload: { questionId: msg.questionId, draftKey: msg.draftKey, note: note || undefined },
         documents: doc ? { [msg.adrPath]: doc } : undefined,
       })
       vscode.window.setStatusBarMessage('ADR Manager: Observation recorded.', 3000)
@@ -671,8 +690,14 @@ export class OpenQuestionsPanel {
    * Error harvesting at the point of failure (Jérémie's charter, 2026-07-25):
    * every panel error appends a full-reconstruction record — entire ADR text,
    * entire answer box, the triggering message — to the owning root's
-   * `.working/errors.jsonl`. Gated by `adrManager.logErrors` (default ON for
-   * the collection era; flip the default OFF once the wild runs dry).
+   * `.working/errors.jsonl`. Gated by `adrManager.logging.panelErrors`
+   * (default ON for the collection era; SHIP-FLIP — see RELEASE-CHECKLIST.md
+   * — flips every `adrManager.logging.*` default OFF before the first
+   * public release). One of several per-writer sublog keys (Lapidary's
+   * 2026-07-30 addendum: "logging.<sublog> settings, individually
+   * toggleable, because logging costs speed") — this file's OTHER writers
+   * (logTourUnresolvedIfNeeded, reportObservation) each get their own,
+   * rather than sharing one switch that couldn't be tuned per-writer.
    * Failure-soft by contract: harvesting must never break the surface it
    * observes, so this method cannot throw.
    */
@@ -682,7 +707,7 @@ export class OpenQuestionsPanel {
     msg?: { adrPath?: string; questionId?: string; draftKey?: string; answerText?: string } & Record<string, unknown>,
   ): void {
     try {
-      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logErrors', true)) return
+      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.panelErrors', true)) return
       if (!msg?.adrPath) return
       // Redact the box text from the meta copy — it's already first-class in
       // boxText; duplicating full drafts in meta doubles record size for nothing.
