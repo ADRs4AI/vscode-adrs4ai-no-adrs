@@ -43,6 +43,15 @@ export interface AdrFile {
   number: number;
   /** ADR title (from the `# Title` heading) */
   title: string;
+  /**
+   * ADR-0039 §2 (round-trip gate, Tier 1): exact original title heading
+   * line and exact raw text of everything between it and the first `##`
+   * section (or EOF) — undefined when there's no title line to anchor to
+   * (matches `titleLine` being undefined in parseAdr()). Additive fields
+   * for reconstruction; `title`/parsed metadata fields are unchanged.
+   */
+  titleRaw?: string;
+  preambleRaw?: string;
   date?: string;
   /** Latest iteration number from the header */
   iteration: number;
@@ -117,6 +126,25 @@ export interface AdrSection {
    */
   qstId?: string;
   children: AdrSection[]; // nested sub-sections
+  /**
+   * ADR-0039 §2 (round-trip gate, Tier 1): the exact original heading line,
+   * unlike `heading` (text only, `#` marks and any unusual whitespace
+   * stripped) — needed to reconstruct the source byte-for-byte. Optional:
+   * always populated by buildSection(), but undefined on any hand-built
+   * AdrSection fixture that bypasses the real parser (several exist in
+   * tests) — required would force updating every one of them for a field
+   * they have no reason to care about.
+   */
+  headingRaw?: string;
+  /**
+   * ADR-0039 §2: `body` above is `.trim()`-med (leading/trailing blank
+   * lines collapsed) for every existing consumer; `bodyRaw` is the exact
+   * untrimmed text, added alongside rather than changing `body` itself —
+   * changing what hundreds of existing call sites receive is a much
+   * larger blast radius than this ADR's scope. Optional for the same
+   * hand-built-fixture reason as headingRaw.
+   */
+  bodyRaw?: string;
 }
 
 // ---------------------------------------------------------------------------

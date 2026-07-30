@@ -11,7 +11,7 @@
 import * as crypto from 'crypto'
 import * as path from 'path'
 import { KNOWN_STATUS_VALUES, requiresScopeRemaining } from './statusInfo'
-import { tokenize, extractRawSections, type RawSection, type Token } from './tokenizer'
+import { tokenize, extractRawSections, type RawSection, type Token, type HeadingToken } from './tokenizer'
 import { unwrapListItems, unwrapParagraphs, unwrapMarkdownish } from './hardwrap'
 import type {
   AdrFile,
@@ -649,7 +649,8 @@ export function buildSection(
 
   // Build body text (re-join body tokens, preserving blank lines)
   const bodyLines = raw.body.map(t => t.raw);
-  const body = bodyLines.join('\n').trim();
+  const bodyRaw = bodyLines.join('\n');
+  const body = bodyRaw.trim();
 
   const lineEnd = raw.body.length > 0
     ? raw.body[raw.body.length - 1].line
@@ -670,6 +671,8 @@ export function buildSection(
     anchorOverride,
     qstId,
     children,
+    headingRaw: raw.heading.raw,
+    bodyRaw,
   };
 }
 
@@ -1841,6 +1844,17 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   const metadata = extractMetadata(preambleTokens);
   warnings.push(...metadata.warnings);
 
+  // ADR-0039 §2 (round-trip gate, Tier 1): exact raw title line + exact raw
+  // preamble text, undefined when there's no title line to anchor to. The
+  // title token is looked up by line rather than threaded through
+  // extractRawSections' return (which only carries text) — cheap, and
+  // keeps that function's signature untouched for its other callers.
+  const titleToken = titleLine !== undefined
+    ? tokens.find((t): t is HeadingToken => t.kind === 'heading' && t.line === titleLine)
+    : undefined;
+  const titleRaw = titleToken?.raw;
+  const preambleRaw = titleLine !== undefined ? preambleTokens.map(t => t.raw).join('\n') : undefined;
+
   // Build typed sections
   const slugOccurrences = new Map<string, number>();
   const sections: AdrSection[] = rawSections.map(raw =>
@@ -1898,6 +1912,8 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
     path: filePath,
     number: adrNumber,
     title: title ?? path.basename(filePath, '.md'),
+    titleRaw,
+    preambleRaw,
     isSeed,
     date: metadata.date,
     iteration: metadata.iteration,
