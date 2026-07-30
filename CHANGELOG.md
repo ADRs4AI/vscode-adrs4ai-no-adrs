@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.50] - 2026-07-30
+
+### Added
+- **Report button** (off by default — `adrManager.reportButton.enabled`): a frictionless way to flag a problem without leaving the Open Questions panel. Type a note, and the current ADR's full content, a checksum, and your note are saved to the project's error ledger — your in-progress answer is never touched.
+
+### Fixed
+- **Tour mode now advances past a question you just answered**, instead of staying put until a background refresh happened to remove it. This used to happen "for free" as a side effect of answered questions vanishing from the walk — doctrine 9 (v0.7.43) deliberately keeps every entry visible as a review stop, which stopped the side effect along with it; restored explicitly.
+- **The forward button reads "Next" instead of "Skip"** once you've already answered the question in front of you — "Skip" read as dishonest on something you'd just settled.
+
 ## [0.7.49] - 2026-07-29
 
 ### Added
