@@ -238,7 +238,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('adrManager.showVersion', () => {
-      vscode.window.showInformationMessage(`ADR Manager v${runningVersion}`);
+      // 2026-07-30 (live founder-blocked report: report button absent after
+      // reload+setting in a companion workspace): this project has a
+      // documented recurring failure mode — code verified fixed in source,
+      // still broken live, because the INSTALLED extension predates the
+      // fix. context.extension.packageJSON.version (below, via
+      // runningVersion) is read from the actually-running manifest, not
+      // this source tree, so it's the fast, reliable way to rule staleness
+      // in or out without needing a remote debugging session. Report a
+      // couple of currently-suspect resolved settings alongside it so a
+      // "toggled it, still nothing" report can self-diagnose scope/staleness.
+      const cfg = vscode.workspace.getConfiguration('adrManager');
+      const reportButtonEnabled = cfg.get<boolean>('reportButton.enabled', false);
+      vscode.window.showInformationMessage(
+        `ADR Manager v${runningVersion} — adrManager.reportButton.enabled resolves to ${reportButtonEnabled}`,
+      );
       outputChannel.show();
     }),
 

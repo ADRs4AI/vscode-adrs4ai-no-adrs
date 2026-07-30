@@ -74,3 +74,24 @@ describe('extension.ts: TOUR_UNRESOLVED_REFS Problems diagnostic', () => {
     expect(matches?.length).toBe(3)
   })
 })
+
+// 2026-07-30 (live founder-blocked report: report button absent in a
+// companion workspace after reload+setting): this project's own recurring
+// failure mode is "verified fixed in source, still broken live" because the
+// INSTALLED extension predates the fix. Show Version already reads the
+// truly-running manifest (context.extension.packageJSON.version, not this
+// source tree), so it's the fast way to rule staleness in or out; it now
+// also reports a live-resolved setting value for exactly this debugging case.
+describe('extension.ts: ADR Manager: Show Version self-diagnoses staleness/scoping', () => {
+  it('reports the setting resolved from the live vscode.workspace.getConfiguration, not a cached value', () => {
+    const cmd = EXT_SRC.match(/registerCommand\('adrManager\.showVersion', \(\) => \{[\s\S]*?\}\),/)
+    expect(cmd).toBeTruthy()
+    expect(cmd![0]).toContain("vscode.workspace.getConfiguration('adrManager')")
+    expect(cmd![0]).toContain("cfg.get<boolean>('reportButton.enabled', false)")
+    expect(cmd![0]).toContain('reportButtonEnabled')
+  })
+
+  it('still reports the true running version from the extension manifest, not this source tree', () => {
+    expect(EXT_SRC).toContain("const runningVersion: string = context.extension.packageJSON.version ?? 'unknown';")
+  })
+})
