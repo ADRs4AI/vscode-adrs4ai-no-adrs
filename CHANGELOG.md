@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.54] - 2026-07-30
+
+### Fixed
+- **Dash-bullet ANS fields are markers, not question text**: `- **ANS**: (by Name) [unanswered]` — the whole-bullet-list QST dialect (real system3 specimen, three questions) — now parses as the ANS marker + byline + placeholder it is, instead of rendering inside the question body with its placeholder showing. Bold dash-bullet recommendations (`- **Recommendation** (author): …`) likewise now extract with their attribution. A `NONCANONICAL_ANS_MARKER` hint suggests the standalone canonical form; writes canonicalize automatically.
+- **Unrelated trailing paragraphs are no longer swallowed into an unfilled answer** (Flint's fix): `**ANS:**` + `[Fill this in]` followed by an unrelated bold-key paragraph (no separator) kept the question unanswered and the paragraph out of the answer box — closing the duplicate-on-submit trap from the 2026-07-29 report.
+
 ## [0.7.53] - 2026-07-30
 
 ### Added
