@@ -144,6 +144,20 @@ export function tokenize(source: string): Token[] {
   return tokens;
 }
 
+/**
+ * Tier 0 of the round-trip gate (ADR-0039 §2): tokenize() never drops or
+ * mutates a byte — every line's exact text survives in `Token.raw` — so
+ * rejoining every token's raw text reconstructs the original source
+ * exactly. This is the whole implementation; verified byte-for-byte
+ * against all real ADRs in this repo (src/test/tokenizerRoundTrip.test.ts)
+ * as the CI gate that keeps it true. Any future tokenizer change that
+ * normalizes, trims, or drops a raw line breaks this — on purpose, so it's
+ * caught same-day rather than discovered downstream in a lossy `body` field.
+ */
+export function serialize(tokens: Token[]): string {
+  return tokens.map(t => t.raw).join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Utility: group tokens into sections by heading level
 // ---------------------------------------------------------------------------

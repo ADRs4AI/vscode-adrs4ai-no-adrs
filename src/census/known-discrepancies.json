@@ -88,6 +88,21 @@
       "kind": "orphan_signal",
       "line": 47,
       "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 449,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 453,
+      "signalKind": "S3"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 454,
+      "signalKind": "S4"
     }
   ],
   "0033-whats-new-on-update-surface.md": [
