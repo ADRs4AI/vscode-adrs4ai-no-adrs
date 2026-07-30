@@ -62,4 +62,27 @@ describe('summarizeCommittedArtifacts', () => {
     const summary = summarizeCommittedArtifacts(['C:\\repo\\docs\\adr\\.working\\drafts.json'])
     expect(summary).toBe('draft state')
   })
+
+  // Lapidary's 2026-07-30 founder-escalation dispatch: errors.jsonl used to
+  // fall under the same generic "draft state" label as drafts.json — a
+  // harvested error record isn't a draft answer. Split into its own class.
+  describe('error ledger (errors.jsonl), split from draft state', () => {
+    it('errors.jsonl reports "error ledger", not "draft state"', () => {
+      const summary = summarizeCommittedArtifacts(['/repo/docs/adr/.working/errors.jsonl'])
+      expect(summary).toBe('error ledger')
+    })
+
+    it('drafts.json and errors.jsonl together report both classes, error ledger first', () => {
+      const summary = summarizeCommittedArtifacts([
+        '/repo/docs/adr/.working/drafts.json',
+        '/repo/docs/adr/.working/errors.jsonl',
+      ])
+      expect(summary).toBe('error ledger, draft state')
+    })
+
+    it('any other file under .working/ (not errors.jsonl) stays draft state', () => {
+      const summary = summarizeCommittedArtifacts(['/repo/docs/adr/.working/drafts.json.bak'])
+      expect(summary).toBe('draft state')
+    })
+  })
 })

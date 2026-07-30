@@ -25,8 +25,19 @@ function basename(filePath: string): string {
   return segments[segments.length - 1] ?? ''
 }
 
+/**
+ * Lapidary's 2026-07-30 founder-escalation dispatch ("the commit sweeps
+ * .working/ state it already knows — drafts AND errors.jsonl — needs to be
+ * more regular"): errors.jsonl used to fall under the same generic "draft
+ * state" label as drafts.json, which reads as a mislabel — a harvested
+ * error record is not a draft answer. Split into its own class.
+ */
+function isErrorLedgerFile(filePath: string): boolean {
+  return pathSegments(filePath).includes('.working') && basename(filePath) === 'errors.jsonl'
+}
+
 function isDraftStateFile(filePath: string): boolean {
-  return pathSegments(filePath).includes('.working')
+  return pathSegments(filePath).includes('.working') && !isErrorLedgerFile(filePath)
 }
 
 function isSeedFile(filePath: string): boolean {
@@ -51,6 +62,7 @@ const pluralize = (count: number, singular: string, plural = singular + 's'): st
   `${count} ${count === 1 ? singular : plural}`
 
 const ARTIFACT_CLASSES: ArtifactClassDef[] = [
+  { id: 'error-ledger', test: isErrorLedgerFile, label: () => 'error ledger' },
   { id: 'draft', test: isDraftStateFile, label: () => 'draft state' },
   { id: 'seed', test: isSeedFile, label: n => pluralize(n, 'seed') },
   { id: 'adr', test: isAdrFile, label: n => pluralize(n, 'ADR') },

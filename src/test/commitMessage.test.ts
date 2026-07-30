@@ -76,6 +76,35 @@ describe('composeCommitMessage (pure core)', () => {
       expect(msg).toBe('docs: human feedback on ADRs 0007 + 2 seeds')
     })
   })
+
+  // Lapidary's 2026-07-30 founder-escalation dispatch: "the commit sweeps
+  // .working/ state it already knows — drafts AND errors.jsonl — needs to
+  // be more regular." The scan already picks these up (they're inside the
+  // ADR-dir prefix); the gap was the MESSAGE — a commit of ONLY
+  // working-state files fell through both classifiers uncounted and landed
+  // on the generic "docs: update ADRs" fallback.
+  describe('working-state-only changesets (drafts.json / errors.jsonl)', () => {
+    it('drafts.json only: "docs: sync draft answers"', () => {
+      expect(composeCommitMessage([], [], { drafts: true, errorLedger: false })).toBe('docs: sync draft answers')
+    })
+
+    it('errors.jsonl only: "docs: sync error ledger"', () => {
+      expect(composeCommitMessage([], [], { drafts: false, errorLedger: true })).toBe('docs: sync error ledger')
+    })
+
+    it('both: "docs: sync draft answers + error ledger"', () => {
+      expect(composeCommitMessage([], [], { drafts: true, errorLedger: true })).toBe('docs: sync draft answers + error ledger')
+    })
+
+    it('no working state and nothing else: unchanged generic fallback', () => {
+      expect(composeCommitMessage([], [], { drafts: false, errorLedger: false })).toBe('docs: update ADRs')
+    })
+
+    it('mixed with real ADR/seed changes: working state is unremarkable, doesn\'t change the message', () => {
+      const msg = composeCommitMessage([7], [], { drafts: true, errorLedger: true })
+      expect(msg).toBe('docs: human feedback on ADRs 0007')
+    })
+  })
 })
 
 describe('buildAdrCommitMessage (fs-reading wrapper)', () => {
@@ -146,5 +175,18 @@ describe('buildAdrCommitMessage (fs-reading wrapper)', () => {
       { path: '/nonexistent/seed-does-not-exist.md' },
     ])
     expect(msg).toBe('docs: human feedback on ADRs 0002')
+  })
+
+  it('recognizes .working/drafts.json and .working/errors.jsonl by real path shape, without needing to read them', () => {
+    const msg = buildAdrCommitMessage([
+      { path: '/repo/docs/adr/.working/drafts.json' },
+      { path: '/repo/docs/adr/.working/errors.jsonl' },
+    ])
+    expect(msg).toBe('docs: sync draft answers + error ledger')
+  })
+
+  it('drafts-archive.json also counts as draft state', () => {
+    const msg = buildAdrCommitMessage([{ path: '/repo/docs/adr/.working/drafts-archive.json' }])
+    expect(msg).toBe('docs: sync draft answers')
   })
 })

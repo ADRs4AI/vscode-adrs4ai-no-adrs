@@ -21,6 +21,21 @@ import { extractAdrNumber } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
 import { isSeedBasename } from '../index/fileGuards'
 
+/** Lapidary's 2026-07-30 founder-escalation dispatch: the sweep already picks up .working/drafts.json and .working/errors.jsonl (they fall inside the ADR-dir prefix the scan already uses) — "needs to be more regular" meant the MESSAGE, not the scan: a commit of ONLY working-state files fell through both the ADR and seed classifiers uncounted, landing on the generic "docs: update ADRs" fallback regardless of what actually changed. */
+export interface WorkingStateInfo {
+  drafts: boolean
+  errorLedger: boolean
+}
+
+function workingStateKind(filePath: string): 'drafts' | 'errorLedger' | null {
+  const posix = filePath.replace(/\\/g, '/')
+  if (!posix.includes('/.working/')) return null
+  const base = posix.split('/').pop() ?? ''
+  if (base === 'errors.jsonl') return 'errorLedger'
+  if (base === 'drafts.json' || base === 'drafts-archive.json') return 'drafts'
+  return null
+}
+
 export interface ChangedFile {
   path: string
   /**
@@ -48,12 +63,20 @@ function seedFragment(seed: SeedCommitInfo): string {
 const pluralize = (n: number, singular: string, plural = singular + 's'): string =>
   n === 1 ? `one ${singular}` : `${n} ${plural}`
 
-/** Pure composer — given already-extracted ADR numbers and seed info, builds the pre-filled commit message. Jérémie's vocabulary throughout (seed-2026-07-29). */
-export function composeCommitMessage(adrNumbers: number[], seeds: SeedCommitInfo[]): string {
+/** Pure composer — given already-extracted ADR numbers and seed info, builds the pre-filled commit message. Jérémie's vocabulary throughout (seed-2026-07-29). `workingState` only shapes the message when there are NEITHER ADRs nor seeds — mixed with real content changes, drafts/error-ledger housekeeping is unremarkable and doesn't need its own mention. */
+export function composeCommitMessage(adrNumbers: number[], seeds: SeedCommitInfo[], workingState?: WorkingStateInfo): string {
   const numbers = [...new Set(adrNumbers.filter(n => n > 0))].sort((a, b) => a - b)
   const adrList = numbers.map(n => String(n).padStart(4, '0')).join(', ')
 
-  if (numbers.length === 0 && seeds.length === 0) return 'docs: update ADRs'
+  if (numbers.length === 0 && seeds.length === 0) {
+    if (workingState?.drafts || workingState?.errorLedger) {
+      const parts: string[] = []
+      if (workingState.drafts) parts.push('draft answers')
+      if (workingState.errorLedger) parts.push('error ledger')
+      return `docs: sync ${parts.join(' + ')}`
+    }
+    return 'docs: update ADRs'
+  }
 
   if (numbers.length === 0) {
     // Seed-only changeset: use the topic-specific vocabulary for exactly
@@ -77,8 +100,13 @@ export function composeCommitMessage(adrNumbers: number[], seeds: SeedCommitInfo
 export function buildAdrCommitMessage(changes: ChangedFile[]): string {
   const adrNumbers: number[] = []
   const seeds: SeedCommitInfo[] = []
+  const workingState: WorkingStateInfo = { drafts: false, errorLedger: false }
 
   for (const change of changes) {
+    const kind = workingStateKind(change.path)
+    if (kind === 'drafts') { workingState.drafts = true; continue }
+    if (kind === 'errorLedger') { workingState.errorLedger = true; continue }
+
     const base = change.path.replace(/\\/g, '/').split('/').pop() ?? ''
     if (isSeedBasename(base)) {
       let content: string
@@ -95,5 +123,5 @@ export function buildAdrCommitMessage(changes: ChangedFile[]): string {
     if (n > 0) adrNumbers.push(n)
   }
 
-  return composeCommitMessage(adrNumbers, seeds)
+  return composeCommitMessage(adrNumbers, seeds, workingState)
 }
