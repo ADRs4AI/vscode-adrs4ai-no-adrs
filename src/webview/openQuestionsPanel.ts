@@ -2561,6 +2561,11 @@ function render() {
   pendingInsertionConfirm = null;
   $id('btn-ans').disabled = false;
   $id('btn-back').disabled = idx === 0;
+  // Bug fix (Facet's live report, 2026-07-28 inbox 2253): "Skip" reads as
+  // dishonest on a question you've already answered — you're not skipping
+  // it, you're moving on from something already settled. isReviewStop
+  // already exists on the row per doctrine 9.
+  $id('btn-skip').textContent = q.isReviewStop ? 'Next' : 'Skip';
   $id('err').style.display = 'none';
   if (isNewQuestion && !q.isReviewStop) setTimeout(() => $id('ans').focus(), 50);
 }
@@ -2636,12 +2641,29 @@ window.addEventListener('message', e => {
     render();
   }
   if (msg.type === 'answered') {
-    // Regression fix (2026-03-12): do NOT advance idx here.
-    // The 'questions' refresh (triggered by file-save) already removes the
-    // answered question and re-renders with the correct next idx.
-    // Advancing here caused a double-move: answering second-to-last would
-    // show the last question (correct), then wrap back to index 0 (wrong).
-    // One owner of idx: the 'questions' handler. See ADR-0010.
+    // Regression fix (2026-03-12): do NOT advance idx here for the
+    // ORDINARY walk. The 'questions' refresh (triggered by file-save)
+    // already removes the answered question and re-renders with the
+    // correct next idx. Advancing here caused a double-move: answering
+    // second-to-last would show the last question (correct), then wrap
+    // back to index 0 (wrong). One owner of idx: the 'questions' handler.
+    // See ADR-0010.
+    //
+    // Bug fix (Facet's live report, 2026-07-28 inbox 2253, Jérémie's own
+    // words): that non-advance rule was never really "one owner of idx" as
+    // a designed feature — in the ordinary walk, answering a question makes
+    // it VANISH from the next push (buildAllQuestions filters to open only),
+    // so idx staying put and the array shrinking underneath it is what
+    // LOOKED like auto-advance. Doctrine 9 (tour mode) keeps every entry,
+    // answered or not, so that array never shrinks — the emergent advance
+    // silently stopped happening as a side effect of doctrine 9 doing
+    // exactly what it was designed to do. Restoring the user-visible EFFECT
+    // here, explicitly, only for tour mode (the ordinary walk's own
+    // mechanism is untouched and still correct on its own).
+    if (activeTour && questions.length > 0) {
+      idx = (idx + 1) % questions.length;
+      render();
+    }
     $id('flash').style.display = 'flex';
     $id('btn-ans').disabled = false;
     setTimeout(() => { $id('flash').style.display = 'none'; }, 900);

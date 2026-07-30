@@ -883,6 +883,57 @@ describe('Tour-mode skin (ADR-0034)', () => {
       h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
       expect(h.element('draft-restored').style.display).toBe('none')
     })
+
+    // Regression (Facet, 2026-07-28 inbox 2253, Jérémie's own words): "Skip"
+    // reads as dishonest on a question you've just answered or landed on
+    // already-answered — you're not skipping it, you've already answered it.
+    it('the forward button reads "Next" on a review stop, "Skip" on a still-open question', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
+      expect(h.element('btn-skip').textContent).toBe('Next')
+
+      h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: TOUR })
+      expect(h.element('btn-skip').textContent).toBe('Skip')
+    })
+
+    // Regression (Facet, 2026-07-28 inbox 2253): doctrine 9 keeps every tour
+    // entry (answered or not), so the array never shrinks after answering —
+    // the ordinary walk's implicit "auto-advance" (really just idx sitting
+    // still while the array shrinks underneath it) silently stopped
+    // happening as a side effect. Restored explicitly, tour-mode only — the
+    // ordinary (non-tour) walk's own untouched mechanism is covered by the
+    // "Regression fix (2026-03-12): do NOT advance idx" tests elsewhere.
+    it('answering in tour mode advances to the next entry, without waiting for a background "questions" push', () => {
+      const h = createWebviewHarness()
+      const open2 = { ...Q1, id: 'q2', draftKey: 'key-2' }
+      const open3 = { ...Q1, id: 'q3', draftKey: 'key-3' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [open2, open3], tour: TOUR })
+      expect(h.element('counter').textContent).toContain('Stop 1 of 2')
+
+      h.postToWebview({ type: 'answered', questionId: 'q2' })
+      expect(h.element('counter').textContent).toContain('Stop 2 of 2')
+    })
+
+    it('answering the LAST entry in tour mode wraps back to the first, same convention as Skip', () => {
+      const h = createWebviewHarness()
+      const open2 = { ...Q1, id: 'q2', draftKey: 'key-2' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered, open2], tour: TOUR })
+      h.click('btn-skip') // move onto the last entry (open2)
+      expect(h.element('counter').textContent).toContain('Stop 2 of 2')
+
+      h.postToWebview({ type: 'answered', questionId: 'q2' })
+      expect(h.element('counter').textContent).toContain('Stop 1 of 2')
+    })
+
+    it('answering outside tour mode does NOT advance idx here — that stays the "questions" push\'s job (ADR-0010)', () => {
+      const h = createWebviewHarness()
+      const open2 = { ...Q1, id: 'q2', draftKey: 'key-2' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1, open2], tour: null })
+      expect(h.element('counter').textContent).toBe('Question 1 of 2')
+
+      h.postToWebview({ type: 'answered', questionId: 'q1' })
+      expect(h.element('counter').textContent).toBe('Question 1 of 2')
+    })
   })
 
   // Regression tests (Facet's live click-through report, 2026-07-26 inbox
