@@ -907,7 +907,13 @@ const AI_AUTHOR_RE = /sonnet|opus|haiku|claude|gpt|gemini|llama|mistral|fable/i;
 // RECOMMENDATION_RE nor any other field regex, so it fell through to raw
 // prose: unstyled, unattributed (a real DMA/§1 attribution loss, not just a
 // cosmetic one), and absent from `recommendations[]` entirely.
-const RECOMMENDATION_BULLET_RE = /^-\s+Recommendation(?:\s*\(([^)]+)\))?:\s*(.*)/i;
+// Bold tolerance added 2026-07-30 (system3 etude ADR-0056 ×3, same live
+// report as the dash-bullet ANS): "- **Recommendation** (builder-47): **B**
+// — …" — the bullet form with the keyword bolded, which the un-bolded
+// original never matched, so the whole recommendation rendered as question
+// body text. Colon stays REQUIRED (an optional colon would false-positive
+// on prose like "- Recommendation for later…"); group indices unchanged.
+const RECOMMENDATION_BULLET_RE = /^-\s+(?:\*\*)?Recommendation(?:\*\*)?(?:\s*\(([^)]+)\))?\s*:\s*(.*)/i;
 
 // ADR-0012: the canonical placeholder — tolerated silently, no diagnostic.
 // "out" variant added 2026-07-26: Jérémie SAYS "fill this out" (his 07-25
@@ -980,8 +986,24 @@ export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pe
  * becoming really almost omnipresent" (2026-07-26). These exports ARE the
  * recognition; the scan may not re-derive it.
  */
+/**
+ * Strip a leading list-bullet from an ANS marker line — the dash-bullet ANS
+ * dialect ("- **ANS**: (by Jérémie) [unanswered]", system3 etude ADR-0056
+ * ×3, Jérémie's frustrated live report 2026-07-30: the whole field rendered
+ * INSIDE the question text because every ANS regex is line-start anchored).
+ * Models writing QST blocks as uniform bullet lists put ANS on a bullet
+ * like every sibling field — same interpolation pressure as the dash-bullet
+ * Recommendation form (recognized since v0.7.9). Scoped to bold ANS forms
+ * only; a plain-prose list item starting "- ANS..." stays content.
+ */
+function debulletAnsLine(line: string): string {
+  const m = line.match(/^-\s+(?=\*\*ANS)/);
+  return m ? line.slice(m[0].length) : line;
+}
+
 export function isAnsMarkerLine(line: string): boolean {
-  return ANS_INLINE_RE.test(line) || ANS_COLON_OUTSIDE_RE.test(line);
+  const l = debulletAnsLine(line);
+  return ANS_INLINE_RE.test(l) || ANS_COLON_OUTSIDE_RE.test(l);
 }
 
 /** Whole-content placeholder test — same composition finalizeAnswerLayer uses. */
@@ -1021,6 +1043,20 @@ export function stripPlaceholderWrapper(text: string): { inner: string; wrapped:
     }
   }
   return { inner: s, wrapped };
+}
+
+/**
+ * Is `text` recognizable as nothing but a stock placeholder token — the
+ * same three-way test `finalizeAnswerLayer()` uses to decide isAnswered,
+ * extracted so the answer-collection loop can ask the SAME question
+ * mid-collection (see the bold-key stop-check below) rather than growing
+ * a second, drifting copy.
+ */
+function isPlaceholderOnly(text: string): boolean {
+  if (PLACEHOLDER_CANONICAL_RE.test(text)) return true;
+  if (PLACEHOLDER_SYNONYM_RE.test(text) || PLACEHOLDER_EMPTY_RE.test(text)) return true;
+  const stripped = stripPlaceholderWrapper(text);
+  return stripped.wrapped && PLACEHOLDER_LEXICON_RE.test(stripped.inner);
 }
 
 function inferAuthorFromDeciders(deciders: string[]): string | undefined {
@@ -1242,12 +1278,32 @@ export function extractQuestion(
       // A new ANS marker or a Recommendation marker ends the current layer
       // (an attributed block ends at the next attributed block — the same
       // rule recommendations follow). Anything else belongs to the layer.
-      if (ANS_INLINE_RE.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
+      if (isAnsMarkerLine(line)) {
         finalizeAnswerLayer();
         inAnswer = false; // fall through to the ANS-start handler below
       } else if (RECOMMENDATION_RE.test(line) || RECOMMENDATION_BULLET_RE.test(line)) {
         finalizeAnswerLayer();
         inAnswer = false; // fall through — the rec handlers below take it
+      } else if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && isPlaceholderOnly(answerLines.join('\n').trim())) {
+        // Jérémie's report, 2026-07-29 (seed-2026-07-29-issue-parsing-text-
+        // after-ans-placeholder-of-qsts.md): "**ANS:**\n[Fill this in]"
+        // directly followed (blank line only — no "---", no next heading)
+        // by an unrelated bold-key paragraph ("**ADR mapping**: ...") got
+        // swallowed whole into answer.text, defeating the whole-content-
+        // anchored placeholder check (it's no longer JUST the placeholder)
+        // — the panel then showed the placeholder plus that unrelated text
+        // as "the current answer," which Jérémie felt he had to preserve,
+        // producing a duplicate on submit. Once everything collected so
+        // far is recognizably nothing but a placeholder, a new bold-key
+        // field is never a continuation of it — mirrors the identical
+        // stop-check recommendations already have (ADR-0010), scoped to
+        // the placeholder case only: a REAL in-progress answer can
+        // legitimately contain a line shaped like "**Note**: ..." as its
+        // own prose, so this must not fire once real content has started.
+        finalizeAnswerLayer();
+        inAnswer = false;
+        // fall through — this line belongs to whatever surrounds the QST,
+        // not to this answer.
       } else {
         answerLines.push(lines[i]);
         continue;
@@ -1417,7 +1473,7 @@ export function extractQuestion(
       if (!recSpansParagraphs && /^\*\*[A-Z][^*]+\*\*:/.test(line) && !ANS_INLINE_RE.test(line) && !/^\*\*My recommendation\*\*:/.test(line)) {
         inRecommendation = false; pastRecommendation = true;
         /* fall through — process this line normally */
-      } else if (ANS_INLINE_RE.test(line) || ANS_COLON_OUTSIDE_RE.test(line)) {
+      } else if (isAnsMarkerLine(line)) {
         // The colon-outside-bold ANS form ("**ANS** (by X): text") has no
         // "**:" immediately after the bold span, so the bold-key check above
         // never fires for it either — without this explicit check it fell
@@ -1430,8 +1486,12 @@ export function extractQuestion(
       }
     }
 
-    const ansMatch = line.match(ANS_INLINE_RE);
-    const ansColonOutsideMatch = ansMatch ? null : line.match(ANS_COLON_OUTSIDE_RE);
+    // Dash-bullet ANS dialect (system3 etude ADR-0056): recognize the same
+    // marker grammar with a leading "- " stripped; the bullet is recorded
+    // via a diagnostic below, and writes canonicalize to the standalone form.
+    const ansLine = debulletAnsLine(line);
+    const ansMatch = ansLine.match(ANS_INLINE_RE);
+    const ansColonOutsideMatch = ansMatch ? null : ansLine.match(ANS_COLON_OUTSIDE_RE);
     if (ansMatch || ansColonOutsideMatch) {
       inAnswer = true;
       const matched = ansMatch ?? ansColonOutsideMatch!;
@@ -1445,7 +1505,14 @@ export function extractQuestion(
       answerLine = absLine;
       // Collect any text on the same line after the ANS marker
       const markerRe = ansMatch ? ANS_INLINE_RE : ANS_COLON_OUTSIDE_RE;
-      let afterMarker = line.replace(markerRe, '').trim();
+      let afterMarker = ansLine.replace(markerRe, '').trim();
+      if (ansLine !== line && warnings) {
+        warnings.push({
+          code: 'NONCANONICAL_ANS_MARKER',
+          message: `ANS marker written as a dash-bullet field ("- **ANS**…"). Recognized anyway — no data lost — but the canonical form is a standalone "**ANS:** (by Name)" line, which is also what the panel writes back. SUGGESTED: drop the leading "- ".`,
+          line: absLine,
+        });
+      }
       // Post-colon byline on the colon-outside form (Jérémie's own hand-form,
       // 2026-07-25/26, ADR-0036 live specimen): "**ANS**: (by Jérémie)" — the
       // colon lands right after the bold, so COLON_OUTSIDE's attribution

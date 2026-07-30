@@ -203,5 +203,17 @@
       "line": 734,
       "signalKind": "S4"
     }
+  ],
+  "seed-2026-07-29-issue-parsing-text-after-ans-placeholder-of-qsts.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 27,
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 36,
+      "signalKind": "S4"
+    }
   ]
 }

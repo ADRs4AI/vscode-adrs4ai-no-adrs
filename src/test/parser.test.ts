@@ -4147,11 +4147,121 @@ describe("Regression tests: byline scaffold — '(Jérémie Lumbroso)' as an ANS
 
   it('a multi-line parenthesized paragraph is NOT a scaffold — single-line whole-content anchoring only', () => {
     const doc = [
-      '## Open Questions', '', '### QST: Q?', '', 
+      '## Open Questions', '', '### QST: Q?', '',
       '**ANS:** (by X)', '(This whole answer is an aside', 'spanning two lines.)', '',
     ].join('\n')
     const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
     expect(q.answer?.text).toContain('spanning two lines.')
     expect(q.isAnswered).toBe(true)
+  })
+})
+
+describe('Regression tests: unrelated bold-key paragraph swallowed after an unfilled placeholder (Jérémie live report, 2026-07-29)', () => {
+  // seed-2026-07-29-issue-parsing-text-after-ans-placeholder-of-qsts.md:
+  // the LAST question in a seed's "## Thread" section had "**ANS:**
+  // [Fill this in]" directly followed (blank line only — no "---", no next
+  // heading) by an unrelated bold-key paragraph ("**ADR mapping**: ...")
+  // that belonged to the whole thread, not this question. The whole-
+  // content-anchored placeholder check requires the ENTIRE answer text to
+  // be JUST the placeholder, so once the ADR-mapping paragraph got
+  // swallowed into answerLines, "[Fill this in]\n\n**ADR mapping**: ..."
+  // failed the anchor and the question read as if it had real (garbage)
+  // answer content. The Open Questions panel then showed that garbage in
+  // the edit box; Jérémie assumed he had to preserve it, retyped it below
+  // his real answer, and the file ended up with it duplicated on submit —
+  // real user impact ("I thought I had to hold that text"), not data loss.
+  it('"**ANS:** [Fill this in]" followed by an unrelated "**Bold Key**:" paragraph (no separator) stays unanswered, and the paragraph is NOT swallowed into the answer', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST-COMMITPROVENANCE: Should commits cite the tour?',
+      '- Status: unanswered', '',
+      '**ANS:** (by Jérémie)', '[Fill this in]', '',
+      '**ADR mapping**: A (commit surface) → small NEW ADR. All dispatched as above.', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    const q = adr.questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+    // The unrelated paragraph still exists in the parse output somewhere
+    // (never silently dropped) — it just isn't part of THIS question's
+    // answer. (Calibration, Riddle 5: the exposed field on Question output
+    // is `rawBody`; pre/post are assembly internals.)
+    expect(q.rawBody).toContain('ADR mapping')
+  })
+
+  it('does not fire once real content has already started — a genuine answer may legitimately contain a "**Note**:"-shaped line of its own prose', () => {
+    // (Calibration, Riddle 5: the original doc declared "- Status:
+    // unanswered", which under Status-authority forces isAnswered false
+    // REGARDLESS of content — the very assertion this test wanted to make
+    // was unmakeable in that doc. No declared Status → derived from the
+    // real answer content, which is what the stop-check guard protects.)
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '',
+      '**ANS:** (by Jérémie)', 'A real answer that happens to continue with a note.', '',
+      '**Note**: this is part of the same answer, not a new field.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.answer?.text).toContain('A real answer')
+    expect(q.answer?.text).toContain('**Note**: this is part of the same answer')
+  })
+
+  it('a non-canonical placeholder synonym is caught by the same stop-check ("[tbd]" followed by unrelated bold-key prose)', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS:** (by Jérémie)', '[tbd]', '',
+      '**Follow-up**: unrelated trailing note from the batch.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+  })
+})
+
+describe('Regression tests: dash-bullet ANS + bold dash-bullet Recommendation (system3 etude ADR-0056, Jérémie frustrated report 2026-07-30)', () => {
+  // Real specimen, verbatim shape — every field a uniform bullet, written
+  // by builder-47 (a model): the ANS line and its placeholder rendered
+  // INSIDE the question text in the panel because every ANS regex was
+  // line-start anchored and the "- " prefix defeated them all; the bolded
+  // bullet Recommendation likewise fell through to body text. 24 hours of
+  // compounding founder frustration; the class is the same interpolation
+  // pressure as the v0.7.9 dash-bullet Recommendation, applied to ANS.
+  const SPECIMEN = [
+    '## Questions', '',
+    '### QST: Should we build the reconciliation loop now or defer?',
+    '- Status: **deferred** (2026-07-29 builder-47 recommendation, unless Jérémie overrides)',
+    '- Options: (A) build now · (B) defer to a follow-up ADR',
+    '- **Recommendation** (builder-47): **B** — the retraction is urgent, the reconciliation loop is not.',
+    '- **ANS**: (by Jérémie) [unanswered]',
+    '',
+    '### QST: Runtime for the fetch script?',
+    '- Status: **unanswered**',
+  ].join('\n')
+
+  it('the dash-bullet ANS is a marker, its [unanswered] placeholder classifies, and the question stays OPEN with an empty box', () => {
+    const q = parseAdr(SPECIMEN, '/fake/docs/adr/0056-x.md').questions[0]
+    expect(q.isAnswered).toBe(false) // declared deferred = open (ADR-0036 grid)
+    expect(q.answer).toBeUndefined() // placeholder, never prefill noise
+    // The ANS line must NOT appear inside the question body anymore.
+    expect(q.rawBody ?? '').not.toContain('**ANS**')
+    expect(q.rawBody ?? '').not.toContain('[unanswered]')
+  })
+
+  it('the bold dash-bullet Recommendation is a recommendation with its attribution, not body text', () => {
+    const q = parseAdr(SPECIMEN, '/fake/docs/adr/0056-x.md').questions[0]
+    expect(q.recommendations?.length).toBe(1)
+    expect(q.recommendations![0].author).toBe('builder-47')
+    expect(q.recommendations![0].text).toContain('the retraction is urgent')
+    expect(q.rawBody ?? '').not.toContain('retraction is urgent')
+  })
+
+  it('a plain-prose bullet that merely starts with "- ANS" stays content (bold-scoped debullet)', () => {
+    const doc = [
+      '## Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '- ANS testing showed the endpoint works fine.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.rawBody ?? '').toContain('ANS testing showed')
   })
 })
