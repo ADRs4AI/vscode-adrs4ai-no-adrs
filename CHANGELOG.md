@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.52] - 2026-07-30
+
+### Fixed
+- **The Report button now logs even when you leave the comment blank** — pressing it always marks the moment; the note you type is optional content on top, not a precondition. Previously, submitting with nothing typed was silently treated the same as cancelling.
+
+### Changed
+- **Error-ledger logging is now controlled per writer, not by one shared switch**: `adrManager.logging.panelErrors`, `adrManager.logging.tourUnresolvedRefs`, `adrManager.logging.observations` replace the old `adrManager.logErrors` — each defaults on, each can be turned off independently ("logging costs speed").
+
 ## [0.7.51] - 2026-07-30
 
 ### Added
