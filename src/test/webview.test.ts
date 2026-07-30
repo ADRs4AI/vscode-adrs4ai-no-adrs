@@ -802,6 +802,48 @@ describe('Tour-mode skin (ADR-0034)', () => {
     expect(h.element('tour-entry-info').style.display).toBe('none')
   })
 
+  // ADR-0036 ("Unresolved: Returning the Ball", ratified 2026-07-29): the
+  // panel gesture — "Respond (unresolved)" writes the same ANS layer but
+  // sets Status: unresolved instead of answered, so the ball moves to the
+  // model's court instead of the question closing.
+  describe('ADR-0036: "Respond (unresolved)" panel gesture', () => {
+    it('clicking Respond (unresolved) posts targetStatus: unresolved, the plain Answer button does not', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.typeAnswer('a partial answer')
+      h.click('btn-respond-unresolved')
+      const msg = h.sentMessages.find(m => m.type === 'answer')
+      expect(msg?.targetStatus).toBe('unresolved')
+      expect(msg?.answerText).toBe('a partial answer')
+    })
+
+    it('the plain Answer button omits targetStatus entirely (the ordinary answered gesture, unchanged)', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1] })
+      h.typeAnswer('a full answer')
+      h.click('btn-ans')
+      const msg = h.sentMessages.find(m => m.type === 'answer')
+      expect(msg?.targetStatus).toBeUndefined()
+    })
+
+    it('the button is hidden on a review stop, alongside the rest of the answering machinery', () => {
+      const h = createWebviewHarness()
+      const answered = { ...Q1, isReviewStop: true, finalAnswerText: 'x' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
+      expect(h.element('btn-respond-unresolved').style.display).toBe('none')
+    })
+
+    it("Cmd+Shift+Enter is wired to submit(false, 'unresolved'), checked before the plain Cmd+Enter branch", () => {
+      const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
+      const script = match![1]
+      expect(script).toMatch(/e\.key === 'Enter' && e\.shiftKey\) \{ e\.preventDefault\(\); submit\(false, 'unresolved'\)/)
+    })
+
+    it('the hint line explains the unresolved gesture', () => {
+      expect(PANEL_SRC).toContain('respond and return the partial answer to the model for consideration')
+    })
+  })
+
   // ADR-0034 doctrine 9 (Riddle's ruling, 2026-07-28): a resolved tour
   // entry is a review stop, never silence — buildTourQuestions no longer
   // skips answered entries, and the panel renders the live answer

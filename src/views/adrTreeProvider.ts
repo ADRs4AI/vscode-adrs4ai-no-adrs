@@ -69,6 +69,21 @@ type AdrTreeItemOpts = {
   pathFragment?: string;
 };
 
+/**
+ * ADR-0036: VS Code's TreeItem label has no italic/rich-text support (only
+ * `highlights` for search-match bold ranges), so Jérémie's "italic when
+ * shown in place" suggestion isn't directly buildable against this API —
+ * a `[unresolved]`/`[deferred]` description tag is the achievable
+ * equivalent, same convention this file already uses for `[retired]`/
+ * `[done]` tour tags and ADR status brackets.
+ */
+function statusDescriptionTag(question?: Question): string | null {
+  const status = question?.statusText?.trim().toLowerCase()
+  if (status === 'unresolved') return '[unresolved]'
+  if (status === 'deferred') return '[deferred]'
+  return null
+}
+
 export class AdrTreeItem extends vscode.TreeItem {
   public readonly kind: AdrTreeItemKind;
   public readonly adr?: AdrFile;
@@ -379,8 +394,11 @@ export class AdrTreeItem extends vscode.TreeItem {
       return parts.join(' · ')
     }
     if (opts.kind === 'tour-entry' && opts.entry) {
-      const parts = [opts.entry.disposition ?? null, opts.entry.mustRespond ? null : 'optional'].filter(Boolean)
+      const parts = [opts.entry.disposition ?? null, opts.entry.mustRespond ? null : 'optional', statusDescriptionTag(opts.question)].filter(Boolean)
       return parts.join(' · ')
+    }
+    if (opts.kind === 'question' && opts.question) {
+      return statusDescriptionTag(opts.question) ?? ''
     }
     return ''
   }
@@ -464,6 +482,18 @@ export class AdrTreeItem extends vscode.TreeItem {
       return statusThemeIcon(opts.adr.status, vscode.ThemeIcon, vscode.ThemeColor)
     }
     if ((opts.kind === 'question' || opts.kind === 'tour-entry') && opts.question) {
+      // ADR-0036: unresolved/deferred get their own icon when shown in
+      // place (today's default — no separate tree section built yet, see
+      // this ADR's Fitter completion brief) — distinct from the plain
+      // open/answered question mark, since neither is really "waiting on
+      // the human" the way an ordinary open question is.
+      const status = opts.question.statusText?.trim().toLowerCase()
+      if (status === 'unresolved') {
+        return new vscode.ThemeIcon('debug-pause', new vscode.ThemeColor('charts.purple'))
+      }
+      if (status === 'deferred') {
+        return new vscode.ThemeIcon('history', new vscode.ThemeColor('descriptionForeground'))
+      }
       // Unanswered: bright orange (needs attention)
       // Answered: dimmed (same shape, distinguished by brightness not hue — colorblind-safe)
       const color = opts.question.isAnswered

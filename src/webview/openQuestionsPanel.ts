@@ -140,6 +140,8 @@ type WebviewMessage =
       sourceKind: 'adr' | 'seed'
       /** Insertion-preview protocol (DEBRIEF-006): the human has seen the "insertionPreview" context and approved it — proceed with the append-ANS fallback instead of previewing again. */
       confirmedInsertion?: boolean
+      /** ADR-0036: "Respond (unresolved)" — same ANS layer, but the ball moves to the model's court instead of closing the question. Omitted/'answered' is the ordinary Answer gesture. */
+      targetStatus?: 'answered' | 'unresolved'
     }
   | { type: 'skip' }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
@@ -334,8 +336,27 @@ export class OpenQuestionsPanel {
 
     return questions
       .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
-      .filter(({ q }) => !q.isAnswered)
+      .filter(({ q }) => !q.isAnswered && !this.shouldHideFromPanel(q))
       .map(({ q, ordinal, total }) => this.buildRow(q, ordinal, total, opts))
+  }
+
+  /**
+   * ADR-0036 (ratified hide-allowlist doctrine): hiding a question from the
+   * human's Open Questions panel is a privilege reserved for an enumerated
+   * allowlist of tokens — `answered` hides unconditionally (the `!q.isAnswered`
+   * filter above), `unresolved`/`deferred` join as CONFIGURABLE hiders, each
+   * off by default. Default false matches Jérémie's own live-tested and
+   * explicitly endorsed behavior ("I actually think have an allowlist... is
+   * really smart... it's the right call") — today, before any setting
+   * existed, both already showed; this only adds the OPT-IN to hide them,
+   * never flips the default. Any OTHER/unrecognized status (a typo, an
+   * invented word) always shows — recall-first, no exceptions.
+   */
+  private shouldHideFromPanel(q: Question): boolean {
+    const status = q.statusText?.trim().toLowerCase()
+    if (status === 'unresolved') return vscode.workspace.getConfiguration('adrManager').get<boolean>('unresolved.hideFromPanel', false)
+    if (status === 'deferred') return vscode.workspace.getConfiguration('adrManager').get<boolean>('deferred.hideFromPanel', false)
+    return false
   }
 
   /** The single-question body `buildRows` maps over — factored out so ADR-0034's tour mode can build exactly one row for a resolved entry, without needing a whole container's question list in hand. */
@@ -689,6 +710,8 @@ export class OpenQuestionsPanel {
     force?: boolean
     sourceKind: 'adr' | 'seed'
     confirmedInsertion?: boolean
+    /** ADR-0036: "Respond (unresolved)" writes the same ANS layer but sets Status: unresolved instead of answered — the human has contributed content, but the ball moves to the model's court rather than closing the question. Defaults to 'answered' (the ordinary Answer gesture). */
+    targetStatus?: 'answered' | 'unresolved'
   }): Promise<void> {
     try {
       const uri = vscode.Uri.file(msg.adrPath)
@@ -789,9 +812,11 @@ export class OpenQuestionsPanel {
       const { statusLineIdx, ansHeaderLineIdx, fillLineIdx, blockEndLineIdx, boundaryKind, ansContentEndLineIdx } =
         scanAnswerWriteAnchors(lines, start)
 
-      // 1. Update status → answered
+      // 1. Update status → answered (or, ADR-0036, unresolved — the human
+      // has contributed content but the ball moves to the model's court)
+      const targetStatus = msg.targetStatus === 'unresolved' ? 'unresolved' : 'answered'
       if (statusLineIdx >= 0) {
-        edit.replace(uri, lineRange(doc, statusLineIdx), '- Status: answered')
+        edit.replace(uri, lineRange(doc, statusLineIdx), `- Status: ${targetStatus}`)
       }
 
       // 2. Update the **ANS:** author line
@@ -1465,6 +1490,19 @@ textarea.expanded{min-height:70vh;height:70vh}
 }
 .btn-answer:hover{background:var(--vscode-button-hoverBackground)}
 .btn-answer:disabled{opacity:.4;cursor:not-allowed}
+/* ADR-0036: a secondary gesture, visually distinct from the closing Answer
+   button — a court handoff, not a settlement. */
+.btn-respond-unresolved{
+  padding:7px 14px;
+  background:transparent;
+  color:var(--vscode-charts-purple,#c586c0);
+  border:1px solid var(--vscode-charts-purple,#c586c0);
+  border-radius:3px;cursor:pointer;
+  font-family:var(--vscode-font-family);font-size:13px;
+  opacity:.85;
+}
+.btn-respond-unresolved:hover{opacity:1}
+.btn-respond-unresolved:disabled{opacity:.35;cursor:not-allowed}
 .btn-skip{
   padding:7px 14px;
   background:transparent;
@@ -1656,10 +1694,15 @@ textarea.expanded{min-height:70vh;height:70vh}
 
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
   <div class="draft-restored" id="draft-restored" style="display:none"></div>
-  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later</span><a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a></div>
+  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later · Cmd+Shift+Enter: respond and return the partial answer to the model for consideration</span><a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a></div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
+    <!-- ADR-0036 (Riddle's design, ratified 2026-07-29): "Respond
+         (unresolved)" — the human has contributed content but the ball
+         moves to the model's court instead of closing the question.
+         Writes the same ANS layer, sets Status: unresolved. -->
+    <button class="btn-respond-unresolved" id="btn-respond-unresolved" title="Respond and return the partial answer to the model for consideration (Cmd+Shift+Enter)">Respond (unresolved)</button>
     <button class="btn-back" id="btn-back">← Back</button>
     <button class="btn-skip" id="btn-skip">Skip</button>
     <button class="btn-report" id="btn-report" style="display:none" title="Report an observation about this question/ADR — saved for later review, doesn't affect your answer">🚩 Report</button>
@@ -2045,8 +2088,11 @@ $id('author').addEventListener('input', () => {
   vscode.setState(saved);
 });
 
-// Cmd/Ctrl+Enter submits
+// Cmd/Ctrl+Enter submits; Cmd/Ctrl+Shift+Enter submits as "Respond
+// (unresolved)" (ADR-0036, ratified gesture) — checked FIRST since it's a
+// strict superset of the plain Cmd+Enter chord (Shift held too).
 $id('ans').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && e.shiftKey) { e.preventDefault(); submit(false, 'unresolved'); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'e' || e.key === 'E')) { e.preventDefault(); toggleExpandField(); }
 });
@@ -2121,6 +2167,7 @@ $id('draft-restored').addEventListener('click', e => {
 });
 
 $id('btn-ans').addEventListener('click', submit);
+$id('btn-respond-unresolved').addEventListener('click', () => submit(false, 'unresolved'));
 $id('open-in-file').addEventListener('click', e => {
   e.preventDefault();
   if (!questions[idx]) return;
@@ -2262,11 +2309,12 @@ $id('adr-link').addEventListener('click', () => {
   vscode.postMessage({ type: 'jumpTo', adrPath: questions[idx].adrPath, lineNumber: questions[idx].lineStart });
 });
 
-function submit(force) {
+function submit(force, targetStatus) {
   const text = $id('ans').value.trim();
   const author = $id('author').value.trim() || 'Human';
   if (!text || !questions[idx]) return;
   $id('btn-ans').disabled = true;
+  $id('btn-respond-unresolved').disabled = true;
   $id('err').style.display = 'none';
   $id('drift-bar').style.display = 'none';
   $id('insertion-preview-bar').style.display = 'none';
@@ -2276,6 +2324,10 @@ function submit(force) {
     type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart,
     answerText: text, authorName: author, draftKey: q.draftKey, fileChecksum: q.fileChecksum,
     force: !!force, sourceKind: q.sourceKind,
+    // ADR-0036: "Respond (unresolved)" — the human has contributed content
+    // but the ball moves to the model's court instead of closing the
+    // question. Omitted (undefined) is the ordinary Answer gesture.
+    targetStatus: targetStatus === 'unresolved' ? 'unresolved' : undefined,
   });
 }
 
@@ -2321,6 +2373,7 @@ $id('ans').addEventListener('input', () => {
 $id('btn-drift-refresh').addEventListener('click', () => {
   $id('drift-bar').style.display = 'none';
   $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
   vscode.postMessage({ type: 'refreshRequest' });
 });
 $id('btn-drift-write').addEventListener('click', () => {
@@ -2331,6 +2384,7 @@ $id('btn-drift-hold').addEventListener('click', () => {
   // Draft is already auto-saved — nothing further to do. Just dismiss.
   $id('drift-bar').style.display = 'none';
   $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
 });
 
 $id('btn-insertion-confirm').addEventListener('click', () => {
@@ -2345,6 +2399,7 @@ $id('btn-insertion-cancel').addEventListener('click', () => {
   // human keep editing or pick a different path.
   $id('insertion-preview-bar').style.display = 'none';
   $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
   pendingInsertionConfirm = null;
 });
 
@@ -2467,12 +2522,14 @@ function render() {
     $id('ans').style.display = 'none';
     $id('answer-hint').style.display = 'none';
     $id('btn-ans').style.display = 'none';
+    $id('btn-respond-unresolved').style.display = 'none';
   } else {
     $id('review-stop-block').style.display = 'none';
     $id('author-row').style.display = '';
     $id('ans').style.display = '';
     $id('answer-hint').style.display = '';
     $id('btn-ans').style.display = '';
+    $id('btn-respond-unresolved').style.display = '';
   }
 
   // ADR-0023: restore an in-progress draft, if one exists for this question's
@@ -2560,6 +2617,7 @@ function render() {
   $id('insertion-preview-bar').style.display = 'none';
   pendingInsertionConfirm = null;
   $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
   $id('btn-back').disabled = idx === 0;
   // Bug fix (Facet's live report, 2026-07-28 inbox 2253): "Skip" reads as
   // dishonest on a question you've already answered — you're not skipping
@@ -2666,6 +2724,7 @@ window.addEventListener('message', e => {
     }
     $id('flash').style.display = 'flex';
     $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
     setTimeout(() => { $id('flash').style.display = 'none'; }, 900);
     // "Question doesn't advance" hardening (2026-07-12): the panel now
     // advances even when the disk save itself failed (reindex uses buffer
@@ -2691,6 +2750,7 @@ window.addEventListener('message', e => {
   }
   if (msg.type === 'error') {
     $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
     $id('err').style.display = 'block';
     $id('err').textContent = msg.message;
   }
@@ -2699,6 +2759,7 @@ window.addEventListener('message', e => {
     // Never write blind — the draft is already auto-saved, so all three
     // choices here are safe.
     $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
     $id('drift-bar').style.display = 'flex';
   }
   if (msg.type === 'insertionPreview') {
@@ -2707,6 +2768,7 @@ window.addEventListener('message', e => {
     // computed guess, and stopped before writing to show us where. Nothing
     // has been written yet; the draft is safe either way.
     $id('btn-ans').disabled = false;
+  $id('btn-respond-unresolved').disabled = false;
     pendingInsertionConfirm = msg.message;
     const marker = '------ inserting here ------';
     const context = msg.before.join('\\n') + '\\n' + marker + '\\n' + msg.after.join('\\n');
