@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.55] - 2026-07-30
+
+### Fixed
+- **The answering dialog no longer jumps on every autosave**: "Draft saved" shared the button row with the Report button, so its own row shifted every time an autosave fired. It now lives in the hint line above, in the spot the "Expand field" link (moved to its own row, flush right, above the textarea) used to occupy — reserved, dedicated space that nothing else will ever share.
+
+### Changed
+- **The "Answering as:" name field is now hidden by default** (`adrManager.showAuthorshipField`) — the author name is still supplied the same way it always was (`adrManager.humanName` or your git config); this only controls whether the field itself takes up space in the dialog.
+
 ## [0.7.54] - 2026-07-30
 
 ### Fixed
