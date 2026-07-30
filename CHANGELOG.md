@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.49] - 2026-07-29
+
+### Added
+- **Unresolvable tour references now self-harvest** (ADR-0035 Iteration 2): opening a tour with a broken entry appends a full-reconstruction record (the tour's own JSON, every unresolved reference with its reason, and the full text + checksum of every ADR/seed the tour successfully touched) to the project's error ledger, and shows up as one aggregated error in VS Code's Problems panel — visible to a model reading diagnostics without a human having to point it out.
+
 ## [0.7.48] - 2026-07-29
 
 ### Added
