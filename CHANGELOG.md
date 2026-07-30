@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.53] - 2026-07-30
+
+### Added
+- **"ADR Manager: Show Version" now also reports whether the Report button is enabled**, as resolved live from your current settings — a one-command way to tell "the extension needs reinstalling" apart from "the setting isn't reaching this workspace."
+
 ## [0.7.52] - 2026-07-30
 
 ### Fixed
