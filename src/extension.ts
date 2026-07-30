@@ -52,6 +52,7 @@ import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4
 import { D97RecommendationBulletFormHandler } from './normalizer/handlers/d9-7-recommendation-bullet-form'
 import { buildAdrCommitMessage, type ChangedFile } from './commit/commitMessage'
 import { resolveWorkspaceRepository, isNewGitStatus } from './commit/repositoryResolution'
+import { findReferencedUntrackedFiles, type UntrackedReferencesMode } from './commit/untrackedReferences'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 import { generateSeedTemplate } from './creation/seedTemplate'
 
@@ -902,6 +903,8 @@ interface DirtyRoot {
   node: RootNode
   repo: any // eslint-disable-line @typescript-eslint/no-explicit-any -- api/repo come from the untyped vscode.git extension API
   changes: any[] // eslint-disable-line @typescript-eslint/no-explicit-any
+  /** Untracked/new paths ANYWHERE in this root, outside the ADR-dir change set — candidates for the untracked-referenced-files checklist (addition 2, 2026-07-30 founder-escalation dispatch). A screenshot linked from a seed/ADR is untracked and lives outside docs/adr/, so the primary `changes` scan never sees it. */
+  untrackedCandidates: string[]
 }
 
 /**
@@ -936,11 +939,12 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
     const repo = resolveWorkspaceRepository<any>(api, { fsPath: node.path }); // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!repo) continue;
     const adrDirAbs = path.join(node.path, adrDirRel);
-    const changes = [
-      ...repo.state.workingTreeChanges,
-      ...repo.state.indexChanges,
-    ].filter((c: any) => c.uri.fsPath.startsWith(adrDirAbs)); // eslint-disable-line @typescript-eslint/no-explicit-any
-    if (changes.length > 0) dirtyRoots.push({ node, repo, changes });
+    const allChanges: any[] = [...repo.state.workingTreeChanges, ...repo.state.indexChanges]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const changes = allChanges.filter((c: any) => c.uri.fsPath.startsWith(adrDirAbs)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    const untrackedCandidates = allChanges
+      .filter((c: any) => isNewGitStatus(c.status) && !c.uri.fsPath.startsWith(adrDirAbs)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .map((c: any) => c.uri.fsPath as string); // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (changes.length > 0) dirtyRoots.push({ node, repo, changes, untrackedCandidates });
   }
 
   if (dirtyRoots.length === 0) {
@@ -992,6 +996,44 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
   );
 }
 
+/**
+ * Untracked-referenced-files checklist (addition 2, 2026-07-30
+ * founder-escalation dispatch): "before committing, scan untracked files;
+ * for each, search the about-to-commit files for mentions (screenshots
+ * referenced in seeds/ADRs are the motivating case)." A screenshot linked
+ * from a seed/ADR is untracked and lives outside docs/adr/, so it never
+ * appears in `dr.changes` on its own — without this it silently never gets
+ * committed alongside the content that references it. Only ever prompts in
+ * the INTERACTIVE (single-root) path — the batch multi-root commit never
+ * shows a checkbox, to keep "select all, go" one gesture; `ask` behaves as
+ * `auto-ignore` there, `auto-commit` still applies either way.
+ */
+async function resolveUntrackedReferencesToStage(dr: DirtyRoot, interactive: boolean): Promise<string[]> {
+  if (dr.untrackedCandidates.length === 0) return [];
+
+  const mode = vscode.workspace
+    .getConfiguration('adrManager', vscode.Uri.file(dr.node.path))
+    .get<UntrackedReferencesMode>('commit.untrackedReferences', 'ask');
+  if (mode === 'auto-ignore') return [];
+
+  const committedContents: string[] = [];
+  for (const c of dr.changes) {
+    try { committedContents.push(fs.readFileSync(c.uri.fsPath, 'utf8')); } catch { /* unreadable/binary/deleted — nothing to search */ }
+  }
+  const referenced = findReferencedUntrackedFiles(dr.untrackedCandidates, committedContents);
+  if (referenced.length === 0) return [];
+
+  if (mode === 'auto-commit') return referenced;
+
+  // mode === 'ask'
+  if (!interactive) return []; // batch path: never prompts, per the setting's own description
+  const picks = await vscode.window.showQuickPick(
+    referenced.map(p => ({ label: path.basename(p), detail: p, picked: true, filePath: p })),
+    { title: 'Additional references mentioned — commit these?', canPickMany: true },
+  );
+  return picks ? picks.map(p => p.filePath) : [];
+}
+
 /** Commits one root's already-collected changes. `interactive`: show the editable message input box and the single-root confirmation (the existing, unchanged single-root UX); false for the batch multi-root path, which stays silent per-root and reports one aggregate count instead. */
 async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boolean> {
   const changedFiles: ChangedFile[] = dr.changes.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1010,15 +1052,18 @@ async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boole
   }
   if (!message) return false;
 
+  const extraFiles = await resolveUntrackedReferencesToStage(dr, interactive);
+  const allPaths = [...dr.changes.map((c: any) => c.uri.fsPath as string), ...extraFiles]; // eslint-disable-line @typescript-eslint/no-explicit-any
+
   try {
-    await dr.repo.add(dr.changes.map((c: any) => c.uri.fsPath)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    await dr.repo.add(allPaths);
     await dr.repo.commit(message);
 
     if (interactive) {
       // Jérémie's report (2026-07-12): every staged path used to get called
       // an "ADR" in this confirmation, including docs/adr/.working/* draft
       // state — not a decision record. Classify instead of counting blind.
-      const summary = summarizeCommittedArtifacts(dr.changes.map((c: any) => c.uri.fsPath)); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const summary = summarizeCommittedArtifacts(allPaths);
       vscode.window.showInformationMessage(`ADR Manager: Committed ${summary}.`);
     }
     return true;

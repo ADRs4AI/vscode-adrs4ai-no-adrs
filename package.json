@@ -328,6 +328,21 @@
           "default": "workspaceEdit",
           "description": "How MCP write operations modify ADR files. 'workspaceEdit' uses VS Code's undo-safe edit API; 'direct' writes directly to disk."
         },
+        "adrManager.commit.untrackedReferences": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "auto-commit",
+            "auto-ignore"
+          ],
+          "enumDescriptions": [
+            "Before committing, show a pre-checked checklist of untracked files mentioned in what you're about to commit (a screenshot linked from a seed/ADR is the motivating case) — confirm which to include.",
+            "Silently include every mentioned untracked file, no prompt.",
+            "Never include mentioned untracked files automatically — commit them yourself when you want to."
+          ],
+          "default": "ask",
+          "description": "ADR Commit: what to do about untracked files mentioned in the content you're about to commit. Only checked in the single-root interactive commit — the multi-root batch commit never prompts, to keep 'select all, go' actually one gesture (auto-commit still applies there; ask behaves as auto-ignore)."
+        },
         "adrManager.panel.bodyMaxWidth": {
           "type": "string",
           "default": "1100",
