@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.60] - 2026-07-31
+
+### Added
+- **The insertion-preview bar now has "- Move up" / "+ Move down" buttons**: when the append-ANS fallback shows you where it's about to insert (no existing ANS block found), you can nudge the guessed line up or down within the previewed context before confirming, instead of only Insert/Cancel. No extra round-trip — the adjustment replays within the context already shown.
+
+### Changed
+- **The "Respond (unresolved)" button is now "Request Follow-up →"**: same gesture (writes your answer, sets `Status: unresolved` so the ball returns to the model instead of closing the question) — only the label changed, to stop it reading as a synonym for the ordinary Answer button.
+
 ## [0.7.59] - 2026-07-31
 
 ### Fixed
