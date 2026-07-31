@@ -19,6 +19,7 @@ import {
   appendErrorRecord,
   appendLedgerRecord,
   captureDocument,
+  errorSignature,
   type PanelErrorRecord,
   type LedgerRecord,
 } from '../drafts/errorLog'
@@ -166,5 +167,36 @@ describe('error-record/2 — the ledger generalized to many writers (seed 2026-0
 
   it('captureDocument is failure-soft: missing file returns undefined, never throws', () => {
     expect(captureDocument(path.join(tmpDir, 'nope.md'))).toBeUndefined()
+  })
+})
+
+// Retry-storm dedupe (Riddle's adjudication of Gleaner's first ledger
+// sweep, 2026-07-31): lumbroso-hq logged 27 workspace-edit-rejected
+// records in ~8 seconds, one question, one specimen — the panel's own
+// save-retry loop was re-logging on every retry cycle instead of once per
+// actual failure. errorSignature is the pure piece harvestError() dedupes
+// against; a real test here catches a real regression class (a retry
+// storm silently flooding the ledger again), not just source shape.
+describe('errorSignature — retry-storm dedupe key', () => {
+  it('identical kind/adrPath/questionId/message produce the same signature', () => {
+    const s1 = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused')
+    const s2 = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused')
+    expect(s1).toBe(s2)
+  })
+
+  it('a different kind, adrPath, questionId, or message each produce a distinct signature', () => {
+    const base = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused')
+    expect(errorSignature('ans-anchor-not-found', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused')).not.toBe(base)
+    expect(errorSignature('workspace-edit-rejected', '/repo/docs/adr/0029-y.md', 'q-1', 'edit refused')).not.toBe(base)
+    expect(errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-2', 'edit refused')).not.toBe(base)
+    expect(errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused again, differently')).not.toBe(base)
+  })
+
+  it('a missing questionId is treated consistently, not as a wildcard that matches any question', () => {
+    const withoutQ1 = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', undefined, 'edit refused')
+    const withoutQ2 = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', undefined, 'edit refused')
+    const withQ = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused')
+    expect(withoutQ1).toBe(withoutQ2)
+    expect(withoutQ1).not.toBe(withQ)
   })
 })

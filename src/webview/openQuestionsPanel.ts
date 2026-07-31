@@ -2064,98 +2064,147 @@ function renderMarkdown(md) {
     return s;
   }
 
-  const lines = md.split('\\n');
-  const out = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Restored code block placeholder
-    if (/^\\x00CODE\\d+\\x00$/.test(line.trim())) {
-      const idx = parseInt(line.trim().replace(/\\x00CODE(\\d+)\\x00/,'$1'));
-      out.push(codeBlocks[idx]);
-      i++; continue;
-    }
-
-    // Tables: detect by | delimiter in first cell
-    if (/^\\|/.test(line) && i + 1 < lines.length && /^\\|[-: |]+\\|/.test(lines[i+1])) {
-      let tableEnd = i;
-      while (tableEnd < lines.length && /^\\|/.test(lines[tableEnd])) tableEnd++;
-      out.push(renderTable(lines.slice(i, tableEnd).join('\\n')));
-      i = tableEnd; continue;
-    }
-
-    // HR
-    if (/^---+$/.test(line.trim())) { out.push('<hr>'); i++; continue; }
-
-    // Headings
-    const hm = line.match(/^(#{1,4})\\s+(.*)/);
-    if (hm) { out.push('<h'+(hm[1].length+1)+'>'+renderInline(hm[2])+'</h'+(hm[1].length+1)+'>'); i++; continue; }
-
-    // Blockquote
-    if (line.startsWith('> ')) { out.push('<blockquote>'+renderInline(line.slice(2))+'</blockquote>'); i++; continue; }
-
-    // Unordered list — CommonMark lazy continuation: a non-blank line right
-    // after a list item, that isn't itself a new bullet or some other block
-    // construct, belongs to that item's content, not a bare new paragraph.
-    // Without this, a hard-wrapped bullet's overflow lines "escape" the
-    // <li> and render as sibling <p> text below the list (2026-07-13
-    // screenshot: inbox-alchemy's wrapped ADR-0021, Option B's continuation
-    // bleeding out of its bullet). Join logic mirrors
-    // scripts/unwrap-adrs/unwrap-adrs.mjs's joinSoftWrappedLines exactly —
-    // lifted, not reinvented, per Lapidary's 0450 framing.
-    if (/^[\\-\\*]\\s+/.test(line)) {
-      const items = [];
-      let current = [];
-      const flush = () => { if (current.length) items.push('<li>'+renderInline(joinSoftWrappedLines(current))+'</li>'); current = []; };
-      while (i < lines.length) {
-        if (/^[\\-\\*]\\s+/.test(lines[i])) {
-          flush();
-          current.push(lines[i].replace(/^[\\-\\*]\\s+/,'').trim());
-          i++;
-        } else if (current.length > 0 && lines[i].trim() !== '' && !looksLikeNewBlock(lines[i])) {
-          current.push(lines[i].trim());
-          i++;
-        } else {
-          break;
-        }
-      }
-      flush();
-      out.push('<ul>'+items.join('')+'</ul>');
-      continue;
-    }
-
-    // Ordered list — same lazy-continuation treatment as the unordered case.
-    if (/^\\d+\\.\\s+/.test(line)) {
-      const items = [];
-      let current = [];
-      const flush = () => { if (current.length) items.push('<li>'+renderInline(joinSoftWrappedLines(current))+'</li>'); current = []; };
-      while (i < lines.length) {
-        if (/^\\d+\\.\\s+/.test(lines[i])) {
-          flush();
-          current.push(lines[i].replace(/^\\d+\\.\\s+/,'').trim());
-          i++;
-        } else if (current.length > 0 && lines[i].trim() !== '' && !looksLikeNewBlock(lines[i])) {
-          current.push(lines[i].trim());
-          i++;
-        } else {
-          break;
-        }
-      }
-      flush();
-      out.push('<ol>'+items.join('')+'</ol>');
-      continue;
-    }
-
-    // Blank line
-    if (line.trim() === '') { i++; continue; }
-
-    // Paragraph
-    out.push('<p>'+renderInline(line)+'</p>');
-    i++;
+  // Nested block-level content inside a list item (real specimen,
+  // src/test/fixtures/webview-render/2026-07-31-batch-renderer-adr0003-
+  // nested-fence-list-ans.md — three founder Reports on the same question:
+  // a fenced code block or a sub-bullet list indented under a numbered
+  // item leaked its \\x00CODEn\\x00 placeholder as literal text and/or got
+  // flattened into one run-on <li>, because the list-continuation loop
+  // below only ever understood FLAT lazy-continuation prose (2026-07-13's
+  // fix for hard-wrapped overflow lines), never block-level content nested
+  // inside an item. Distinguishing rule: a continuation line with NO
+  // leading whitespace is flat prose (unchanged, joined via
+  // joinSoftWrappedLines below); a continuation line WITH leading
+  // whitespace (or a blank line once such indentation has started) opens
+  // or continues a nested block region for the current item — collected
+  // raw, dedented by the region's own minimum indentation, and rendered by
+  // recursing into renderBlocks so a nested fence becomes a real <pre> and
+  // a nested sub-list becomes a real <ul>/<ol>, not flattened text.
+  function renderNestedBlock(rawLines) {
+    while (rawLines.length && rawLines[rawLines.length - 1].trim() === '') rawLines.pop();
+    if (rawLines.length === 0) return '';
+    const indents = rawLines.filter(l => l.trim() !== '').map(l => l.match(/^ */)[0].length);
+    const minIndent = indents.length ? Math.min(...indents) : 0;
+    const dedented = rawLines.map(l => l.trim() === '' ? '' : l.slice(minIndent)).join('\\n');
+    return renderBlocks(dedented);
   }
 
-  return out.join('\\n');
+  function renderBlocks(text) {
+    const lines = text.split('\\n');
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Restored code block placeholder
+      if (/^\\x00CODE\\d+\\x00$/.test(line.trim())) {
+        const idx = parseInt(line.trim().replace(/\\x00CODE(\\d+)\\x00/,'$1'));
+        out.push(codeBlocks[idx]);
+        i++; continue;
+      }
+
+      // Tables: detect by | delimiter in first cell
+      if (/^\\|/.test(line) && i + 1 < lines.length && /^\\|[-: |]+\\|/.test(lines[i+1])) {
+        let tableEnd = i;
+        while (tableEnd < lines.length && /^\\|/.test(lines[tableEnd])) tableEnd++;
+        out.push(renderTable(lines.slice(i, tableEnd).join('\\n')));
+        i = tableEnd; continue;
+      }
+
+      // HR
+      if (/^---+$/.test(line.trim())) { out.push('<hr>'); i++; continue; }
+
+      // Headings
+      const hm = line.match(/^(#{1,4})\\s+(.*)/);
+      if (hm) { out.push('<h'+(hm[1].length+1)+'>'+renderInline(hm[2])+'</h'+(hm[1].length+1)+'>'); i++; continue; }
+
+      // Blockquote
+      if (line.startsWith('> ')) { out.push('<blockquote>'+renderInline(line.slice(2))+'</blockquote>'); i++; continue; }
+
+      // Unordered list — CommonMark lazy continuation: a non-blank,
+      // non-indented line right after a list item, that isn't itself a new
+      // bullet or some other block construct, belongs to that item's
+      // content as flat prose, not a bare new paragraph. Without this, a
+      // hard-wrapped bullet's overflow lines "escape" the <li> and render
+      // as sibling <p> text below the list (2026-07-13 screenshot:
+      // inbox-alchemy's wrapped ADR-0021, Option B's continuation bleeding
+      // out of its bullet). An INDENTED continuation is nested block
+      // content instead — see renderNestedBlock above. Join logic for the
+      // flat case mirrors scripts/unwrap-adrs/unwrap-adrs.mjs's
+      // joinSoftWrappedLines exactly — lifted, not reinvented, per
+      // Lapidary's 0450 framing.
+      if (/^[\\-\\*]\\s+/.test(line)) {
+        const items = [];
+        let current = [];
+        let nestedRaw = [];
+        const flush = () => {
+          if (current.length === 0 && nestedRaw.length === 0) return;
+          items.push('<li>'+renderInline(joinSoftWrappedLines(current))+renderNestedBlock(nestedRaw)+'</li>');
+          current = []; nestedRaw = [];
+        };
+        while (i < lines.length) {
+          if (/^[\\-\\*]\\s+/.test(lines[i])) {
+            flush();
+            current.push(lines[i].replace(/^[\\-\\*]\\s+/,'').trim());
+            i++;
+          } else if (nestedRaw.length === 0 && current.length > 0 && lines[i].trim() !== '' && !/^\\s/.test(lines[i]) && !looksLikeNewBlock(lines[i])) {
+            current.push(lines[i].trim());
+            i++;
+          } else if ((current.length > 0 || nestedRaw.length > 0) && (lines[i].trim() === '' || /^\\s/.test(lines[i]))) {
+            nestedRaw.push(lines[i]);
+            i++;
+          } else {
+            break;
+          }
+        }
+        flush();
+        out.push('<ul>'+items.join('')+'</ul>');
+        continue;
+      }
+
+      // Ordered list — same lazy-continuation and nested-block treatment as
+      // the unordered case above.
+      if (/^\\d+\\.\\s+/.test(line)) {
+        const items = [];
+        let current = [];
+        let nestedRaw = [];
+        const flush = () => {
+          if (current.length === 0 && nestedRaw.length === 0) return;
+          items.push('<li>'+renderInline(joinSoftWrappedLines(current))+renderNestedBlock(nestedRaw)+'</li>');
+          current = []; nestedRaw = [];
+        };
+        while (i < lines.length) {
+          if (/^\\d+\\.\\s+/.test(lines[i])) {
+            flush();
+            current.push(lines[i].replace(/^\\d+\\.\\s+/,'').trim());
+            i++;
+          } else if (nestedRaw.length === 0 && current.length > 0 && lines[i].trim() !== '' && !/^\\s/.test(lines[i]) && !looksLikeNewBlock(lines[i])) {
+            current.push(lines[i].trim());
+            i++;
+          } else if ((current.length > 0 || nestedRaw.length > 0) && (lines[i].trim() === '' || /^\\s/.test(lines[i]))) {
+            nestedRaw.push(lines[i]);
+            i++;
+          } else {
+            break;
+          }
+        }
+        flush();
+        out.push('<ol>'+items.join('')+'</ol>');
+        continue;
+      }
+
+      // Blank line
+      if (line.trim() === '') { i++; continue; }
+
+      // Paragraph
+      out.push('<p>'+renderInline(line)+'</p>');
+      i++;
+    }
+
+    return out.join('\\n');
+  }
+
+  return renderBlocks(md);
 }
 
 // ---------------------------------------------------------------------------

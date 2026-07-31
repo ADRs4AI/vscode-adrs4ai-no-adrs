@@ -61,3 +61,24 @@ describe('RELEASE-CHECKLIST.md carries the ship-flip item', () => {
     expect(RELEASE_CHECKLIST).toContain('adrManager.logging')
   })
 })
+
+// Retry-storm dedupe (Riddle's adjudication of Gleaner's first ledger
+// sweep, 2026-07-31): the actual dedupe-key logic lives in errorSignature
+// (src/drafts/errorLog.ts, unit-tested for real behavior in
+// errorLog.test.ts) — these only pin that harvestError() is actually
+// WIRED to it, fail-open, per ADR-0035's failure-soft clause.
+describe('harvestError: retry-storm dedupe wiring', () => {
+  const method = PANEL_SRC.match(/private harvestError\([\s\S]*?\n  \}/)![0]
+
+  it('checks a session-scoped signature set before writing, and records it after', () => {
+    expect(method).toContain('errorSignature(kind, msg.adrPath, msg.questionId, message)')
+    expect(method).toContain('this.harvestErrorSignaturesLogged.has(signature)')
+    expect(method).toContain('this.harvestErrorSignaturesLogged.add(signature)')
+  })
+
+  it('the signature computation is itself wrapped so a failure there falls through to logging, not skips it', () => {
+    const sigBlock = method.match(/try \{\s*const signature[\s\S]*?\} catch \{[\s\S]*?\}/)
+    expect(sigBlock, 'expected the dedupe signature computation in its own inner try/catch').toBeTruthy()
+    expect(sigBlock![0]).toContain('fall through and log anyway')
+  })
+})

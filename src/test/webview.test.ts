@@ -702,6 +702,97 @@ describe('Webview script block syntax', () => {
     expect(afterList).not.toContain('working loop to mine')
   })
 
+  // Regression tests (fixes real founder-reported bug, batch-renderer
+  // ADR-0003, three Reports on the same question). Bug: renderMarkdown()'s
+  // list-continuation logic only understood FLAT lazy-continuation prose
+  // (the 0450 hard-wrap fix above) — a fenced code block or a sub-bullet
+  // list indented under a numbered item had no home, so its
+  // \x00CODEn\x00 placeholder token hit looksLikeNewBlock and broke the
+  // list mid-way (splitting one numbered list into several, each
+  // restarting at "1."), and a nested sub-bullet list got silently
+  // space-joined into one run-on line inside its <li>. Fixed by giving
+  // list items a real nested-block region: an INDENTED (or blank-then-
+  // indented) continuation line is dedented and recursively rendered via
+  // the same block renderer, instead of only ever flat-joined.
+  describe('Regression tests: nested block content inside a list item (batch-renderer ADR-0003)', () => {
+    const FIXTURE = readFileSync(
+      resolve(__dirname, 'fixtures/webview-render/2026-07-31-batch-renderer-adr0003-nested-fence-list-ans.md'),
+      'utf8',
+    )
+    // The body a real q.body would carry: everything between the intro
+    // bold line and the Recommendation marker — the exact span that
+    // garbled in the panel per the three founder Reports.
+    const body = FIXTURE.slice(
+      FIXTURE.indexOf('**Understanding your tree vision:**'),
+      FIXTURE.indexOf('**Recommendation**:'),
+    ).trim()
+
+    function render(): string {
+      const h = createWebviewHarness()
+      const renderMarkdown = h.sandbox.renderMarkdown as (md: string) => string
+      return renderMarkdown(body)
+    }
+
+    // Item boundaries via indexOf/slice rather than regex balancing — each
+    // item nests its own <li>...</li> (the sub-bullet lists in items 3/4),
+    // so a naive non-greedy </li> match closes on the FIRST (nested) tag,
+    // not the item's own.
+    function itemSlice(html: string, marker: string, nextMarker: string | undefined): string {
+      const start = html.indexOf(marker)
+      expect(start, `expected to find "${marker}" in the rendered output`).toBeGreaterThanOrEqual(0)
+      const end = nextMarker ? html.indexOf(nextMarker) : html.indexOf('</ol>', start)
+      return html.slice(start, end < 0 ? undefined : end)
+    }
+
+    it('no \\x00CODEn\\x00 placeholder token leaks into the rendered output', () => {
+      const html = render()
+      expect(html).not.toMatch(/CODE\d/)
+    })
+
+    it('all four numbered questions render as ONE list, not split into several restarting at "1."', () => {
+      const html = render()
+      const questionsList = (html.match(/<ol>[\s\S]*?<\/ol>/g) ?? []).find(ol => ol.includes('Path formatting'))
+      expect(questionsList, 'expected one <ol> containing all four questions').toBeTruthy()
+      for (const marker of ['Path formatting', 'Text at multiple levels', 'Numbering/IDs', 'Edge cases']) {
+        expect(questionsList).toContain(marker)
+      }
+    })
+
+    it('item 1\'s nested fenced code block renders as a real <pre><code> inside its own <li>, not a sibling block', () => {
+      const html = render()
+      const item1 = itemSlice(html, '<strong>Path formatting</strong>', '<strong>Text at multiple levels</strong>')
+      expect(item1).toContain('<pre><code>')
+      expect(item1).toContain('Option A: Nested folders matching tree')
+      expect(item1).toContain('</code></pre></li>')
+    })
+
+    it('item 2\'s nested code block AND its trailing paragraph both stay inside item 2\'s <li>', () => {
+      const html = render()
+      const item2 = itemSlice(html, '<strong>Text at multiple levels</strong>', '<strong>Numbering/IDs</strong>')
+      expect(item2).toContain('<pre><code>')
+      expect(item2).toContain('# Main Title')
+      expect(item2).toContain('<p>Should both become prompts? Just the leaf nodes?</p></li>')
+    })
+
+    it('item 3\'s nested sub-bullets render as a real nested <ul>, not flattened into one run-on line', () => {
+      const html = render()
+      const item3 = itemSlice(html, '<strong>Numbering/IDs</strong>', '<strong>Edge cases:</strong>')
+      expect(item3).toContain('<ul>')
+      expect(item3).toMatch(/<li>Number prompts sequentially[^<]*<\/li>/)
+      expect(item3).toMatch(/<li>Use tree path as ID[^<]*<\/li>/)
+      expect(item3).toMatch(/<li>No numbering, just use titles\?<\/li>/)
+    })
+
+    it('item 4\'s nested sub-bullets likewise render as a real nested <ul>', () => {
+      const html = render()
+      const item4 = itemSlice(html, '<strong>Edge cases:</strong>', undefined)
+      expect(item4).toContain('<ul>')
+      expect(item4).toMatch(/<li>File with no headers at all[^<]*<\/li>/)
+      expect(item4).toMatch(/<li>Empty sections[^<]*<\/li>/)
+      expect(item4).toMatch(/<li>Multiple paragraphs under one header[^<]*<\/li>/)
+    })
+  })
+
   describe('DEBRIEF-004 residual (Quarry 5, post-4e6aff5 state-machine pass): a transient EMPTY "questions" push still trips isNewQuestion for the SAME unchanged question', () => {
     // 4e6aff5 fixed the headline symptom (positional idx drift losing text)
     // by relocating the on-screen question by draftKey, and separately fixed

@@ -76,6 +76,20 @@ export interface LedgerRecord {
   documents?: Record<string, { text: string; md5: string }>
 }
 
+/**
+ * Retry-storm dedupe signature (Riddle's adjudication of Gleaner's first
+ * ledger sweep, 2026-07-31: lumbroso-hq logged 27 workspace-edit-rejected
+ * records in ~8 seconds, one question, one specimen — a save-retry loop
+ * re-logging on every retry cycle instead of once per actual failure).
+ * kind+adrPath+questionId+message: a genuinely different failure (different
+ * kind, different question, different message) always produces a different
+ * signature and still logs. Pure so the dedupe logic itself gets a real
+ * unit test, not just a source-shape assertion on vscode-touching glue.
+ */
+export function errorSignature(kind: string, adrPath: string, questionId: string | undefined, message: string): string {
+  return [kind, adrPath, questionId ?? '', message].join('|')
+}
+
 /** Capture one referenced document: full text + MD5, best-effort. */
 export function captureDocument(filePath: string): { text: string; md5: string } | undefined {
   try {
