@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.61] - 2026-07-31
+
+### Fixed
+- **Backtick-quoted comment examples render again**: the panel's comment-stripping (added earlier today) ran before code-span protection, so documentation that *quotes* comment syntax — like ADR-0032 discussing `@adr-anchor` — had the quoted contents eaten and the leftover backticks re-paired whole paragraphs into one giant code span. Code spans and fenced blocks are now protected before the strip; a comment inside a fenced example survives too.
+
 ## [0.7.60] - 2026-07-31
 
 ### Added
