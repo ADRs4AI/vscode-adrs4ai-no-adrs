@@ -99,6 +99,29 @@ describe('answerQuestion', () => {
     expect(newContent).not.toContain('[Fill this in]')
   })
 
+  // Regression (Gleaner 5's founder-evidence brief, 2026-07-31): this
+  // file's OWN fill-placeholder recognition was a private FILL_PLACEHOLDER_RE
+  // matching only "[Fill this in]" verbatim, narrower than the extractor's
+  // actual placeholder lexicon (isPlaceholderAnswerText) that
+  // answerWriteScan.ts (the panel's write path) already consumes. A
+  // question surfaced with "[to be filled]" — a real, already-recognized
+  // read-side synonym — hit the "replace whole ANS extent" fallback instead
+  // of the simple fill-line replace, and could misbehave on non-trivial
+  // ANS blocks even though this exact single-line case happened to still
+  // produce a correct result by accident.
+  it('replaces a "[to be filled]" placeholder (not just canonical "[Fill this in]") via the simple fill-line path', async () => {
+    const doc = FIXTURE.replace('[Fill this in]', '[to be filled]')
+    const { ctx, files } = makeContext(doc)
+    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.', { author: 'Relay 5' })
+
+    expect(result).toContain('Answered adr-0001-qst-what-is-the-scope in adr:0001')
+    const newContent = files.get(ADR_PATH)!
+    expect(newContent).toContain('- Status: answered')
+    expect(newContent).toContain('**ANS:** (by Relay 5)')
+    expect(newContent).toContain('The scope is X.')
+    expect(newContent).not.toContain('[to be filled]')
+  })
+
   it('requires an explicit author — never defaults to "AI"', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
     const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.')

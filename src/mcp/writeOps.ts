@@ -19,7 +19,7 @@
 // consumers") — it tolerates the bold `- **Status**:` form the private
 // `/^- Status:/` copy here couldn't see, which left Status un-flipped on
 // bold-form files (the D2 write-back class) even when the answer wrote fine.
-import { parseAdr, STATUS_LINE_RE, ANS_INLINE_RE } from '../parser/extractor'
+import { parseAdr, STATUS_LINE_RE, ANS_INLINE_RE, isPlaceholderAnswerText } from '../parser/extractor'
 import type { AdrIteration, AdrFile, Question } from '../parser/types'
 import { findSectionForQuestion } from './reference'
 
@@ -87,8 +87,6 @@ export function verifyNoCollateralQuestionChanges(
   return { ok: true, after }
 }
 
-const FILL_PLACEHOLDER_RE = /^\[\s*fill\s+this\s+in[^\]]*\]$/i
-
 /**
  * Same-day hazard fix (Lapidary's 2026-07-14 adjudication, Riddle 5's
  * escalation): the search window used to stop at the next line matching
@@ -136,7 +134,14 @@ export function applyAnswerQuestion(
     if (STATUS_LINE_RE.test(trimmed) && statusLineIdx === -1) statusLineIdx = i
     // LAST-wins + fill reset (dialogue layering — see answerWriteScan.ts)
     if (ANS_INLINE_RE.test(trimmed)) { ansHeaderLineIdx = i; fillLineIdx = -1 }
-    if (FILL_PLACEHOLDER_RE.test(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
+    // isPlaceholderAnswerText (extractor's own predicate — "one parser, N
+    // consumers") replaces a private FILL_PLACEHOLDER_RE that only matched
+    // "[Fill this in]" verbatim. Gleaner 5's founder-evidence brief
+    // (2026-07-31, system3-conversations seed-2026-07-30-feedback-on-9d6f.md)
+    // reported "[to be filled]" causing a write refusal — this file's own
+    // narrower regex was exactly the kind of drift answerWriteScan.ts had
+    // already been fixed for (`33707c0`) but this MCP-side copy hadn't.
+    if (trimmed && isPlaceholderAnswerText(trimmed) && ansHeaderLineIdx !== -1 && fillLineIdx === -1) fillLineIdx = i
   }
 
   if (ansHeaderLineIdx === -1) {
