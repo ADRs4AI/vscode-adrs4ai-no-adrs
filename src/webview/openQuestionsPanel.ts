@@ -156,8 +156,19 @@ type WebviewMessage =
   | { type: 'showDraftDiff'; mine: string; theirs: string; questionText: string }
   /** ADR-0034: leave tour mode, back to the full open-questions walk. */
   | { type: 'exitTour' }
-  /** ADR-0035 Iteration 3 (seed-2026-07-30, "frictionless observation reporting"): a human-authored observation about the current question/ADR — appended to the error ledger, doesn't touch the question itself. */
-  | { type: 'reportObservation'; adrPath: string; questionId?: string; draftKey?: string }
+  /**
+   * ADR-0035 Iteration 3 (seed-2026-07-30, "frictionless observation
+   * reporting"): a human-authored observation about the current
+   * question/ADR — appended to the error ledger, doesn't touch the
+   * question itself. `renderedHtml` (Iteration 5, seed-2026-07-31,
+   * Gleaner 5's design): the panel's own current rendered markup for this
+   * question card (the rendered markdown fields' innerHTML at Report time) — the
+   * render-vs-source comparison that made two same-day rendering bugs
+   * diagnosable from a screenshot, captured as text instead of a pixel
+   * grab: no OS screen-capture permission, stays in the webview sandbox,
+   * the source half of the comparison is already in `documents`.
+   */
+  | { type: 'reportObservation'; adrPath: string; questionId?: string; draftKey?: string; renderedHtml?: string }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -621,7 +632,7 @@ export class OpenQuestionsPanel {
    * no schema addition, so no separate blessing gate the way a new field
    * would need (rootsConfigWriter.ts's `names` precedent).
    */
-  private async reportObservation(msg: { adrPath: string; questionId?: string; draftKey?: string }): Promise<void> {
+  private async reportObservation(msg: { adrPath: string; questionId?: string; draftKey?: string; renderedHtml?: string }): Promise<void> {
     // Its own sublog key (2026-07-30 addendum: granular per-writer toggles,
     // not one shared switch) — checked BEFORE prompting, so a disabled
     // writer never invites a note it's about to discard.
@@ -655,7 +666,7 @@ export class OpenQuestionsPanel {
         kind: 'observation',
         message,
         anchorPath: msg.adrPath,
-        payload: { questionId: msg.questionId, draftKey: msg.draftKey, note: note || undefined },
+        payload: { questionId: msg.questionId, draftKey: msg.draftKey, note: note || undefined, renderedHtml: msg.renderedHtml },
         documents: doc ? { [msg.adrPath]: doc } : undefined,
       })
       vscode.window.setStatusBarMessage('ADR Manager: Observation recorded.', 3000)
@@ -2308,7 +2319,20 @@ $id('btn-skip').addEventListener('click', () => {
 $id('btn-report').addEventListener('click', () => {
   const q = questions[idx];
   if (!q) return;
-  vscode.postMessage({ type: 'reportObservation', adrPath: q.adrPath, questionId: q.id, draftKey: q.draftKey });
+  // Iteration 5 (Gleaner 5, 2026-07-31): the current rendered card, as text
+  // — reconstructs the same render-vs-source comparison a screenshot gives,
+  // without one. Explicit field list, not a single parent's aggregate
+  // innerHTML: #card wraps chrome (counter, links, the answer textarea)
+  // alongside the actually-rendered markdown fields — this names exactly
+  // the fields renderMarkdown() writes to, so a future field earns
+  // inclusion by design, not just by sitting inside a div.
+  // Best-effort; a DOM read failing must never block the report.
+  let renderedHtml;
+  try {
+    renderedHtml = ['qtext', 'ctx-body', 'why', 'body', 'rec-wrap', 'body-post']
+      .map(id => $id(id).innerHTML).join(' ');
+  } catch { /* failure-soft */ }
+  vscode.postMessage({ type: 'reportObservation', adrPath: q.adrPath, questionId: q.id, draftKey: q.draftKey, renderedHtml });
 });
 
 $id('btn-back').addEventListener('click', () => {

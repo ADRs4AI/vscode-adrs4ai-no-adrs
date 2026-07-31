@@ -46,6 +46,13 @@ describe('openQuestionsPanel.ts: reportObservation (ADR-0035 Iteration 3)', () =
     expect(method).toContain('documents: doc ? { [msg.adrPath]: doc } : undefined')
   })
 
+  // Iteration 5 (Gleaner 5, 2026-07-31, seed-2026-07-31-shift-click-report-...):
+  // the panel's own rendered markup rides along in the existing payload bag
+  // — still no new schema field, per the test above's own discipline.
+  it('carries the webview-supplied renderedHtml through to the payload, no new schema field', () => {
+    expect(method).toContain('renderedHtml: msg.renderedHtml')
+  })
+
   it('is wrapped in try/catch — failure-soft, reporting a problem must never itself become one', () => {
     expect(method).toMatch(/try \{[\s\S]*\} catch \{/)
   })

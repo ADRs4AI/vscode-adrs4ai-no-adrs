@@ -1210,11 +1210,26 @@ describe('Report button (ADR-0035 Iteration 3)', () => {
     expect(h.element('btn-report').style.display).toBe('none')
   })
 
-  it('clicking posts reportObservation with the current question\'s identity, nothing else', () => {
+  it('clicking posts reportObservation with the current question\'s identity', () => {
     const h = createWebviewHarness()
     h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], reportButtonEnabled: true })
     h.click('btn-report')
-    expect(h.sentMessages).toContainEqual({ type: 'reportObservation', adrPath: '/fake/a.md', questionId: 'q1', draftKey: 'key-1' })
+    const sent = h.sentMessages.find(m => m.type === 'reportObservation')
+    expect(sent).toMatchObject({ type: 'reportObservation', adrPath: '/fake/a.md', questionId: 'q1', draftKey: 'key-1' })
+  })
+
+  // Iteration 5 (Gleaner 5, 2026-07-31, seed-2026-07-31-shift-click-report-...):
+  // the rendered card's own markup rides along on Report — the render-vs-source
+  // comparison that made two same-day rendering bugs diagnosable from a
+  // screenshot, captured as text so no OS screen-capture permission is ever
+  // needed.
+  it('includes the current rendered card\'s markup (real render, not a placeholder)', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], reportButtonEnabled: true })
+    h.click('btn-report')
+    const sent = h.sentMessages.find(m => m.type === 'reportObservation')
+    expect(typeof sent?.renderedHtml).toBe('string')
+    expect(sent?.renderedHtml).toContain('Q1')
   })
 })
 
