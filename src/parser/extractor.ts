@@ -30,6 +30,7 @@ import type {
   QuestionRound,
   Recommendation,
   RoundAnswer,
+  SourceRange,
 } from './types'
 import { KNOWN_STATUSES } from './types'
 
@@ -1189,6 +1190,10 @@ export function extractQuestion(
   // default above). Load-bearing for Status-authority (below): declared
   // status is authoritative; the default is not a declaration.
   let statusDeclared = false;
+  // ADR-0039 §3 (SourceRange, first slice): exact character span of the
+  // Status VALUE, so a write tool can flip it with one surgical TextEdit
+  // instead of a line-number find-replace + re-parse.
+  let statusRange: SourceRange | undefined;
   let whyAsking: string | undefined;
   let whyDeferring: string | undefined;
   let need: string | undefined;
@@ -1371,6 +1376,22 @@ export function extractQuestion(
       // both want the words, not the styling.
       statusText = stripInlineEmphasis(rawStatus);
       statusDeclared = true;
+      // ADR-0039 §3: `line` is `lines[i].trim()`, so `statusMatch.index` is
+      // relative to the TRIMMED line — add back the stripped leading
+      // whitespace length to land on `lines[i]`'s real columns. Group 1 is
+      // anchored at `$` (end of line), so its start is exactly
+      // `match[0].length - match[1].length` characters into the match —
+      // the RAW (untrimmed) captured span, matching what a write tool
+      // would actually be replacing in the source.
+      {
+        const leadingWs = lines[i].length - lines[i].trimStart().length;
+        const matchStart = leadingWs + (statusMatch.index ?? 0);
+        const valueStart = matchStart + (statusMatch[0].length - statusMatch[1].length);
+        statusRange = {
+          startLine: absLine, startCol: valueStart,
+          endLine: absLine, endCol: valueStart + statusMatch[1].length,
+        };
+      }
       if (warnings && statusText !== rawStatus) {
         warnings.push({
           code: 'EMPHASIZED_STATUS_VALUE',
@@ -1708,6 +1729,7 @@ export function extractQuestion(
     adrPath,
     lineStart: section.lineStart,
     qstId: section.qstId,
+    statusRange,
   };
 }
 
@@ -1756,6 +1778,30 @@ function extractInlineCodes(sections: AdrSection[]): InlineNavCode[] {
 const ITERATION_HEADING_RE = /^Iteration\s+(\d+)(?:\s+\(([^)]+)\))?$/i;
 // Matches: - Human: ...  or  - AI (Sonnet 4.6):  ...
 const ITERATION_FIELD_RE = /^-\s+(Human|AI[^:]*|Outcome):\s+(.+)$/;
+
+/**
+ * ADR-0039 §3 (SourceRange, first slice): where a new `### Iteration N`
+ * entry should be appended — computed once, structurally, instead of
+ * re-derived by every write site via its own backward-scan (writeOps.ts's
+ * applyAppendIteration used to do exactly this scan itself; now consumes
+ * this field, this function is the one definition). Mirrors that scan's
+ * proven logic exactly: walk backward from the section's last body line,
+ * skip trailing blank lines and the closing "---" separator, insert right
+ * after the last real content line — never inside the separator that
+ * terminates the section.
+ */
+function computeIterationsAppendLine(sections: AdrSection[]): number | undefined {
+  const iterationsSection = sections.find(s => s.heading.trim().toLowerCase() === 'iterations');
+  if (!iterationsSection || iterationsSection.bodyRaw === undefined) return undefined;
+
+  const bodyLines = iterationsSection.bodyRaw.split('\n');
+  let idx = bodyLines.length - 1;
+  while (idx > 0 && (bodyLines[idx].trim() === '' || bodyLines[idx].trim() === '---')) {
+    idx--;
+  }
+  idx += 1; // slice point: right after the last real content line
+  return iterationsSection.lineStart + 1 + idx;
+}
 
 function extractIterations(sections: AdrSection[]): AdrIteration[] {
   const iterationsSection = sections.find(s => s.heading === 'Iterations');
@@ -1911,6 +1957,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
 
   // Extract iteration history
   const iterations = extractIterations(sections);
+  const iterationsAppendLine = computeIterationsAppendLine(sections);
 
   // Build deep link index
   const deepLinks = buildDeepLinks(sections, questions);
@@ -1958,6 +2005,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
     questions,
     inlineCodes,
     iterations,
+    iterationsAppendLine,
     namespace: options.namespace,
     deepLinks,
     checksum,

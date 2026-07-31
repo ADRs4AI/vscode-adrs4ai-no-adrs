@@ -239,6 +239,20 @@ describe('appendIteration', () => {
     // wedged between two --- lines.
     expect(content.slice(iterEndIdx, linksIdx).match(/^---$/gm)?.length).toBe(1)
   })
+
+  it('uses parseAdr()\'s iterationsAppendLine (ADR-0039 §3) rather than re-deriving its own scan — a real number, not undefined, on this fixture', async () => {
+    const { ctx, files } = makeContext(FIXTURE)
+    const content = files.get(ADR_PATH)!
+    const adr = parseAdr(content, ADR_PATH)
+    expect(adr.iterationsAppendLine).toBeTypeOf('number')
+
+    await appendIteration(ctx, '1', { outcome: 'third', date: '2026-07-09' })
+    const newContent = files.get(ADR_PATH)!
+    // The new entry lands starting exactly where iterationsAppendLine said it would.
+    const insertedLine = newContent.split('\n')[adr.iterationsAppendLine! - 1]
+    expect(insertedLine).toBe('')
+    expect(newContent.split('\n')[adr.iterationsAppendLine!]).toBe('### Iteration 2 (2026-07-09)')
+  })
 })
 
 describe('updateResolution', () => {

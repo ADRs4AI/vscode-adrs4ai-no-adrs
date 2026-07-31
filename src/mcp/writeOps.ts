@@ -253,18 +253,24 @@ export function applyAppendIteration(
   if (entry.ai) bodyLines.push(`- AI: ${entry.ai}`)
   if (entry.outcome) bodyLines.push(`- Outcome: ${entry.outcome}`)
 
-  // `iterationsSection.lineEnd` includes the section's trailing `---`
-  // separator and any blank lines before the next heading (confirmed by
-  // direct inspection — the parser's body text for a trailing section runs
-  // through that `---`). Inserting naively at `lineEnd` shoves that
-  // separator into the middle of the iterations log instead of leaving it
-  // as the terminator before the next section. Insert right after the last
-  // real content line instead, skipping trailing blank/`---` lines.
-  let insertAt = iterationsSection.lineEnd - 1 // 0-indexed, inclusive last body line
-  while (insertAt > 0 && (lines[insertAt].trim() === '' || lines[insertAt].trim() === '---')) {
-    insertAt--
+  // ADR-0039 §3: the insertion point (right after the last real content
+  // line, before the section's trailing blank lines / closing "---" —
+  // naively inserting at `lineEnd` would shove the separator into the
+  // middle of the log) is now computed once, structurally, by the parser
+  // itself (`freshAdr.iterationsAppendLine`) rather than re-derived here
+  // via a private backward-scan — this function used to BE that scan;
+  // it's now the fallback for the (should-never-happen-on-a-real-parse)
+  // case where the field is missing.
+  let insertAt: number
+  if (freshAdr.iterationsAppendLine !== undefined) {
+    insertAt = freshAdr.iterationsAppendLine - 1 // 1-indexed line -> 0-indexed slice point
+  } else {
+    insertAt = iterationsSection.lineEnd - 1 // 0-indexed, inclusive last body line
+    while (insertAt > 0 && (lines[insertAt].trim() === '' || lines[insertAt].trim() === '---')) {
+      insertAt--
+    }
+    insertAt += 1 // slice point: right after the last real content line
   }
-  insertAt += 1 // slice point: right after the last real content line
 
   const newLines = [...lines.slice(0, insertAt), ...bodyLines, ...lines.slice(insertAt)]
   const diff = `+ ${bodyLines.join('\\n')}`

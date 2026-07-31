@@ -4361,3 +4361,48 @@ describe('Regression tests: warning line numbers were off by the QST block\'s le
     expect(w?.line).toBe(8)
   })
 })
+
+describe('Question.statusRange (ADR-0039 §3 — SourceRange, first slice)', () => {
+  function valueAt(doc: string, range: { startLine: number; startCol: number; endCol: number } | undefined) {
+    if (!range) return undefined
+    return doc.split('\n')[range.startLine - 1].slice(range.startCol, range.endCol)
+  }
+
+  it('the plain form: startCol/endCol slice out exactly the value, nothing else', () => {
+    const doc = [
+      '# ADR 0001: Title', '', '## Questions', '',
+      '### QST: Q?', '',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    const q = adr.questions[0]
+    expect(q.statusRange).toEqual({ startLine: 7, startCol: 10, endLine: 7, endCol: 20 })
+    expect(valueAt(doc, q.statusRange)).toBe('unanswered')
+  })
+
+  it('the bold form: the range still lands on the value only, not "**Status**:"', () => {
+    const doc = [
+      '# ADR 0001: Title', '', '## Questions', '',
+      '### QST: Q?', '',
+      '- **Status**: answered', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    expect(valueAt(doc, adr.questions[0].statusRange)).toBe('answered')
+  })
+
+  it('an indented bullet: leading whitespace is accounted for, not silently dropped from the column', () => {
+    const doc = [
+      '# ADR 0001: Title', '', '## Questions', '',
+      '### QST: Q?', '',
+      '  - Status: unanswered', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    expect(valueAt(doc, adr.questions[0].statusRange)).toBe('unanswered')
+  })
+
+  it('undefined when no Status line was declared at all', () => {
+    const doc = ['# ADR 0001: Title', '', '## Questions', '', '### QST: Q?', ''].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    expect(adr.questions[0].statusRange).toBeUndefined()
+  })
+})

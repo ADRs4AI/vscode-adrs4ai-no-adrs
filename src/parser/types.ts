@@ -86,6 +86,16 @@ export interface AdrFile {
   inlineCodes: InlineNavCode[];
   /** Iteration history entries (collab-adr-lean only) */
   iterations: AdrIteration[];
+  /**
+   * ADR-0039 §3 (SourceRange, first slice): the exact 1-indexed line a new
+   * `### Iteration N` entry should be appended before — computed once,
+   * structurally, at parse time (skipping the section's trailing blank
+   * lines and its closing "---" separator) instead of re-derived by every
+   * write site via its own backward-scan. Retires the guessing DEBRIEF-006
+   * came from for this specific write target. Undefined when there's no
+   * "## Iterations" section at all.
+   */
+  iterationsAppendLine?: number;
 
   /** Resolved project namespace for cross-project deep links */
   namespace?: string;
@@ -270,6 +280,35 @@ export interface Question {
    * already reflected in `slug`; `@adr-anchor` still overrides both.
    */
   qstId?: string;
+  /**
+   * ADR-0039 §3 (SourceRange, first slice — single-line write-target
+   * fields): the exact character span of the Status VALUE (e.g.
+   * "unanswered" in "- Status: unanswered"), not the whole line — a write
+   * tool can issue a surgical TextEdit at exactly these characters instead
+   * of a line-number find-replace. Undefined when no Status line was
+   * declared for this question at all (`statusText` still derives from
+   * other signals in that case, per Status-authority).
+   */
+  statusRange?: SourceRange;
+}
+
+/**
+ * ADR-0039 §2/§3 (Secretariat: SourceRange and the round-trip gate) —
+ * character-level source location for a write-target node, in the spirit
+ * of the seed's original interface sketch. 1-indexed lines (matching every
+ * other `line`/`lineStart` field in this file); 0-indexed character
+ * columns within that line (so `line.slice(startCol, endCol)` is the
+ * exact span). Single-line only for now — `startLine === endLine` at every
+ * current call site (Status lines, the Iterations append point); a
+ * multi-line SourceRange (ANS/recommendation extents) is the second slice,
+ * gated on hard-wrap reversibility (a wrapped field's true extent is a
+ * LIST of single-line spans, not one multi-line range — see ADR-0039 §3).
+ */
+export interface SourceRange {
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
 }
 
 export interface QuestionAnswer {
