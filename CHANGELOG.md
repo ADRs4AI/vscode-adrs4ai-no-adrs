@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.58] - 2026-07-31
+
+### Added
+- **"Add Thread Turn"**: right-click a seed in the sidebar (or run it from the Command Palette on the seed file you're viewing) to append a correctly-scaffolded, attributed conversation turn — the MRR checkbox block and heading level are generated, never hand-typed, and the cursor lands ready for you to write. No more copy-pasting template scaffolding to keep iterating on a seed.
+
 ## [0.7.57] - 2026-07-31
 
 ### Fixed
