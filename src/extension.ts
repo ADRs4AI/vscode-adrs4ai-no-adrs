@@ -55,6 +55,7 @@ import { isNewGitStatus, groupChangesByOwningRoot } from './commit/repositoryRes
 import { findReferencedUntrackedFiles, type UntrackedReferencesMode } from './commit/untrackedReferences'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 import { generateSeedTemplate } from './creation/seedTemplate'
+import { planSeedThreadTurnInsertion } from './creation/seedThreadTurn'
 
 // ---------------------------------------------------------------------------
 // Normalizer — runs passively on every index update (ADR-0013 Stage 2)
@@ -279,6 +280,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.mintTourFromFilter', async () => {
       if (treeProvider && compositeIndex) await mintTourFromFilter(treeProvider, compositeIndex);
+    }),
+
+    // seeds-as-issues minimum lovable slice (Lapidary's 2026-07-31
+    // founder-escalation dispatch): one gesture appends a correctly-
+    // scaffolded, attributed Thread turn — from the sidebar's right-click
+    // on a seed, or the Command Palette against whichever seed is the
+    // active editor.
+    vscode.commands.registerCommand('adrManager.addSeedThreadTurn', async (item) => {
+      await addSeedThreadTurn(item);
     }),
 
     vscode.languages.registerDocumentLinkProvider({ language: 'markdown' }, new AdrDocumentLinkProvider()),
@@ -1429,6 +1439,48 @@ async function mintTourFromFilter(treeProvider: import('./views/adrTreeProvider'
 
   const openNow = await vscode.window.showInformationMessage(`Minted "${title}" (${refs.length} entries) to ${adrDirRel}/tours/${filename}.`, 'Walk it now')
   if (openNow === 'Walk it now') OpenQuestionsPanel.createOrShow(composite, filename.replace(/\.tour\.json$/, ''))
+}
+
+/**
+ * "Add Thread Turn" (Lapidary's 2026-07-31 founder-escalation dispatch —
+ * third ask on the same pain, Jérémie's own word for it: "trauma"). One
+ * gesture appends a correctly-scaffolded, attributed turn + fresh Model
+ * Response Request block, cursor left on the blank content line so typing
+ * can start immediately — nobody hand-authors MRR checkboxes, the
+ * Instructions-for-Model tail, or gets a `##` vs `###` heading level wrong
+ * again. `item` is the right-clicked sidebar seed item when invoked from
+ * the tree's context menu; falls back to the active editor's document
+ * when invoked from the Command Palette with no argument.
+ */
+async function addSeedThreadTurn(item?: import('./views/adrTreeProvider').AdrTreeItem): Promise<void> {
+  const seedPath = item?.seed?.path ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+  if (!seedPath || !isSeedBasename(path.basename(seedPath))) {
+    vscode.window.showErrorMessage('ADR Manager: Add Thread Turn only works on a seed file — open one, or right-click a seed in the sidebar.');
+    return;
+  }
+
+  const uri = vscode.Uri.file(seedPath);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const content = doc.getText();
+
+  const cfg = vscode.workspace.getConfiguration('adrManager');
+  const humanName = cfg.get<string>('humanName', '') || 'Human';
+  const today = new Date().toISOString().slice(0, 10);
+  const plan = planSeedThreadTurnInsertion(content, humanName, today);
+
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(uri, new vscode.Position(plan.insertLineIndex, 0), plan.text);
+  const applied = await vscode.workspace.applyEdit(edit);
+  if (!applied) {
+    vscode.window.showErrorMessage(`ADR Manager: Could not insert a new Thread turn into ${seedPath}.`);
+    return;
+  }
+
+  const editor = await vscode.window.showTextDocument(doc);
+  const cursorLine = plan.insertLineIndex + plan.cursorLineOffset;
+  const pos = new vscode.Position(cursorLine, 0);
+  editor.selection = new vscode.Selection(pos, pos);
+  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
 }
 
 /** Best-effort HEAD commit for a tour's minted_commit provenance — never blocks minting on git being absent, uncommitted, or unavailable. */

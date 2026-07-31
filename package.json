@@ -110,6 +110,12 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.addSeedThreadTurn",
+        "title": "Add Thread Turn",
+        "category": "ADR Manager",
+        "icon": "$(comment-unresolved)"
+      },
+      {
         "command": "adrManager.openQuestionsPanel",
         "title": "Answer Open Questions",
         "category": "ADR Manager",
@@ -199,6 +205,11 @@
         {
           "command": "adrManager.excludeRoot",
           "when": "view == adrExplorer && viewItem == root",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.addSeedThreadTurn",
+          "when": "view == adrExplorer && viewItem == seed",
           "group": "1_actions@1"
         }
       ]
