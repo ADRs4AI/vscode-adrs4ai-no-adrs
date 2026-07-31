@@ -1171,7 +1171,19 @@ export function extractQuestion(
   deciders: string[],
   warnings?: ParseWarning[],
 ): Question {
-  const lines = section.body.split('\n');
+  // ADR-0039 §3 (found investigating SourceRange, not separately reported):
+  // `section.body` is `.trim()`-med — whenever a QST section has ANY
+  // leading blank line before its first real content (virtually every real
+  // one: "### QST: ...\n\n- Status: ..." is the standard spacing), trimming
+  // shifts `lines[0]` to the first NON-blank line, so `absLine =
+  // section.lineStart + i + 1` below silently reports the wrong line for
+  // EVERY warning in this function — off by exactly the trimmed leading-
+  // blank-line count (verified: a standard single-blank-line QST block
+  // reports its Status warning one line too early). `bodyRaw` (untrimmed,
+  // ADR-0039 §2's round-trip field) has no such shift; falls back to
+  // `body` only for hand-built test fixtures that bypass buildSection()
+  // and never got bodyRaw populated.
+  const lines = (section.bodyRaw ?? section.body).split('\n');
   let statusText = 'unanswered';
   // Whether a `- Status:` line was actually DECLARED in the block (vs the
   // default above). Load-bearing for Status-authority (below): declared

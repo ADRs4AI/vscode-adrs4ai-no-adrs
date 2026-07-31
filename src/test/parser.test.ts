@@ -4322,3 +4322,42 @@ describe("Regression tests: the invisible channel is invisible to classification
     }
   })
 })
+
+describe('Regression tests: warning line numbers were off by the QST block\'s leading-blank-line count (found investigating ADR-0039 SourceRange, 2026-07-30)', () => {
+  // extractQuestion() split section.body (`.trim()`-med) to compute
+  // per-line absolute positions (`section.lineStart + i + 1`) for every
+  // warning it emits. The standard, overwhelmingly common spacing —
+  // "### QST: ...", blank line, "- Status: ..." — has the QST body start
+  // with a blank line, which .trim() strips before the split, shifting
+  // every subsequent line index by one (or more, with extra blank lines).
+  // Every parse-warning line number for a QST block was silently wrong in
+  // exactly this common case — never separately reported, no test caught
+  // it, found only because ADR-0039's statusRange needed an accurate
+  // absLine to build on. Fixed by splitting the untrimmed `bodyRaw`
+  // (ADR-0039 §2's round-trip field) instead.
+  it('a Status-form warning inside a QST with ONE leading blank line reports the Status line\'s real number, not one line early', () => {
+    const doc = [
+      '# ADR 0001: Title', '',
+      '## Questions', '',
+      '### QST: Does this report the right line?', '',
+      '- **Status**: unanswered', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    const w = adr.parseWarnings.find(x => x.code === 'NONSTANDARD_STATUS_LINE_FORM')
+    // Lines: 1 title, 2 blank, 3 "## Questions", 4 blank, 5 heading,
+    // 6 blank, 7 "- **Status**:..." — the real line.
+    expect(w?.line).toBe(7)
+  })
+
+  it('holds with TWO leading blank lines too — the shift is the exact count trimmed, not a fixed one-line fudge', () => {
+    const doc = [
+      '# ADR 0001: Title', '',
+      '## Questions', '',
+      '### QST: Does this report the right line?', '', '',
+      '- **Status**: unanswered', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/docs/adr/x.md')
+    const w = adr.parseWarnings.find(x => x.code === 'NONSTANDARD_STATUS_LINE_FORM')
+    expect(w?.line).toBe(8)
+  })
+})
