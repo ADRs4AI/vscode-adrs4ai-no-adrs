@@ -1387,3 +1387,31 @@ describe('bodyMaxWidthCss', () => {
     expect(bodyMaxWidthCss('-50')).toBe('min(94%, 1100px)')
   })
 })
+
+describe("Regression tests: comment-strip must not eat backtick-quoted comment examples (Gleaner URGENT 1755, founder screenshots, 2026-07-31)", () => {
+  // ADR-0032's own QST-CORE quotes \`<!-- collab-adr-lean: v1 -->\` and two
+  // sibling examples while DISCUSSING the comment channel; the render-side
+  // strip (e8ab283) ran before any code protection, gutted the spans'
+  // contents, and the orphaned backticks re-paired across paragraphs —
+  // sentences of prose rendered as one giant code span. These run the
+  // ACTUAL shipped webview script via the harness, through the real
+  // questions-message flow (q.body renders via renderMarkdown).
+  const mkQ = (body) => ({ id: 'q1', text: 'Q1', body, adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' })
+
+  it('a backtick-quoted comment example survives verbatim; a bare comment is still stripped; no orphaned-backtick mega-span', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [mkQ(
+      'Version marker: `<!-- collab-adr-lean: v1 -->` in the header.\n\n<!-- really invisible -->\n\nAnd `<!-- @adr-anchor: slug -->` likewise.')] })
+    const html = h.element('body').innerHTML
+    expect(html).toContain('collab-adr-lean: v1')
+    expect(html).toContain('@adr-anchor: slug')
+    expect(html).not.toContain('really invisible')
+    expect(html).not.toMatch(/<code>[^<]*in the header/)
+  })
+
+  it('a fenced block keeps a comment inside it', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [mkQ('```\n[Fill this in] <!-- keep me -->\n```')] })
+    expect(h.element('body').innerHTML).toContain('keep me')
+  })
+})

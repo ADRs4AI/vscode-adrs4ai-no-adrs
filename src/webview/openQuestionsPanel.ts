@@ -29,7 +29,7 @@ import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
 import { resolveTourEntries, isTourDone, unresolvedTourRefs, referencedDocumentPaths, tourLedgerAnchor, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
-import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument } from '../drafts/errorLog'
+import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 
 // ---------------------------------------------------------------------------
@@ -189,6 +189,9 @@ export class OpenQuestionsPanel {
 
   /** ADR-0035 Iteration 2: signatures of tour-unresolved-refs ledger records already written THIS session — re-opening the same broken tour five times writes one record, not five. Session-scoped by design (a fresh panel instance re-logs, since the whole point is "the human/model is looking at this broken tour right now"). */
   private tourUnresolvedSignaturesLogged = new Set<string>()
+
+  /** Retry-storm dedupe (Riddle's adjudication of Gleaner's ledger sweep, 2026-07-31: lumbroso-hq logged 27 workspace-edit-rejected records in ~8 seconds, one question, one specimen — the panel's own save-retry loop re-logging on every retry cycle instead of once per actual failure). Same session-scoped-by-signature shape as tourUnresolvedSignaturesLogged above. */
+  private harvestErrorSignaturesLogged = new Set<string>()
 
   // ---------------------------------------------------------------------------
 
@@ -713,6 +716,19 @@ export class OpenQuestionsPanel {
     try {
       if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.panelErrors', true)) return
       if (!msg?.adrPath) return
+      // Retry-storm dedupe: a retry loop hitting the same failure over and
+      // over should write one ledger record, not one per retry cycle.
+      // Signature is kind+adrPath+questionId+message — a genuinely
+      // different failure (different kind, different question, different
+      // message) always still logs. ADR-0035's failure-soft clause applies
+      // here too: if the signature can't be computed for any reason, fall
+      // through and log anyway — dedupe correctness must never gate
+      // whether logging happens at all.
+      try {
+        const signature = errorSignature(kind, msg.adrPath, msg.questionId, message)
+        if (this.harvestErrorSignaturesLogged.has(signature)) return
+        this.harvestErrorSignaturesLogged.add(signature)
+      } catch { /* fall through and log anyway */ }
       // Redact the box text from the meta copy — it's already first-class in
       // boxText; duplicating full drafts in meta doubles record size for nothing.
       const { answerText: _omit, ...metaMsg } = msg
@@ -1950,9 +1966,21 @@ function renderMarkdown(md) {
   // literally (matching backslash/s/S characters, not "any character") even
   // though the real extension host's template-literal evaluation would
   // have collapsed it correctly. '.'  has no such escaping trap.
-  md = md.replace(/<!--.*?-->/gs, '');
-
-  // Process fenced code blocks first (protect from inline transforms)
+  //
+  // REGRESSION FIX (Gleaner URGENT 1755, founder screenshots, 2026-07-31):
+  // this strip used to run BEFORE any code protection, so a line QUOTING
+  // comment syntax as a literal example — \`<!-- collab-adr-lean: v1 -->\`
+  // — had its contents eaten from inside the backticks, leaving orphaned
+  // backticks that re-paired across paragraphs (ADR-0032's own QST-CORE,
+  // which quotes three comment examples while discussing the comment
+  // channel, rendered sentences of prose as one giant code span). Correct
+  // markdown semantics: code content is never comment-stripped. So: protect
+  // whole inline spans first (stored verbatim, backticks included, restored
+  // immediately after the strip so downstream per-line inline handling is
+  // unchanged), then strip comments from what remains.
+  // Process fenced code blocks first (protect from inline transforms AND
+  // from the comment strip below — a fenced example containing <!-- ... -->
+  // keeps it, correct markdown semantics).
   const codeBlocks = [];
   md = md.replace(/\`\`\`[\\s\\S]*?\`\`\`/g, m => {
     const lang = m.match(/\`\`\`(\\w*)/)?.[1] || '';
@@ -1960,6 +1988,11 @@ function renderMarkdown(md) {
     codeBlocks.push('<pre><code>' + esc(code.trimEnd()) + '</code></pre>');
     return '\\x00CODE' + (codeBlocks.length - 1) + '\\x00';
   });
+
+  const tickSpans = [];
+  md = md.replace(/\`[^\`]*\`/g, m => { tickSpans.push(m); return '\\x01T' + (tickSpans.length - 1) + '\\x01'; });
+  md = md.replace(/<!--.*?-->/gs, '');
+  md = md.replace(/\\x01T(\\d+)\\x01/g, (_, i) => tickSpans[+i]);
 
   // Lazy-continuation join for hard-wrapped list items — mirrors
   // scripts/unwrap-adrs/unwrap-adrs.mjs's joinSoftWrappedLines exactly
