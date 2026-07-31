@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.62] - 2026-07-31
+
+### Fixed
+- **A fenced code block or sub-bullet list nested under a numbered/bulleted item now renders correctly** — previously it broke the list mid-way (splitting one numbered list into several, each restarting at "1.") or flattened nested sub-bullets into one run-on line inside a single item. Found via three founder Reports on the same batch-renderer question.
+- **Retry loops no longer flood the error ledger**: repeated identical failures (the panel retrying the same rejected save) now write one ledger record instead of one per retry.
+
 ## [0.7.61] - 2026-07-31
 
 ### Fixed
