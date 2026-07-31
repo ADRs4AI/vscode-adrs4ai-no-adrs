@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.57] - 2026-07-31
+
+### Fixed
+- **"Commit ADR Changes" now works in genuine multi-folder VS Code workspaces** (a `.code-workspace` with the main project and a submodule as separate top-level folders) — it used to fail there even with real, staged changes. The scan now resolves which project owns a change from the changed file's own path, instead of asking git to resolve a repository for each project's bare folder path (which can fail even when the repository is perfectly well-known to VS Code).
+
 ## [0.7.56] - 2026-07-30
 
 ### Added
