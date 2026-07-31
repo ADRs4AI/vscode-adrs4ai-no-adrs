@@ -4265,3 +4265,60 @@ describe('Regression tests: dash-bullet ANS + bold dash-bullet Recommendation (s
     expect(q.rawBody ?? '').toContain('ANS testing showed')
   })
 })
+
+describe("Regression tests: the invisible channel is invisible to classification — HTML comments beside placeholders (Gleaner's first sweep, 2026-07-31)", () => {
+  // Cross-repo class, two founder Reports the same day (lumbroso-hq
+  // ADR-0002, batch-renderer ADR-0007): the HQ template's OWN
+  // anti-paraphrase comment sat on the placeholder line and defeated
+  // PLACEHOLDER_CANONICAL_RE's `\]$` anchor — the device protecting the
+  // placeholder from model interpolation made it read as a real answer.
+  // Doctrine: HTML comments are the reserved invisible channel (ADR-0032
+  // framing 4); classification must not see them. Stored text keeps them.
+  const COMMENT = '<!-- literal placeholder — parser-significant, do not paraphrase -->'
+  for (const [label, sep] of [['one space', ' '], ['three spaces', '   ']] as const) {
+    it(`"[Fill this in] ${label} + template comment" classifies as placeholder — question stays open`, () => {
+      const doc = [
+        '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+        '**ANS:** (by Jérémie)', `[Fill this in]${sep}${COMMENT}`, '',
+      ].join('\n')
+      const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+      expect(q.isAnswered).toBe(false)
+      expect(q.answer).toBeUndefined()
+    })
+  }
+
+  it('a comment on its OWN line after the placeholder is equally invisible', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS:** (by Jérémie)', '[Fill this in]', COMMENT, '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.answer).toBeUndefined()
+  })
+
+  it('a slot whose ONLY content is a comment is an empty slot, not an answer', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '', '**ANS:** (by X)', COMMENT, '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+  })
+
+  it('a REAL answer followed by a comment stays a real answer, comment preserved in stored text', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '',
+      '**ANS:** (by X)', 'The actual decision is B. <!-- reviewed -->', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.answer?.text).toContain('<!-- reviewed -->') // byte-faithful storage
+  })
+
+  it('"[to be filled]" and "(to be filled)" join the placeholder family (Quarry backlog row, live recurrence)', () => {
+    for (const ph of ['[to be filled]', '(to be filled)']) {
+      const doc = ['## Open Questions', '', '### QST: Q?', '- Status: unanswered', '', '**ANS:** (by X)', ph, ''].join('\n')
+      const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+      expect(q.answer, ph).toBeUndefined()
+    }
+  })
+})

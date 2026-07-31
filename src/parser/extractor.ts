@@ -942,7 +942,7 @@ const PLACEHOLDER_CANONICAL_RE = /^\[\s*fill\s+this\s+(?:in|out)[^\]]*\]$/i;
 // is always one incident behind, but naming the CLASS (a wait-state word,
 // wrapped or bracketed) at least means adding a word is a one-line change,
 // not a new regex.
-const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|tbd|pending|todo|awaiting)[^\]]*\]$/i;
+const PLACEHOLDER_SYNONYM_RE = /^\[\s*(unanswered|to be answered|to be filled|tbd|pending|todo|awaiting)[^\]]*\]$/i;
 // Bug report (2026-07-12, Jérémie, temp/0048-mcp-support-rfc-connecting-
 // external-tool-servers.md): a bare "[ ]" (or "[]") is a placeholder too —
 // no stock word, just an empty box, and apparently a common one. A separate,
@@ -976,7 +976,7 @@ const PLACEHOLDER_EMPTY_RE = /^\[\s*\]$/;
 // answer. Wrapped-only + whole-content anchoring (inherited from the
 // caller) keep the false-positive surface unchanged: bare "fill in the
 // form below" prose is never eligible (no wrapper to strip).
-export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|tbd|todo|pending|awaiting|fill(?:\s+this)?\s+(?:in|out))\b.*$/i;
+export const PLACEHOLDER_LEXICON_RE = /^(?:unanswered|to be answered|to be filled|tbd|todo|pending|awaiting|fill(?:\s+this)?\s+(?:in|out))\b.*$/i;
 
 /**
  * "One parser, N consumers" predicates (2026-07-26). The write scan
@@ -1010,8 +1010,23 @@ export function isAnsMarkerLine(line: string): boolean {
 }
 
 /** Whole-content placeholder test — same composition finalizeAnswerLayer uses. */
+/**
+ * HTML comments are the format's reserved INVISIBLE channel (ADR-0032
+ * framing 4 / CORE item (h)) — so they must be invisible to CONTENT
+ * classification too. Found the hard way (Gleaner's first sweep, 2026-07-31,
+ * two repos same day): the HQ template's own anti-paraphrase comment —
+ * "[Fill this in] <!-- literal placeholder — parser-significant, do not
+ * paraphrase -->" — defeated PLACEHOLDER_CANONICAL_RE's `\]$` anchor, so
+ * the device protecting the placeholder made it read as a REAL answer
+ * (silent false-answered + write refusals). Classification strips comments;
+ * stored text keeps them (extents and prefill stay byte-faithful).
+ */
+function stripHtmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, ' ').replace(/[ \t]+/g, ' ').trim();
+}
+
 export function isPlaceholderAnswerText(text: string): boolean {
-  const t = text.trim();
+  const t = stripHtmlComments(text.trim());
   if (PLACEHOLDER_CANONICAL_RE.test(t) || PLACEHOLDER_SYNONYM_RE.test(t) || PLACEHOLDER_EMPTY_RE.test(t)) return true;
   const stripped = stripPlaceholderWrapper(t);
   return stripped.wrapped && PLACEHOLDER_LEXICON_RE.test(stripped.inner);
@@ -1056,6 +1071,7 @@ export function stripPlaceholderWrapper(text: string): { inner: string; wrapped:
  * a second, drifting copy.
  */
 function isPlaceholderOnly(text: string): boolean {
+  text = stripHtmlComments(text);
   if (PLACEHOLDER_CANONICAL_RE.test(text)) return true;
   if (PLACEHOLDER_SYNONYM_RE.test(text) || PLACEHOLDER_EMPTY_RE.test(text)) return true;
   const stripped = stripPlaceholderWrapper(text);
@@ -1228,10 +1244,11 @@ export function extractQuestion(
       else break;
     }
     const answerText = answerLines.join('\n').trim();
-    const isCanonicalPlaceholder = PLACEHOLDER_CANONICAL_RE.test(answerText);
+    const classifiable = stripHtmlComments(answerText);
+    const isCanonicalPlaceholder = PLACEHOLDER_CANONICAL_RE.test(classifiable);
     const isSynonymPlaceholder = !isCanonicalPlaceholder &&
-      (PLACEHOLDER_SYNONYM_RE.test(answerText) || PLACEHOLDER_EMPTY_RE.test(answerText));
-    const strippedAnswer = stripPlaceholderWrapper(answerText);
+      (PLACEHOLDER_SYNONYM_RE.test(classifiable) || PLACEHOLDER_EMPTY_RE.test(classifiable));
+    const strippedAnswer = stripPlaceholderWrapper(classifiable);
     const isWrappedPlaceholder = !isCanonicalPlaceholder && !isSynonymPlaceholder &&
       strippedAnswer.wrapped && PLACEHOLDER_LEXICON_RE.test(strippedAnswer.inner);
     if ((isSynonymPlaceholder || isWrappedPlaceholder) && warnings) {
@@ -1257,7 +1274,7 @@ export function extractQuestion(
     // ("(see ADR-0014 for the full argument)") stays a real draft answer,
     // per the pre-existing guard-the-guard test.
     const isBylineScaffold = !answerAuthor && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder &&
-      /^\([^()\n]+\)$/.test(answerText);
+      /^\([^()\n]+\)$/.test(classifiable);
     if (isBylineScaffold && warnings) {
       warnings.push({
         code: 'ANS_BYLINE_SCAFFOLD',
@@ -1265,7 +1282,9 @@ export function extractQuestion(
         line: answerLine,
       });
     }
-    const isReal = !!answerText && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder && !isBylineScaffold;
+    // Emptiness judged on the stripped text too: a slot whose only content
+    // is an HTML comment is an empty slot, not an answer.
+    const isReal = !!classifiable && !isCanonicalPlaceholder && !isSynonymPlaceholder && !isWrappedPlaceholder && !isBylineScaffold;
     answerLayers.push({ qualifier: answerQualifier, author: answerAuthor, text: answerText, line: answerLine, isReal });
     answerLines.length = 0;
     answerQualifier = undefined;
