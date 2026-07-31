@@ -12,7 +12,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { resolveWorkspaceRepository, isNewGitStatus, type GitApiLike } from '../commit/repositoryResolution'
+import { resolveWorkspaceRepository, isNewGitStatus, groupChangesByOwningRoot, type GitApiLike } from '../commit/repositoryResolution'
+import type { RootNode } from '../index/compositeIndex'
 
 interface FakeRepo {
   name: string
@@ -77,5 +78,84 @@ describe('isNewGitStatus', () => {
 
   it('undefined defaults to false — never claims "new" without git confirming it', () => {
     expect(isNewGitStatus(undefined)).toBe(false)
+  })
+})
+
+// Lapidary's 2026-07-31 dispatch: DEBRIEF-002's doctrine finished. Live
+// repro at HQ — a genuine multi-FOLDER VS Code workspace (`.code-workspace`
+// with the parent repo and a submodule as SEPARATE top-level folders, not
+// nested under one directory tree that a single `getRepository(root.path)`
+// lookup can resolve). commitAdrChanges used to scan root-first (ask git
+// to resolve a repo FOR each ADR root's bare directory); this inverts it —
+// repo-first, resolving the owning root from each changed FILE's path.
+describe('groupChangesByOwningRoot (DEBRIEF-002, finished)', () => {
+  function fakeRoot(p: string, hasAdrDir = true): RootNode {
+    return { path: p, hasAdrDir } as unknown as RootNode
+  }
+  function fakeChange(fsPath: string, status?: number) {
+    return { uri: { fsPath }, status }
+  }
+  function fakeRepo(changes: ReturnType<typeof fakeChange>[]) {
+    return { state: { workingTreeChanges: changes, indexChanges: [] } }
+  }
+
+  it('the founding incident: TWO separate repos (parent + submodule as sibling workspace folders, not nested), each correctly attributed to its own ADR root — no root-path-based getRepository() lookup involved at all', () => {
+    const parentRoot = fakeRoot('/work/hq')
+    const submoduleRoot = fakeRoot('/work/hq/subprojects/initial-meta-repository')
+
+    const parentRepo = fakeRepo([fakeChange('/work/hq/docs/adr/0001-x.md')])
+    const submoduleRepo = fakeRepo([fakeChange('/work/hq/subprojects/initial-meta-repository/docs/adr/0022-y.md')])
+
+    const findRoot = (fp: string): RootNode | null => {
+      if (fp.startsWith(submoduleRoot.path)) return submoduleRoot
+      if (fp.startsWith(parentRoot.path)) return parentRoot
+      return null
+    }
+
+    const groups = groupChangesByOwningRoot([parentRepo, submoduleRepo], 'docs/adr', findRoot)
+
+    expect(groups).toHaveLength(2)
+    const bySubmodule = groups.find(g => g.node.path === submoduleRoot.path)
+    const byParent = groups.find(g => g.node.path === parentRoot.path)
+    expect(bySubmodule?.repo).toBe(submoduleRepo)
+    expect(bySubmodule?.changes).toHaveLength(1)
+    expect(byParent?.repo).toBe(parentRepo)
+    expect(byParent?.changes).toHaveLength(1)
+  })
+
+  it('a change outside any known ADR root is silently excluded, not misattributed', () => {
+    const root = fakeRoot('/work/hq')
+    const repo = fakeRepo([fakeChange('/unrelated/path/file.md')])
+    const groups = groupChangesByOwningRoot([repo], 'docs/adr', () => null)
+    expect(groups).toHaveLength(0)
+  })
+
+  it('a change under a root whose adrDirPath does not exist (hasAdrDir: false — the synthetic forest top node) is excluded', () => {
+    const syntheticTop = fakeRoot('/work/forest', false)
+    const repo = fakeRepo([fakeChange('/work/forest/docs/adr/x.md')])
+    const groups = groupChangesByOwningRoot([repo], 'docs/adr', () => syntheticTop)
+    expect(groups).toHaveLength(0)
+  })
+
+  it('a change resolved to a real root but OUTSIDE that root\'s own ADR dir is excluded (a file elsewhere in a big monorepo root)', () => {
+    const root = fakeRoot('/work/hq')
+    const repo = fakeRepo([fakeChange('/work/hq/README.md')])
+    const groups = groupChangesByOwningRoot([repo], 'docs/adr', () => root)
+    expect(groups).toHaveLength(0)
+  })
+
+  it('multiple changes in the SAME root/repo group together as one entry', () => {
+    const root = fakeRoot('/work/hq')
+    const repo = fakeRepo([
+      fakeChange('/work/hq/docs/adr/0001-a.md'),
+      fakeChange('/work/hq/docs/adr/0002-b.md'),
+    ])
+    const groups = groupChangesByOwningRoot([repo], 'docs/adr', () => root)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].changes).toHaveLength(2)
+  })
+
+  it('no repos, no changes: empty, no crash', () => {
+    expect(groupChangesByOwningRoot([], 'docs/adr', () => null)).toEqual([])
   })
 })

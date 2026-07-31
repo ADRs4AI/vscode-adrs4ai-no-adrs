@@ -51,7 +51,7 @@ import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-miss
 import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { D97RecommendationBulletFormHandler } from './normalizer/handlers/d9-7-recommendation-bullet-form'
 import { buildAdrCommitMessage, type ChangedFile } from './commit/commitMessage'
-import { resolveWorkspaceRepository, isNewGitStatus } from './commit/repositoryResolution'
+import { isNewGitStatus, groupChangesByOwningRoot } from './commit/repositoryResolution'
 import { findReferencedUntrackedFiles, type UntrackedReferencesMode } from './commit/untrackedReferences'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 import { generateSeedTemplate } from './creation/seedTemplate'
@@ -909,14 +909,18 @@ interface DirtyRoot {
 
 /**
  * ADR-0025 multi-root fix (Lapidary's 2026-07-29 feedback-seed dispatch,
- * item A3 — source: docs/adr/seed-2026-07-29-random-feedback-from-
- * experience.md): the previous implementation only ever looked at
- * `workspaceFolders[0]` and resolved exactly ONE repository, so a
- * workspace with more than one discovered ADR root (submodules, a forest
- * workspace) reported "No ADR changes to commit" the moment that FIRST
- * root happened to be clean — DEBRIEF-002's own fix (resolve by URI, not
- * position) went in one level upstream of this call site, which still
- * only ever asked for one repo.
+ * item A3), REPO-FIRST since Lapidary's 2026-07-31 dispatch (live repro at
+ * HQ — a genuine multi-FOLDER VS Code workspace, `.code-workspace` with
+ * the parent repo and a submodule as SEPARATE top-level folders, not a
+ * single directory tree). The original A3 fix scanned root-first
+ * (`compositeIndex.walk()`, then ask git to resolve a repo for each root's
+ * bare directory) — DEBRIEF-002's own fix (resolve by URI, not position)
+ * went in one level upstream of THIS call site, but the call site itself
+ * still only ever asked "what repo does this root resolve to," which can
+ * fail even when the repository is perfectly well-known to VS Code's git
+ * extension. `groupChangesByOwningRoot` (repositoryResolution.ts) inverts
+ * the direction: start from every repo the git extension has ALREADY
+ * discovered, resolve the OWNING root from each changed FILE's path.
  *
  * Jérémie's own framing (seed-2026-07-29): scan every project; if there's
  * just one with changes, commit it — no ceremony; if there's several,
@@ -933,19 +937,16 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
   const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
   const api = git.getAPI(1);
 
-  const dirtyRoots: DirtyRoot[] = [];
-  for (const node of compositeIndex.walk()) {
-    if (!node.hasAdrDir) continue;
-    const repo = resolveWorkspaceRepository<any>(api, { fsPath: node.path }); // eslint-disable-line @typescript-eslint/no-explicit-any
-    if (!repo) continue;
-    const adrDirAbs = path.join(node.path, adrDirRel);
-    const allChanges: any[] = [...repo.state.workingTreeChanges, ...repo.state.indexChanges]; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const changes = allChanges.filter((c: any) => c.uri.fsPath.startsWith(adrDirAbs)); // eslint-disable-line @typescript-eslint/no-explicit-any
-    const untrackedCandidates = allChanges
-      .filter((c: any) => isNewGitStatus(c.status) && !c.uri.fsPath.startsWith(adrDirAbs)) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .map((c: any) => c.uri.fsPath as string); // eslint-disable-line @typescript-eslint/no-explicit-any
-    if (changes.length > 0) dirtyRoots.push({ node, repo, changes, untrackedCandidates });
-  }
+  const groups = groupChangesByOwningRoot<any, any>(api.repositories, adrDirRel, fp => compositeIndex!.findRoot(fp)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const dirtyRoots: DirtyRoot[] = groups
+    .filter(g => g.changes.length > 0)
+    .map(g => {
+      const allRepoChanges: any[] = [...g.repo.state.workingTreeChanges, ...g.repo.state.indexChanges]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const untrackedCandidates = allRepoChanges
+        .filter((c: any) => isNewGitStatus(c.status) && !g.changes.includes(c)) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .map((c: any) => c.uri.fsPath as string); // eslint-disable-line @typescript-eslint/no-explicit-any
+      return { node: g.node, repo: g.repo, changes: g.changes, untrackedCandidates };
+    });
 
   if (dirtyRoots.length === 0) {
     vscode.window.showInformationMessage('ADR Manager: No ADR changes to commit.');

@@ -16,11 +16,15 @@ const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8')
 const PKG = readFileSync(resolve(__dirname, '../../package.json'), 'utf8')
 
 describe('extension.ts: untracked candidates are collected per dirty root', () => {
-  it('untrackedCandidates excludes anything already inside the ADR-dir change set', () => {
-    const loop = EXT_SRC.match(/const untrackedCandidates = allChanges[\s\S]*?\.map\(\(c: any\) => c\.uri\.fsPath as string\); \/\/ eslint-disable-line[^\n]*/)
+  // Post-2026-07-31 repo-first rewrite: untrackedCandidates is computed
+  // per GROUP (repo + owning root), excluding whatever's already this
+  // group's own primary changes — see commitRepoFirstWiring.test.ts for
+  // the repo-first resolution itself.
+  it('untrackedCandidates excludes anything already inside the group\'s own primary changes', () => {
+    const loop = EXT_SRC.match(/const untrackedCandidates = allRepoChanges[\s\S]*?\.map\(\(c: any\) => c\.uri\.fsPath as string\); \/\/ eslint-disable-line[^\n]*/)
     expect(loop).toBeTruthy()
     expect(loop![0]).toContain('isNewGitStatus(c.status)')
-    expect(loop![0]).toContain('!c.uri.fsPath.startsWith(adrDirAbs)')
+    expect(loop![0]).toContain('!g.changes.includes(c)')
   })
 })
 

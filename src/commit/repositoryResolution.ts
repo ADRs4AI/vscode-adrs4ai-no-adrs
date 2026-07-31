@@ -15,6 +15,9 @@
  * a vscode mock.
  */
 
+import * as path from 'path'
+import type { RootNode } from '../index/compositeIndex'
+
 export interface GitApiLike<Repo> {
   repositories: Repo[]
   getRepository(uri: { fsPath: string }): Repo | null
@@ -25,6 +28,68 @@ export function resolveWorkspaceRepository<Repo>(
   workspaceFolderUri: { fsPath: string },
 ): Repo | null {
   return api.getRepository(workspaceFolderUri)
+}
+
+/**
+ * DEBRIEF-002's doctrine, finished (Lapidary's 2026-07-31 dispatch — live
+ * repro at HQ, a genuine multi-FOLDER VS Code workspace, `.code-workspace`
+ * with the parent repo and a submodule as SEPARATE top-level folders):
+ * `resolveWorkspaceRepository` fixed resolve-by-URI over resolve-by-position
+ * for a SINGLE lookup, but `commitAdrChanges` still asked "what repo does
+ * THIS root's bare directory resolve to" — root-first. That can fail even
+ * when the repository is perfectly well-known to VS Code's git extension,
+ * if the root's own directory doesn't get matched by `getRepository()` the
+ * same way a file within it does (a real, observed gap, not a hypothetical
+ * one — this is the founding incident's actual failure).
+ *
+ * The robust direction is the other way around: start from every
+ * repository the git extension has ALREADY discovered (`api.repositories`
+ * — reliably populated by the extension's own scanning, not something this
+ * code has to re-derive), and for each of ITS changed files, resolve the
+ * OWNING ADR root via `compositeIndex`'s own `findRoot()` — a pure
+ * path-prefix lookup, independent of the git extension's internal
+ * repository-root matching. "Resolve the owning folder and repo from the
+ * FILE's path," not from the root's.
+ */
+export interface RepoWithChanges<Change> {
+  state: {
+    workingTreeChanges: Change[]
+    indexChanges: Change[]
+  }
+}
+
+export interface ChangeWithUri {
+  uri: { fsPath: string }
+}
+
+export interface DirtyRootGroup<Repo, Change> {
+  node: RootNode
+  repo: Repo
+  changes: Change[]
+}
+
+export function groupChangesByOwningRoot<Repo extends RepoWithChanges<Change>, Change extends ChangeWithUri>(
+  repos: Repo[],
+  adrDirRel: string,
+  findRoot: (filePath: string) => RootNode | null,
+): Array<DirtyRootGroup<Repo, Change>> {
+  const byRootPath = new Map<string, DirtyRootGroup<Repo, Change>>()
+  for (const repo of repos) {
+    const allChanges: Change[] = [...repo.state.workingTreeChanges, ...repo.state.indexChanges]
+    for (const change of allChanges) {
+      const node = findRoot(change.uri.fsPath)
+      if (!node || !node.hasAdrDir) continue
+      const adrDirAbs = path.join(node.path, adrDirRel)
+      if (!change.uri.fsPath.startsWith(adrDirAbs)) continue
+      let group = byRootPath.get(node.path)
+      if (!group) {
+        group = { node, repo, changes: [] }
+        byRootPath.set(node.path, group)
+      }
+      group.changes.push(change)
+    }
+  }
+  return [...byRootPath.values()]
 }
 
 /**
