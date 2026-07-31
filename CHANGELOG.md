@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.59] - 2026-07-31
+
+### Fixed
+- **HTML comments no longer defeat placeholder detection**: `[Fill this in] <!-- literal placeholder — parser-significant, do not paraphrase -->` — the HQ template's own anti-paraphrase comment, on the same line (or the next) — read as a real answer, silently closing the question and refusing writes. Comments are the format's reserved invisible channel, and they are now invisible to content classification everywhere (placeholder, scaffold, and emptiness tests); the stored text keeps them byte-for-byte. Found by Gleaner's first ecosystem sweep, confirmed in two repos the same day.
+- `[to be filled]` / `(to be filled)` join the recognized placeholder family.
+
 ## [0.7.58] - 2026-07-31
 
 ### Added
