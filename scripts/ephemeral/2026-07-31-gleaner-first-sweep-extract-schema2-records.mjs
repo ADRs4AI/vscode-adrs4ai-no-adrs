@@ -15,6 +15,14 @@
  * Usage: node scripts/ephemeral/2026-07-31-gleaner-first-sweep-extract-schema2-records.mjs [root ...]
  *   Prints one block per error-record/2 line found under each root's
  *   docs/adr/.working/errors.jsonl, with full message/payload/documents keys.
+ *
+ * OUTCOME (2026-07-31): used to read all 10 founder Report-button records
+ * across 5 repos in the seat's first sweep. Riddle 5 blessed folding this
+ * logic into scripts/harvest-errors.mjs directly as standing authority
+ * (`2026-07-31-riddle-to-gleaner-first-sweep-class-shipped-blessings-and-answers.md`,
+ * item 1) — done same day. This file is now superseded; kept per the
+ * ephemeral-script convention (record of the investigative tool, not a
+ * live dependency).
  */
 
 import * as fs from 'node:fs'

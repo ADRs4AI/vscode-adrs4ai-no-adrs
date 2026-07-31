@@ -17,6 +17,13 @@
  *
  * Roots may be project dirs (docs/adr/.working/errors.jsonl is found inside)
  * or parent dirs holding many projects (scanned two levels deep).
+ *
+ * Schema-v2 aware (Gleaner 5, 2026-07-31, standing authority per Riddle 5):
+ * `error-record/2` (ADR-0035 Iteration 2/3 — source/anchorPath/payload/
+ * documents, includes the founder's Report-button `kind: 'observation'`
+ * records) used to print as `?  (no box, NO FILE CAPTURED)` here — every
+ * observation/tour/drift record was invisible in the digest. Folded in
+ * from `scripts/ephemeral/2026-07-31-gleaner-first-sweep-extract-schema2-records.mjs`.
  */
 
 import * as fs from 'node:fs'
@@ -26,7 +33,14 @@ const args = process.argv.slice(2)
 const full = args.includes('--full')
 const sinceIdx = args.indexOf('--since')
 const since = sinceIdx >= 0 ? new Date(args[sinceIdx + 1]) : null
-const roots = args.filter((a, i) => !a.startsWith('--') && i !== sinceIdx + 1)
+// BUG FIXED 2026-07-31 (Gleaner 5): when --since was absent, sinceIdx was -1,
+// so `i !== sinceIdx + 1` excluded index 0 unconditionally — the first
+// positional root argument was silently dropped on every invocation that
+// didn't pass --since, and the empty roots[] fell through to the cwd
+// fallback below with no warning. `node harvest-errors.mjs <one-root>` from
+// inside this repo silently scanned THIS repo instead. The `sinceIdx < 0 ||`
+// guard is the fix — only exclude index sinceIdx+1 when --since was found.
+const roots = args.filter((a, i) => !a.startsWith('--') && (sinceIdx < 0 || i !== sinceIdx + 1))
 if (roots.length === 0) roots.push(process.cwd())
 
 /** Find errors.jsonl files: direct hit, project-shaped, or parent-of-projects. */
@@ -73,6 +87,13 @@ for (const root of roots) {
       console.log(`  ${String(n).padStart(3)} × ${kind}`)
     }
     for (const r of records) {
+      if (r.schema === 'error-record/2') {
+        const anchor = path.basename(r.anchorPath ?? '?')
+        const docs = r.documents ? `${Object.keys(r.documents).length} doc(s)` : 'no docs'
+        const note = r.message ? ` — "${r.message.slice(0, 80).replace(/\n/g, ' ')}${r.message.length > 80 ? '…' : ''}"` : ''
+        console.log(`  - ${r.ts}  [${r.kind}]  source=${r.source ?? '?'}  ${anchor}  (${docs})  v${r.extensionVersion ?? '?'}${note}`)
+        continue
+      }
       const adr = path.basename(r.adrPath ?? '?')
       const box = r.boxText != null ? `box ${r.boxText.length}ch` : 'no box'
       const file = r.adrContent != null ? `file ${r.adrContent.length}ch` : 'NO FILE CAPTURED'
