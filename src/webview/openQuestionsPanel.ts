@@ -140,6 +140,8 @@ type WebviewMessage =
       sourceKind: 'adr' | 'seed'
       /** Insertion-preview protocol (DEBRIEF-006): the human has seen the "insertionPreview" context and approved it — proceed with the append-ANS fallback instead of previewing again. */
       confirmedInsertion?: boolean
+      /** Insertion-preview ±1 adjustment (Jérémie via Gleaner's sweep, 2026-07-31: "if we are not sure, we should make a guess, and let the user - (move back a line) or + (move down a line)"). Applied to the server-computed insertion line before writing; 0/undefined is the original guess, unmoved. */
+      insertLineOffset?: number
       /** ADR-0036: "Respond (unresolved)" — same ANS layer, but the ball moves to the model's court instead of closing the question. Omitted/'answered' is the ordinary Answer gesture. */
       targetStatus?: 'answered' | 'unresolved'
     }
@@ -737,6 +739,8 @@ export class OpenQuestionsPanel {
     force?: boolean
     sourceKind: 'adr' | 'seed'
     confirmedInsertion?: boolean
+    /** Insertion-preview ±1 adjustment: applied to the server-computed insertion line before writing. */
+    insertLineOffset?: number
     /** ADR-0036: "Respond (unresolved)" writes the same ANS layer but sets Status: unresolved instead of answered — the human has contributed content, but the ball moves to the model's court rather than closing the question. Defaults to 'answered' (the ordinary Answer gesture). */
     targetStatus?: 'answered' | 'unresolved'
   }): Promise<void> {
@@ -900,6 +904,17 @@ export class OpenQuestionsPanel {
         const author = msg.authorName.trim() || 'Human'
         let insertLineIdx = blockEndLineIdx
         while (insertLineIdx > start && lines[insertLineIdx - 1].trim() === '') insertLineIdx--
+
+        // Insertion-preview ±1 adjustment (Jérémie via Gleaner's sweep,
+        // 2026-07-31: "if we are not sure, we should make a guess, and let
+        // the user - (move back a line) or + (move down a line)"). The
+        // webview only ever sends this alongside confirmedInsertion:true,
+        // after the human has nudged the marker within the previewed
+        // context window — clamp to the question's own extent so a runaway
+        // offset can't land the ANS block outside its own block.
+        if (msg.insertLineOffset) {
+          insertLineIdx = Math.min(Math.max(insertLineIdx + msg.insertLineOffset, start), blockEndLineIdx)
+        }
 
         // Insertion-preview protocol (Jérémie's own design, 2026-07-13,
         // docs/inbox/2026-07-13-0710-...; DEBRIEF-006, 2026-07-18: never
@@ -1741,15 +1756,20 @@ textarea.expanded{min-height:70vh;height:70vh}
        flush-right slot in this row is ITS reserved home; nothing else
        ever occupies it, so autosave firing/clearing never shifts the
        button row below. -->
-  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later · Cmd+Shift+Enter: respond and return the partial answer to the model for consideration</span><span class="draft-flash" id="draft-flash">✓ draft saved</span></div>
+  <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later · Cmd+Shift+Enter: request follow-up and return the partial answer to the model for consideration</span><span class="draft-flash" id="draft-flash">✓ draft saved</span></div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
-    <!-- ADR-0036 (Riddle's design, ratified 2026-07-29): "Respond
-         (unresolved)" — the human has contributed content but the ball
-         moves to the model's court instead of closing the question.
-         Writes the same ANS layer, sets Status: unresolved. -->
-    <button class="btn-respond-unresolved" id="btn-respond-unresolved" title="Respond and return the partial answer to the model for consideration (Cmd+Shift+Enter)">Respond (unresolved)</button>
+    <!-- ADR-0036 (Riddle's design, ratified 2026-07-29): the human has
+         contributed content but the ball moves to the model's court
+         instead of closing the question. Writes the same ANS layer, sets
+         Status: unresolved. Label changed from "Respond (unresolved)" to
+         "Request Follow-up →" (Jérémie via Gleaner's sweep, 2026-07-31:
+         "respond isn't clear... it doesn't differentiate itself from
+         answer... maybe put something like request follow-up") — the
+         id/class/mechanism (targetStatus:'unresolved') are unchanged, this
+         is a label-only fix. -->
+    <button class="btn-respond-unresolved" id="btn-respond-unresolved" title="Request follow-up and return the partial answer to the model for consideration (Cmd+Shift+Enter)">Request Follow-up →</button>
     <button class="btn-back" id="btn-back">← Back</button>
     <button class="btn-skip" id="btn-skip">Skip</button>
     <button class="btn-report" id="btn-report" style="display:none" title="Report an observation about this question/ADR — saved for later review, doesn't affect your answer">🚩 Report</button>
@@ -1784,6 +1804,8 @@ textarea.expanded{min-height:70vh;height:70vh}
     <span>No ANS block found — this will insert a new one here. Check the context below:</span>
     <pre class="insertion-preview-context" id="insertion-preview-context"></pre>
     <div class="insertion-preview-actions">
+      <button class="btn-skip" id="btn-insertion-up" title="Move insertion point up one line">- Move up</button>
+      <button class="btn-skip" id="btn-insertion-down" title="Move insertion point down one line">+ Move down</button>
       <button class="btn-answer" id="btn-insertion-confirm">Insert here</button>
       <button class="btn-skip" id="btn-insertion-cancel">Cancel</button>
     </div>
@@ -1811,6 +1833,21 @@ let showAuthorshipField = false;
 // panel is waiting to resend with confirmedInsertion:true once the human
 // approves the previewed insertion point, or null when no preview is open.
 let pendingInsertionConfirm = null;
+// ±1 adjustment (Jérémie via Gleaner's sweep, 2026-07-31): the previewed
+// before/after context lines, and how many lines the human has nudged the
+// marker within that already-fetched window. Re-rendered client-side, no
+// extra round-trip — the window is only 3+3 lines so a modest nudge in
+// either direction always stays in bounds.
+let pendingInsertionContext = null;
+let insertionAdjustment = 0;
+function renderInsertionPreview() {
+  if (!pendingInsertionContext) return;
+  const allLines = pendingInsertionContext.before.concat(pendingInsertionContext.after);
+  const markerIdx = Math.min(Math.max(pendingInsertionContext.before.length + insertionAdjustment, 0), allLines.length);
+  const marker = '------ inserting here ------';
+  const lines = allLines.slice(0, markerIdx).concat([marker], allLines.slice(markerIdx));
+  $id('insertion-preview-context').textContent = lines.join('\\n');
+}
 // Bug report (2026-07-12, Jérémie, temp/0048 dogfooding session): in a repo
 // with concurrent writers, ANY unrelated docs/adr/*.md save elsewhere
 // triggers index.onChange -> sendQuestions() -> a 'questions' push here,
@@ -2366,6 +2403,8 @@ function submit(force, targetStatus) {
   $id('drift-bar').style.display = 'none';
   $id('insertion-preview-bar').style.display = 'none';
   pendingInsertionConfirm = null;
+  pendingInsertionContext = null;
+  insertionAdjustment = 0;
   const q = questions[idx];
   vscode.postMessage({
     type: 'answer', questionId: q.id, adrPath: q.adrPath, lineStart: q.lineStart,
@@ -2434,12 +2473,24 @@ $id('btn-drift-hold').addEventListener('click', () => {
   $id('btn-respond-unresolved').disabled = false;
 });
 
+$id('btn-insertion-up').addEventListener('click', () => {
+  if (!pendingInsertionContext) return;
+  insertionAdjustment -= 1;
+  renderInsertionPreview();
+});
+$id('btn-insertion-down').addEventListener('click', () => {
+  if (!pendingInsertionContext) return;
+  insertionAdjustment += 1;
+  renderInsertionPreview();
+});
 $id('btn-insertion-confirm').addEventListener('click', () => {
   if (!pendingInsertionConfirm) return;
   $id('insertion-preview-bar').style.display = 'none';
   $id('btn-ans').disabled = true;
-  vscode.postMessage(Object.assign({}, pendingInsertionConfirm, { confirmedInsertion: true }));
+  vscode.postMessage(Object.assign({}, pendingInsertionConfirm, { confirmedInsertion: true, insertLineOffset: insertionAdjustment }));
   pendingInsertionConfirm = null;
+  pendingInsertionContext = null;
+  insertionAdjustment = 0;
 });
 $id('btn-insertion-cancel').addEventListener('click', () => {
   // Nothing was written — the draft is untouched, just dismiss and let the
@@ -2448,6 +2499,8 @@ $id('btn-insertion-cancel').addEventListener('click', () => {
   $id('btn-ans').disabled = false;
   $id('btn-respond-unresolved').disabled = false;
   pendingInsertionConfirm = null;
+  pendingInsertionContext = null;
+  insertionAdjustment = 0;
 });
 
 // Persistent save-failure warning (Lapidary 5, 2026-07-16). Tracked
@@ -2669,6 +2722,8 @@ function render() {
   $id('drift-bar').style.display = 'none';
   $id('insertion-preview-bar').style.display = 'none';
   pendingInsertionConfirm = null;
+  pendingInsertionContext = null;
+  insertionAdjustment = 0;
   $id('btn-ans').disabled = false;
   $id('btn-respond-unresolved').disabled = false;
   $id('btn-back').disabled = idx === 0;
@@ -2824,9 +2879,9 @@ window.addEventListener('message', e => {
     $id('btn-ans').disabled = false;
   $id('btn-respond-unresolved').disabled = false;
     pendingInsertionConfirm = msg.message;
-    const marker = '------ inserting here ------';
-    const context = msg.before.join('\\n') + '\\n' + marker + '\\n' + msg.after.join('\\n');
-    $id('insertion-preview-context').textContent = context;
+    pendingInsertionContext = { before: msg.before, after: msg.after };
+    insertionAdjustment = 0;
+    renderInsertionPreview();
     $id('insertion-preview-bar').style.display = 'flex';
   }
 });

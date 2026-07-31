@@ -480,12 +480,12 @@ describe('Webview script block syntax', () => {
       expect(h.sentMessages).toHaveLength(0)
     })
 
-    it('"Insert here" resends the original answer message with confirmedInsertion:true, and hides the bar', () => {
+    it('"Insert here" resends the original answer message with confirmedInsertion:true and insertLineOffset:0, and hides the bar', () => {
       const h = createWebviewHarness()
       h.postToWebview(previewMsg)
       h.click('btn-insertion-confirm')
       expect(h.element('insertion-preview-bar').style.display).toBe('none')
-      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true })
+      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true, insertLineOffset: 0 })
     })
 
     it('Cancel dismisses the preview without sending anything, and re-enables the answer button', () => {
@@ -495,6 +495,49 @@ describe('Webview script block syntax', () => {
       expect(h.element('insertion-preview-bar').style.display).toBe('none')
       expect(h.element('btn-ans').disabled).toBe(false)
       expect(h.sentMessages).toHaveLength(0)
+    })
+
+    // ±1 adjustment (Jérémie via Gleaner's sweep, 2026-07-31): "if we are not
+    // sure, we should make a guess, and let the user - (move back a line) or
+    // + (move down a line)" — a directional nudge within the already-fetched
+    // 3+3 context window, re-rendered client-side with no extra round-trip.
+    it('Move down shifts the marker later in the context and is sent as insertLineOffset on confirm', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      h.click('btn-insertion-down')
+      const context = h.element('insertion-preview-context').textContent
+      const lines = context.split('\n')
+      expect(lines.indexOf('------ inserting here ------')).toBe(lines.indexOf('line4') + 1)
+      h.click('btn-insertion-confirm')
+      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true, insertLineOffset: 1 })
+    })
+
+    it('Move up shifts the marker earlier in the context and is sent as insertLineOffset on confirm', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      h.click('btn-insertion-up')
+      const context = h.element('insertion-preview-context').textContent
+      const lines = context.split('\n')
+      expect(lines.indexOf('------ inserting here ------')).toBe(lines.indexOf('line2') + 1)
+      h.click('btn-insertion-confirm')
+      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true, insertLineOffset: -1 })
+    })
+
+    it('resets the adjustment to 0 on a fresh preview', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      h.click('btn-insertion-up')
+      h.postToWebview(previewMsg)
+      h.click('btn-insertion-confirm')
+      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true, insertLineOffset: 0 })
+    })
+
+    // Host-side half of the same feature: writeAnswer() must apply the
+    // offset (clamped to the question's own extent) before writing, not
+    // trust the webview's arithmetic blindly.
+    it('writeAnswer applies insertLineOffset, clamped to [start, blockEndLineIdx]', () => {
+      expect(PANEL_SRC).toContain('if (msg.insertLineOffset) {')
+      expect(PANEL_SRC).toContain('insertLineIdx = Math.min(Math.max(insertLineIdx + msg.insertLineOffset, start), blockEndLineIdx)')
     })
   })
 
@@ -884,7 +927,17 @@ describe('Tour-mode skin (ADR-0034)', () => {
     })
 
     it('the hint line explains the unresolved gesture', () => {
-      expect(PANEL_SRC).toContain('respond and return the partial answer to the model for consideration')
+      expect(PANEL_SRC).toContain('request follow-up and return the partial answer to the model for consideration')
+    })
+
+    // Label rename (Jérémie via Gleaner's sweep, 2026-07-31): "respond isn't
+    // clear... it doesn't differentiate itself from answer... maybe put
+    // something like request follow-up". Mechanism (id/class/targetStatus)
+    // is unchanged — covered by the tests above — this only pins the
+    // visible copy.
+    it('the visible button label reads "Request Follow-up →", not "Respond (unresolved)"', () => {
+      expect(PANEL_SRC).toContain('>Request Follow-up →</button>')
+      expect(PANEL_SRC).not.toContain('>Respond (unresolved)</button>')
     })
   })
 
