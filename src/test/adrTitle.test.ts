@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { stripAdrNumberPrefix } from '../parser/adrTitle'
+import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 
 describe('stripAdrNumberPrefix', () => {
   describe('Regression tests', () => {
@@ -41,5 +41,27 @@ describe('stripAdrNumberPrefix', () => {
 
   it('a title that IS just the prefix falls back to itself rather than emptying', () => {
     expect(stripAdrNumberPrefix('ADR 0031:')).toBe('ADR 0031:')
+  })
+})
+
+describe('normalizeDateForTitle', () => {
+  describe('Regression tests (QST-DETECTION-LEDGER row 25, Gleaner 5 / HQ meta-repo founder Report, 2026-07-31)', () => {
+    it('the real specimen: a trailing parenthetical annotation is stripped for the title, leaving just the date', () => {
+      expect(normalizeDateForTitle('2026-07-29 (dictated overnight, pre-sleep; captured same night)'))
+        .toBe('2026-07-29')
+    })
+  })
+
+  it('a bare YYYY-MM-DD date passes through unchanged', () => {
+    expect(normalizeDateForTitle('2026-07-29')).toBe('2026-07-29')
+  })
+
+  it('a date string that does not start with YYYY-MM-DD falls back to itself — never hides content that does not fit the pattern', () => {
+    expect(normalizeDateForTitle('sometime in July')).toBe('sometime in July')
+  })
+
+  it('an annotation with its own parentheses/nested content is still stripped, since only the leading date prefix is kept', () => {
+    expect(normalizeDateForTitle('2026-07-29 (approx — see thread for the real timeline (2026-07-28 to -30))'))
+      .toBe('2026-07-29')
   })
 })

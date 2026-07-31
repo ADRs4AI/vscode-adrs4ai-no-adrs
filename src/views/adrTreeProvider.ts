@@ -37,7 +37,7 @@ import * as path from 'path'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { CompositeIndex, RootNode } from '../index/compositeIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
-import { stripAdrNumberPrefix } from '../parser/adrTitle'
+import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 import { pathFragmentFor } from './rootPathFragment'
 import { stableTreeItemId } from './treeItemIdentity'
@@ -299,7 +299,7 @@ export class AdrTreeItem extends vscode.TreeItem {
       // See ADR-0011 for the full seed treeview design.
       if (opts.adr.isSeed) {
         const title = opts.adr.title.replace(/^SEED:\s*/i, '').trim() || opts.adr.title
-        const dateStr = opts.adr.date || ''
+        const dateStr = opts.adr.date ? normalizeDateForTitle(opts.adr.date) : ''
         return dateStr ? `SEED (${dateStr}): ${title}` : `SEED: ${title}`
       }
       const num = String(opts.adr.number).padStart(4, '0')
@@ -357,7 +357,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     }
     if (opts.kind === 'seed' && opts.seed) {
       const s = opts.seed
-      const dateStr = s.date ? ` (${s.date})` : ''
+      const dateStr = s.date ? ` (${normalizeDateForTitle(s.date)})` : ''
       return `SEED${dateStr}: ${s.topic}`
     }
     if (opts.kind === 'tour-group') {

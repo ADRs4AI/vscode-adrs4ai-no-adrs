@@ -1396,7 +1396,7 @@ describe("Regression tests: comment-strip must not eat backtick-quoted comment e
   // sentences of prose rendered as one giant code span. These run the
   // ACTUAL shipped webview script via the harness, through the real
   // questions-message flow (q.body renders via renderMarkdown).
-  const mkQ = (body) => ({ id: 'q1', text: 'Q1', body, adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' })
+  const mkQ = (body: string) => ({ id: 'q1', text: 'Q1', body, adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' })
 
   it('a backtick-quoted comment example survives verbatim; a bare comment is still stripped; no orphaned-backtick mega-span', () => {
     const h = createWebviewHarness()

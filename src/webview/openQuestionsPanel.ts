@@ -22,7 +22,7 @@ import type { CompositeIndex } from '../index/compositeIndex'
 import type { AdrFile, Recommendation, Question } from '../parser/types'
 import { parseAdr } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
-import { stripAdrNumberPrefix } from '../parser/adrTitle'
+import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan'
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
@@ -478,7 +478,12 @@ export class OpenQuestionsPanel {
       const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => this.buildRows(adr.questions, this.adrRowOpts(adr)))
 
       const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed => {
-        const dateStr = seed.date ? ` (${seed.date})` : ''
+        // Gleaner 5 / ledger row 25: the raw Date field carries whatever
+        // annotation the author wrote ("2026-07-29 (dictated overnight,
+        // ...)") — same title-site normalization as adrTreeProvider.ts's
+        // sidebar labels, needed here too since this groupLabel is the
+        // panel's own always-visible TOC header, not a tooltip.
+        const dateStr = seed.date ? ` (${normalizeDateForTitle(seed.date)})` : ''
         return this.buildRows(seed.questions, {
           // Already globally unique (an absolute path) — no root-qualification needed.
           containerId: seed.path,
