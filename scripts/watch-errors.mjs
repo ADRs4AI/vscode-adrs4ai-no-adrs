@@ -68,8 +68,17 @@ function describeRecord(r) {
   return `[${r.kind}] ${adr}`
 }
 
+// BUG FOUND IN PRODUCTION (2026-08-02): `just wake`'s own recipe body
+// re-quotes its {{message}} argument inside a shell script (confirmed via
+// the actual failure: "unexpected EOF while looking for matching `''"). A
+// message containing an apostrophe or quote — trivially common in a
+// founder Report's own words ("doesn't exist") — breaks that inner
+// quoting even though execFile here never shells out itself. Not our
+// recipe to fix; stripping quote characters before handing off is cheap
+// and the message is a short summary anyway, not the specimen record.
 function wake(alias, message) {
-  execFile('just', ['wake', alias, message], (err) => {
+  const safe = message.replace(/['"]/g, '')
+  execFile('just', ['wake', alias, safe], (err) => {
     if (err) console.error(`  ! wake failed: ${err.message}`)
   })
 }
