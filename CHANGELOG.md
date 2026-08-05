@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.64] - 2026-08-05
+
+### Added
+- **An attention toast now appears when the insertion-preview picker renders off-screen** — if you press ⌘Enter and the "insert here?" prompt lands below your current scroll position, a small toast in the panel's accent color points down toward it instead of it firing silently below the fold. Click it to scroll the picker into view.
+
 ## [0.7.63] - 2026-08-05
 
 ### Fixed
