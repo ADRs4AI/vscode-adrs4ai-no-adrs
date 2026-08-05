@@ -541,6 +541,97 @@ describe('Webview script block syntax', () => {
     })
   })
 
+  // Feature (Jérémie via Gleaner's sweep, 2026-08-05, docs/inbox/2026-08-
+  // 05-0433-...): the insertion-preview picker sometimes renders below the
+  // human's current scroll position with no visible cue it fired. A toast
+  // in the panel's own accent color (never the insertion-preview-bar's own
+  // warning-yellow — explicitly excluded by the ask) appears when the bar
+  // is offscreen, and disappears once it scrolls into view.
+  describe('Off-screen insertion-picker attention toast', () => {
+    const previewMsg = {
+      type: 'insertionPreview',
+      before: ['line1', 'line2', 'line3'],
+      after: ['line4', 'line5', 'line6'],
+      message: {
+        type: 'answer', questionId: 'q1', adrPath: '/fake/a.md', lineStart: 10,
+        answerText: 'x', authorName: 'Jérémie', draftKey: 'k', fileChecksum: 'c', sourceKind: 'adr',
+      },
+    }
+
+    it('isElementOffscreenBelow: true once the element\'s top reaches or passes the viewport height', () => {
+      const isElementOffscreenBelow = createWebviewHarness().sandbox.isElementOffscreenBelow as (rect: { top: number }, viewportHeight: number) => boolean
+      expect(isElementOffscreenBelow({ top: 799 }, 800)).toBe(false)
+      expect(isElementOffscreenBelow({ top: 800 }, 800)).toBe(true)
+      expect(isElementOffscreenBelow({ top: 5000 }, 800)).toBe(true)
+      expect(isElementOffscreenBelow({ top: 0 }, 800)).toBe(false)
+    })
+
+    it('stays hidden when the picker renders within the viewport (the default/common case)', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      expect(h.element('offscreen-toast').style.display).toBe('none')
+    })
+
+    it('shows when the picker renders below the viewport', () => {
+      const h = createWebviewHarness()
+      h.element('insertion-preview-bar').rect = { top: 5000, bottom: 5050, left: 0, right: 0, width: 0, height: 50 }
+      h.postToWebview(previewMsg)
+      expect(h.element('offscreen-toast').style.display).toBe('block')
+    })
+
+    it('hides again once a scroll brings the picker into view', () => {
+      const h = createWebviewHarness()
+      h.element('insertion-preview-bar').rect = { top: 5000, bottom: 5050, left: 0, right: 0, width: 0, height: 50 }
+      h.postToWebview(previewMsg)
+      expect(h.element('offscreen-toast').style.display).toBe('block')
+      h.element('insertion-preview-bar').rect = { top: 100, bottom: 150, left: 0, right: 0, width: 0, height: 50 }
+      h.triggerWindowEvent('scroll')
+      expect(h.element('offscreen-toast').style.display).toBe('none')
+    })
+
+    it('hides on Cancel, Insert here, and plain submit — never left dangling once the picker itself is gone', () => {
+      for (const dismiss of [
+        (h: ReturnType<typeof createWebviewHarness>) => h.click('btn-insertion-cancel'),
+        (h: ReturnType<typeof createWebviewHarness>) => h.click('btn-insertion-confirm'),
+      ]) {
+        const h = createWebviewHarness()
+        h.element('insertion-preview-bar').rect = { top: 5000, bottom: 5050, left: 0, right: 0, width: 0, height: 50 }
+        h.postToWebview(previewMsg)
+        expect(h.element('offscreen-toast').style.display).toBe('block')
+        dismiss(h)
+        expect(h.element('offscreen-toast').style.display).toBe('none')
+      }
+    })
+
+    it('clicking the toast scrolls the picker into view', () => {
+      const h = createWebviewHarness()
+      h.element('insertion-preview-bar').rect = { top: 5000, bottom: 5050, left: 0, right: 0, width: 0, height: 50 }
+      h.postToWebview(previewMsg)
+      let scrolled = false
+      h.element('insertion-preview-bar').scrollIntoView = () => { scrolled = true }
+      h.click('offscreen-toast')
+      expect(scrolled).toBe(true)
+    })
+
+    it('uses the panel\'s own accent color (button-background), never the insertion-preview-bar\'s warning-yellow', () => {
+      const cssBlock = PANEL_SRC.match(/\.offscreen-toast\{[\s\S]*?\}/)?.[0]
+      expect(cssBlock, 'expected a .offscreen-toast CSS rule').toBeTruthy()
+      expect(cssBlock).toContain('var(--vscode-button-background)')
+      expect(cssBlock).not.toContain('warningBackground')
+      expect(cssBlock).not.toContain('warningBorder')
+    })
+
+    it('uses down-pointing arrow SYMBOLS, not emoji, flanking the message', () => {
+      const match = PANEL_SRC.match(/<div class="offscreen-toast" id="offscreen-toast"[^>]*>([^<]*)<\/div>/)
+      expect(match, 'expected the offscreen-toast element in the panel HTML').toBeTruthy()
+      const text = match![1]
+      expect(text.trim().startsWith('↓')).toBe(true)
+      expect(text.trim().endsWith('↓')).toBe(true)
+      // eslint-disable-next-line no-control-regex -- deliberately checking for the absence of any codepoint outside the BMP (the emoji block), not matching one
+      expect(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text)).toBe(false)
+    })
+  })
+
   // DEBRIEF-004 (Jérémie, 2026-07-12, ADR-0025 QST-1): live answer vanished
   // mid-typing, and skip-then-return-to-question failed to restore the
   // draft. Root cause: idx is a bare POSITION in the flattened `questions`

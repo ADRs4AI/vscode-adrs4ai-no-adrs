@@ -1502,6 +1502,21 @@ textarea.expanded{min-height:70vh;height:70vh}
   font-weight:600;
 }
 .insertion-preview-actions{display:flex;gap:8px}
+.offscreen-toast{
+  position:fixed;
+  left:50%;bottom:16px;
+  transform:translateX(-50%);
+  background:var(--vscode-button-background);
+  color:var(--vscode-button-foreground);
+  padding:8px 16px;
+  border-radius:20px;
+  font-size:12px;font-weight:600;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);
+  cursor:pointer;
+  z-index:1000;
+  white-space:nowrap;
+}
+.offscreen-toast:hover{background:var(--vscode-button-hoverBackground)}
 /* ADR-0034 (QuestionTours): the tour-mode skin's one visible seam — header
    renders provenance-first metadata, per doctrine 2 ("perspectives, not
    consensus" — no ordering ever reads as authoritative without naming its
@@ -1710,6 +1725,17 @@ textarea.expanded{min-height:70vh;height:70vh}
 </head>
 <body>
 
+<!-- Off-screen insertion-picker attention toast (Jérémie via Gleaner,
+     2026-08-05): the insertion-preview picker sometimes renders below the
+     current scroll position with no visual cue it fired. Fixed to the
+     viewport (not #card) so it stays visible regardless of scroll
+     position; shown/hidden by checkInsertionPickerVisibility() in the
+     script below. Panel's own accent color (button-background), never the
+     warning-yellow the insertion-preview-bar itself uses — explicitly NOT
+     that, per the ask ("not yellow"). Down-pointing arrow SYMBOLS, not
+     emoji. Clicking it scrolls the picker into view. -->
+<div class="offscreen-toast" id="offscreen-toast" style="display:none" role="button">↓ Requires your attention — press ⌘Enter to continue ↓</div>
+
 <div id="empty">
   <div class="icon">✓</div>
   <div style="font-size:16px;font-weight:600">All caught up</div>
@@ -1880,6 +1906,29 @@ function renderInsertionPreview() {
   const lines = allLines.slice(0, markerIdx).concat([marker], allLines.slice(markerIdx));
   $id('insertion-preview-context').textContent = lines.join('\\n');
 }
+
+// Off-screen insertion-picker attention toast (Jérémie via Gleaner,
+// 2026-08-05): the insertion-preview picker sometimes renders below the
+// human's current scroll position, so ⌘Enter fires with no visible cue —
+// the picker is silently below the fold. isElementOffscreenBelow is pure
+// (rect + viewport height in, boolean out) so it's testable without a real
+// layout engine; checkInsertionPickerVisibility is the thin DOM wrapper.
+function isElementOffscreenBelow(rect, viewportHeight) {
+  return rect.top >= viewportHeight;
+}
+function checkInsertionPickerVisibility() {
+  const bar = $id('insertion-preview-bar');
+  const toast = $id('offscreen-toast');
+  if (bar.style.display === 'none') { toast.style.display = 'none'; return; }
+  const rect = bar.getBoundingClientRect();
+  toast.style.display = isElementOffscreenBelow(rect, window.innerHeight) ? 'block' : 'none';
+}
+// Wiring (window.addEventListener('scroll', ...) and the $id(...) click
+// handler below) lives further down, alongside the rest of this script's
+// $id(...)-calling top-level statements — $id itself isn't declared until
+// after this point, so calling it up here would throw a ReferenceError
+// (const is not hoisted with initialization).
+
 // Bug report (2026-07-12, Jérémie, temp/0048 dogfooding session): in a repo
 // with concurrent writers, ANY unrelated docs/adr/*.md save elsewhere
 // triggers index.onChange -> sendQuestions() -> a 'questions' push here,
@@ -2361,6 +2410,10 @@ $id('draft-restored').addEventListener('click', e => {
 
 $id('btn-ans').addEventListener('click', submit);
 $id('btn-respond-unresolved').addEventListener('click', () => submit(false, 'unresolved'));
+window.addEventListener('scroll', checkInsertionPickerVisibility);
+$id('offscreen-toast').addEventListener('click', () => {
+  $id('insertion-preview-bar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 $id('open-in-file').addEventListener('click', e => {
   e.preventDefault();
   if (!questions[idx]) return;
@@ -2524,6 +2577,7 @@ function submit(force, targetStatus) {
   $id('err').style.display = 'none';
   $id('drift-bar').style.display = 'none';
   $id('insertion-preview-bar').style.display = 'none';
+  $id('offscreen-toast').style.display = 'none';
   pendingInsertionConfirm = null;
   pendingInsertionContext = null;
   insertionAdjustment = 0;
@@ -2608,6 +2662,7 @@ $id('btn-insertion-down').addEventListener('click', () => {
 $id('btn-insertion-confirm').addEventListener('click', () => {
   if (!pendingInsertionConfirm) return;
   $id('insertion-preview-bar').style.display = 'none';
+  $id('offscreen-toast').style.display = 'none';
   $id('btn-ans').disabled = true;
   vscode.postMessage(Object.assign({}, pendingInsertionConfirm, { confirmedInsertion: true, insertLineOffset: insertionAdjustment }));
   pendingInsertionConfirm = null;
@@ -2618,6 +2673,7 @@ $id('btn-insertion-cancel').addEventListener('click', () => {
   // Nothing was written — the draft is untouched, just dismiss and let the
   // human keep editing or pick a different path.
   $id('insertion-preview-bar').style.display = 'none';
+  $id('offscreen-toast').style.display = 'none';
   $id('btn-ans').disabled = false;
   $id('btn-respond-unresolved').disabled = false;
   pendingInsertionConfirm = null;
@@ -2843,6 +2899,7 @@ function render() {
   $id('flash').style.display = 'none';
   $id('drift-bar').style.display = 'none';
   $id('insertion-preview-bar').style.display = 'none';
+  $id('offscreen-toast').style.display = 'none';
   pendingInsertionConfirm = null;
   pendingInsertionContext = null;
   insertionAdjustment = 0;
@@ -3005,6 +3062,7 @@ window.addEventListener('message', e => {
     insertionAdjustment = 0;
     renderInsertionPreview();
     $id('insertion-preview-bar').style.display = 'flex';
+    checkInsertionPickerVisibility();
   }
 });
 </script>

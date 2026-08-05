@@ -80,6 +80,17 @@ export interface FakeElement {
   querySelector: (sel: string) => FakeElement | null
   closest: (sel: string) => FakeElement | null
   listeners: Record<string, Array<(e: unknown) => void>>
+  /**
+   * Mutable fake layout geometry (2026-08-05, offscreen-toast feature):
+   * there is no real layout engine here, so `getBoundingClientRect()`
+   * returns whatever a test has set on `.rect` (default: all zeros, at the
+   * top of the viewport — the safe "not offscreen" default so every OTHER
+   * existing test, which never touches `.rect`, is unaffected). Tests that
+   * care about viewport-offscreen detection set `.rect` directly before
+   * triggering the relevant message/event.
+   */
+  rect: { top: number; bottom: number; left: number; right: number; width: number; height: number }
+  getBoundingClientRect: () => FakeElement['rect']
 }
 
 function makeFakeElement(id: string): FakeElement {
@@ -100,6 +111,8 @@ function makeFakeElement(id: string): FakeElement {
     querySelector: () => null,
     closest: () => null,
     listeners: {},
+    rect: { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 },
+    getBoundingClientRect: () => el.rect,
   }
   return el
 }
@@ -120,6 +133,8 @@ export interface WebviewHarness {
   clickDelegated(parentId: string, targetId: string): void
   /** Type into the answer textarea, firing its 'input' listener (drives the debounced autosave). */
   typeAnswer(text: string): void
+  /** Fire all registered `window.addEventListener(type, ...)` handlers (e.g. 'scroll') with an empty event. */
+  triggerWindowEvent(type: string): void
   /** Read a fake element's current state (for assertions). */
   element(id: string): FakeElement
   /** All messages the script has posted back to the extension via vscode.postMessage. */
@@ -156,6 +171,11 @@ export function createWebviewHarness(): WebviewHarness {
   const windowListeners: Record<string, Array<(e: unknown) => void>> = {}
   let messageHandler: ((e: { data: Record<string, unknown> }) => void) | undefined
   const fakeWindow = {
+    // Fake viewport height (2026-08-05, offscreen-toast feature) — settable
+    // via `harness.sandbox.window.innerHeight = N` in a test; default 800
+    // matches a typical panel viewport, well above the FakeElement.rect
+    // all-zeros default so nothing reads as offscreen unless a test says so.
+    innerHeight: 800,
     addEventListener: (type: string, handler: (e: unknown) => void) => {
       ;(windowListeners[type] ??= []).push(handler)
       if (type === 'message') messageHandler = handler as typeof messageHandler
@@ -202,6 +222,9 @@ export function createWebviewHarness(): WebviewHarness {
       const el = getElementById('ans')
       el.value = text
       for (const handler of el.listeners['input'] ?? []) handler({})
+    },
+    triggerWindowEvent(type) {
+      for (const handler of windowListeners[type] ?? []) handler({})
     },
     element: getElementById,
     sentMessages,
