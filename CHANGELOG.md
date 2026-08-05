@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.63] - 2026-08-05
+
+### Fixed
+- **A bold span containing a nested italic word now renders correctly** — previously the whole bold span silently failed to render as bold at all, leaving a stray literal `*` and the italic scoped over the wrong text.
+
 ## [0.7.62] - 2026-07-31
 
 ### Fixed
