@@ -793,6 +793,51 @@ describe('Webview script block syntax', () => {
     })
   })
 
+  // Regression tests (fixes real founder-reported bug, Gleaner's brief
+  // 2026-08-05-0414: "The part 'First, the census' doesn't get bolded. It
+  // looks like the first character was truncated..."). Bug: renderInline()'s
+  // bold pass (`/\*\*([^*]+)\*\*/g`) excluded ANY asterisk from its
+  // captured span, so a **bold** run containing a nested *italic* word
+  // never matched bold at all — the regex hit the internal '*' and the
+  // whole span fell through unprocessed to the italic pass, which then
+  // greedily mispaired asterisks across what was meant to be one bold
+  // span. Fixed by making the bold pass non-greedy (`[\s\S]*?` instead of
+  // `[^*]+`) so it finds the nearest closing '**' and correctly spans one
+  // level of nested emphasis in either direction; the italic pass right
+  // after still finds and wraps the nested span since the bold pass leaves
+  // captured content unprocessed.
+  describe('Regression tests: a **bold** span containing a nested *italic* word renders correctly', () => {
+    function render(md: string): string {
+      const h = createWebviewHarness()
+      const renderMarkdown = h.sandbox.renderMarkdown as (md: string) => string
+      return renderMarkdown(md)
+    }
+
+    it('the exact founder specimen: bold survives, the nested italic word renders inside it', () => {
+      const html = render(
+        '**First, the census answer to the founding question — most seeds are wrenches because most seeds are *supposed* to be.** The rest of the sentence.',
+      )
+      expect(html).toBe(
+        '<p><strong>First, the census answer to the founding question — most seeds are wrenches because most seeds are <em>supposed</em> to be.</strong> The rest of the sentence.</p>',
+      )
+    })
+
+    it('the reverse nesting — italic containing a nested bold word — also renders correctly', () => {
+      const html = render('*italic with **bold** inside* rest.')
+      expect(html).toBe('<p><em>italic with <strong>bold</strong> inside</em> rest.</p>')
+    })
+
+    it('the underscore variant (__bold__ containing _italic_) gets the same fix', () => {
+      const html = render('__bold with _italic_ inside__ rest.')
+      expect(html).toBe('<p><strong>bold with <em>italic</em> inside</strong> rest.</p>')
+    })
+
+    it('two separate, non-nested bold spans on one line still render independently, not merged into one', () => {
+      const html = render('**a** middle **b**')
+      expect(html).toBe('<p><strong>a</strong> middle <strong>b</strong></p>')
+    })
+  })
+
   describe('DEBRIEF-004 residual (Quarry 5, post-4e6aff5 state-machine pass): a transient EMPTY "questions" push still trips isNewQuestion for the SAME unchanged question', () => {
     // 4e6aff5 fixed the headline symptom (positional idx drift losing text)
     // by relocating the on-screen question by draftKey, and separately fixed

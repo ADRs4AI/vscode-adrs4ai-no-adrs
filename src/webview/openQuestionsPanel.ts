@@ -2055,9 +2055,20 @@ function renderMarkdown(md) {
     // Protect backtick spans FIRST — their content must not be processed by bold/italic
     const codes = [];
     s = s.replace(/\`([^\`]+)\`/g, (_, c) => { codes.push(c); return '\\x02' + (codes.length-1) + '\\x02'; });
-    s = s.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+    // Bold pass uses a NON-GREEDY [\\s\\S]*? body, not [^*]+ (Gleaner's
+    // root-cause, 2026-08-05: a **bold** span containing a nested *italic*
+    // word never matched bold at all — [^*]+ excludes ANY asterisk from
+    // the captured span, including one belonging to a nested italic, so
+    // the regex engine hit the internal '*' and the whole thing fell
+    // through unprocessed to the italic pass below, which then greedily
+    // mispaired asterisks across what was meant to be one bold span.
+    // Non-greedy finds the NEAREST closing '**', correctly spanning one
+    // level of nested emphasis either direction — the captured text is
+    // left unprocessed (still containing the literal '*supposed*'), so
+    // the italic pass right after this one still finds and wraps it.
+    s = s.replace(/\\*\\*([\\s\\S]*?)\\*\\*/g, '<strong>$1</strong>');
     s = s.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
-    s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/__([\\s\\S]*?)__/g, '<strong>$1</strong>');
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
     // Restore backtick spans as <code> elements
     s = s.replace(/\\x02(\\d+)\\x02/g, (_, i) => '<code>' + codes[+i] + '</code>');
