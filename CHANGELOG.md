@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.66] - 2026-08-06
+
+### Added
+- **"Copy Path" and "Copy Relative Path" now appear on ADRs, seeds, and tours** in the sidebar's right-click menu, alongside "Copy Deep Link" (previously ADR-only). All three now live together as their own section of the menu.
+- **Seeds get a real deep link**: right-click a seed → Copy Deep Link now copies a `seed:<slug>` reference instead of doing nothing.
+
+### Fixed
+- **A seed-sourced question's "Copy Deep Link" no longer produces `adr:0000#...`** — it now copies a proper `seed:<slug>#<anchor>` reference.
+
 ## [0.7.65] - 2026-08-06
 
 ### Fixed
