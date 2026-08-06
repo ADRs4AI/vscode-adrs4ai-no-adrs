@@ -31,6 +31,7 @@ import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from '
 import { AdrTreeProvider, type AdrTreeItem } from './views/adrTreeProvider'
 import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
 import { addBlockEntry, removeBlockEntry, relativeRootPath } from './index/rootsConfigWriter'
+import { buildLocalAdrRef, buildLocalSeedRef, seedSlugFromPath } from './deeplink/protocol'
 import { buildTourJson, serializeTourJson, tourFilename, tourFilePath } from './index/tourWriter'
 import type { RootNode } from './index/compositeIndex'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
@@ -272,6 +273,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
       copyDeepLink(item);
+    }),
+
+    vscode.commands.registerCommand('adrManager.copyPath', (item) => {
+      copyItemPath(item);
+    }),
+
+    vscode.commands.registerCommand('adrManager.copyRelativePath', (item) => {
+      copyItemRelativePath(item);
     }),
 
     vscode.commands.registerCommand('adrManager.excludeRoot', async (item) => {
@@ -1306,16 +1315,59 @@ function updateTourDiagnostics(collection: vscode.DiagnosticCollection, composit
   for (const node of composite.walk()) updateTourDiagnosticsForNode(collection, composite, node);
 }
 
+/**
+ * Menu symmetry (Jérémie's seed, 2026-08-06, docs/adr/seed-2026-08-06-
+ * feedback-on-treeview-context-menus.md, dispatched by Lapidary): "copy
+ * deep link is something we should have for all objects... it should be
+ * symmetric." Before this, seeds had no deep link at all, and a
+ * seed-sourced QUESTION's deep link silently produced `adr:0000#slug` (the
+ * exact bug ADR-0008 names: "Bug fix needed: adr:0000 deep link for
+ * seeds"). Both branches now go through the already-ratified,
+ * grammar-hash-tested builders in deeplink/protocol.ts instead of
+ * hand-rolled string templates — seedSlugFromPath strips the `seed-`
+ * filename prefix per ADR-0008's own worked examples
+ * (`seed:2026-03-04-forma-5-web-storage`, not `seed:seed-2026-...`).
+ * Tours are deliberately NOT included here: ADR-0008 never ratified a
+ * `tour:` reference grammar, and inventing one unilaterally as a side
+ * effect of a menu-symmetry pass would be exactly the kind of grammar
+ * decision this project reserves for Riddle/council (same precedent as
+ * roots.json's `names` field) — flagged back, not guessed.
+ */
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {
+  let ref: string | undefined;
   if (item.kind === 'adr' && item.adr) {
-    const ref = `adr:${String(item.adr.number).padStart(4, '0')}`;
-    vscode.env.clipboard.writeText(ref);
-    vscode.window.showInformationMessage(`Copied deep link: ${ref}`);
+    ref = buildLocalAdrRef({ number: item.adr.number });
   } else if (item.kind === 'question' && item.question) {
-    const ref = `adr:${String(item.question.adrNumber).padStart(4, '0')}#${item.question.slug}`;
-    vscode.env.clipboard.writeText(ref);
-    vscode.window.showInformationMessage(`Copied deep link: ${ref}`);
+    ref = item.question.sourceKind === 'seed'
+      ? buildLocalSeedRef(seedSlugFromPath(item.question.adrPath), item.question.slug)
+      : buildLocalAdrRef({ number: item.question.adrNumber, anchor: item.question.slug });
+  } else if (item.kind === 'seed' && item.seed) {
+    ref = buildLocalSeedRef(seedSlugFromPath(item.seed.path));
   }
+  if (!ref) return;
+  vscode.env.clipboard.writeText(ref);
+  vscode.window.showInformationMessage(`Copied deep link: ${ref}`);
+}
+
+/**
+ * Menu symmetry, same seed as copyDeepLink above: "copy path and copy
+ * relative path... for the ADRs, the seeds, and the tours." Any tree item
+ * with a resourceUri (adr/seed/root/tour) qualifies — not wired through
+ * VS Code's built-in copyFilePath/copyRelativeFilePath commands, since
+ * those expect a Uri argument directly and a view/item/context menu
+ * command instead receives the TreeItem itself.
+ */
+function copyItemPath(item: import('./views/adrTreeProvider').AdrTreeItem): void {
+  const fsPath = item.resourceUri?.fsPath;
+  if (!fsPath) return;
+  vscode.env.clipboard.writeText(fsPath);
+}
+
+function copyItemRelativePath(item: import('./views/adrTreeProvider').AdrTreeItem): void {
+  const fsPath = item.resourceUri?.fsPath;
+  const workspaceRoot = compositeIndex?.root.path;
+  if (!fsPath || !workspaceRoot) return;
+  vscode.env.clipboard.writeText(relativeRootPath(fsPath, workspaceRoot));
 }
 
 /**

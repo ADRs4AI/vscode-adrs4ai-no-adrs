@@ -100,6 +100,16 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.copyPath",
+        "title": "Copy Path",
+        "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.copyRelativePath",
+        "title": "Copy Relative Path",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.excludeRoot",
         "title": "Exclude This Root",
         "category": "ADR Manager"
@@ -183,14 +193,9 @@
           "group": "1_actions@1"
         },
         {
-          "command": "adrManager.copyDeepLink",
-          "when": "view == adrExplorer && (viewItem == adr || viewItem == question)",
-          "group": "1_actions@2"
-        },
-        {
           "command": "adrManager.commitAdrs",
           "when": "view == adrExplorer && viewItem == adr",
-          "group": "1_actions@3"
+          "group": "1_actions@2"
         },
         {
           "command": "adrManager.goToQuestionInPanel",
@@ -211,6 +216,21 @@
           "command": "adrManager.addSeedThreadTurn",
           "when": "view == adrExplorer && viewItem == seed",
           "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.copyPath",
+          "when": "view == adrExplorer && (viewItem == adr || viewItem == seed || viewItem == tour)",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "adrManager.copyRelativePath",
+          "when": "view == adrExplorer && (viewItem == adr || viewItem == seed || viewItem == tour)",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "adrManager.copyDeepLink",
+          "when": "view == adrExplorer && (viewItem == adr || viewItem == question || viewItem == seed)",
+          "group": "3_copy@3"
         }
       ]
     },

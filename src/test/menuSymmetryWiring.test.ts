@@ -1,0 +1,98 @@
+/**
+ * Structural tests for the context-menu symmetry pass (Jérémie's seed,
+ * 2026-08-06, docs/adr/seed-2026-08-06-feedback-on-treeview-context-
+ * menus.md, dispatched by Lapidary): copy path / copy relative path /
+ * copy deep link, symmetric across ADRs, seeds, and tours (today's
+ * asymmetry — ADRs had deep-link, seeds didn't, tours had nothing — is the
+ * named bug). vscode-touching glue, no live Extension Development Host
+ * here — verified by source-shape assertions, same discipline as
+ * commitRepoFirstWiring.test.ts. The actual ref-building logic
+ * (buildLocalAdrRef/buildLocalSeedRef/seedSlugFromPath) has its own
+ * behavioral tests in deeplinkProtocol.test.ts; this file only pins that
+ * extension.ts's glue calls them correctly.
+ */
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, it, expect } from 'vitest'
+
+const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8')
+const PKG = readFileSync(resolve(__dirname, '../../package.json'), 'utf8')
+
+describe('extension.ts: copyDeepLink no longer produces adr:0000 for seed-sourced questions', () => {
+  const fn = EXT_SRC.match(/function copyDeepLink\([\s\S]*?\n\}/)![0]
+
+  it('branches on question.sourceKind, not just adrNumber', () => {
+    expect(fn).toContain("item.question.sourceKind === 'seed'")
+  })
+
+  it('the seed branch builds a seed: ref via the shared, grammar-tested builders', () => {
+    expect(fn).toContain('buildLocalSeedRef(seedSlugFromPath(item.question.adrPath), item.question.slug)')
+  })
+
+  it('the adr branch still uses buildLocalAdrRef with the question\'s own adrNumber + slug', () => {
+    expect(fn).toContain('buildLocalAdrRef({ number: item.question.adrNumber, anchor: item.question.slug })')
+  })
+
+  it('a whole-seed tree item (not just a seed-sourced question) also gets a deep link now', () => {
+    expect(fn).toContain("item.kind === 'seed' && item.seed")
+    expect(fn).toContain('buildLocalSeedRef(seedSlugFromPath(item.seed.path))')
+  })
+
+  it('the old hand-rolled adr:NNNN string templates are gone — everything routes through the shared builders', () => {
+    expect(fn).not.toMatch(/`adr:\$\{String\(/)
+  })
+})
+
+describe('extension.ts: copyItemPath / copyItemRelativePath — new commands for menu symmetry', () => {
+  it('copyItemPath copies resourceUri.fsPath verbatim', () => {
+    const fn = EXT_SRC.match(/function copyItemPath\([\s\S]*?\n\}/)![0]
+    expect(fn).toContain('item.resourceUri?.fsPath')
+    expect(fn).toContain('vscode.env.clipboard.writeText(fsPath)')
+  })
+
+  it('copyItemRelativePath uses the same relativeRootPath helper roots.json exclusion already uses', () => {
+    const fn = EXT_SRC.match(/function copyItemRelativePath\([\s\S]*?\n\}/)![0]
+    expect(fn).toContain('relativeRootPath(fsPath, workspaceRoot)')
+  })
+
+  it('both commands are registered', () => {
+    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.copyPath'")
+    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.copyRelativePath'")
+  })
+})
+
+describe('package.json: menu symmetry — copy path/relative-path/deep-link, ADR/seed/tour', () => {
+  // Menu entries (not the plain `commands[]` declaration, which shares the
+  // same command-id string) always co-occur with "when" — anchor on that
+  // to find the view/item/context object specifically.
+  function menuEntryFor(command: string): string {
+    const re = new RegExp(`\\{\\s*"command": "${command.replace(/\./g, '\\.')}",\\s*"when":[^}]*\\}`)
+    const match = PKG.match(re)
+    expect(match, `${command} missing a view/item/context menu entry`).toBeTruthy()
+    return match![0]
+  }
+
+  for (const command of ['adrManager.copyPath', 'adrManager.copyRelativePath']) {
+    it(`${command} exists and appears for adr, seed, AND tour (today's asymmetry fixed)`, () => {
+      const menuEntry = menuEntryFor(command)
+      expect(menuEntry).toContain('viewItem == adr')
+      expect(menuEntry).toContain('viewItem == seed')
+      expect(menuEntry).toContain('viewItem == tour')
+    })
+  }
+
+  it('adrManager.copyDeepLink appears for adr, question, AND seed — tour deliberately excluded (no ratified tour: grammar yet)', () => {
+    const menuEntry = menuEntryFor('adrManager.copyDeepLink')
+    expect(menuEntry).toContain('viewItem == adr')
+    expect(menuEntry).toContain('viewItem == question')
+    expect(menuEntry).toContain('viewItem == seed')
+    expect(menuEntry).not.toContain('viewItem == tour')
+  })
+
+  it('the copy commands share one menu group, separate from item-specific actions (the doctrine\'s separator)', () => {
+    for (const command of ['adrManager.copyPath', 'adrManager.copyRelativePath', 'adrManager.copyDeepLink']) {
+      expect(menuEntryFor(command), `${command} should be in the 3_copy group`).toContain('"group": "3_copy@')
+    }
+  })
+})
