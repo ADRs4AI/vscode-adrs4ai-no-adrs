@@ -4406,3 +4406,54 @@ describe('Question.statusRange (ADR-0039 §3 — SourceRange, first slice)', () 
     expect(adr.questions[0].statusRange).toBeUndefined()
   })
 })
+
+describe('Regression tests: folded is archival — <details> blocks are inert to dialogue structure (Gleaner 0530 ruling, system3 etude 0055, 2026-08-06)', () => {
+  // Real specimen shape: the founder answered RATIFY and deliberately
+  // wrapped the superseded framing — including its own historical ANS
+  // round — in <details>. The scanner had no fold concept, saw two ANS
+  // markers, and selected the ARCHIVED answer as current.
+  const SPECIMEN = [
+    '## Questions', '',
+    '### QST-A: Which source is canonical?',
+    '- Status: answered', '',
+    '**ANS:** (by Jérémie)',
+    'RATIFY', '',
+    '<details><summary>Superseded framing (Iterations 1–4 ledger)</summary>', '',
+    '**ANS (historical, on the superseded framing):** (by Jérémie Lumbroso)',
+    "I'd like this to be reanalyzed after loading the architecture-of-complexity skill.", '',
+    '**Recommendation**: (by Old Seat 5)', 'Stale advice that must not mint a live rec.', '',
+    '</details>', '',
+  ].join('\n')
+
+  it('the LIVE answer wins: RATIFY is current; the folded historical round never opens a round', () => {
+    const q = parseAdr(SPECIMEN, '/fake/docs/adr/0055-x.md').questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.answer?.text?.startsWith('RATIFY')).toBe(true)
+    expect(q.answer?.author).toBe('Jérémie')
+    // Byte-faithful: the folded block stays inside the live answer's text.
+    expect(q.answer?.text).toContain('<details>')
+    expect(q.answer?.text).toContain('reanalyzed after loading')
+    expect(q.answer?.text).toContain('</details>')
+  })
+
+  it('a Recommendation marker inside the fold mints NO live recommendation', () => {
+    const q = parseAdr(SPECIMEN, '/fake/docs/adr/0055-x.md').questions[0]
+    expect((q.recommendations ?? []).some((r: any) => (r.text ?? '').includes('Stale advice'))).toBe(false)
+  })
+
+  it('never silently inert: markers inside a fold emit STRUCTURAL_MARKER_INSIDE_DETAILS', () => {
+    const adr = parseAdr(SPECIMEN, '/fake/docs/adr/0055-x.md')
+    expect(adr.parseWarnings.filter(w => w.code === 'STRUCTURAL_MARKER_INSIDE_DETAILS').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('a details block BEFORE any answer routes to body, and structure resumes after the fold closes', () => {
+    const doc = [
+      '## Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '<details><summary>context</summary>', 'archival prose', '</details>', '',
+      '**ANS:** (by X)', 'Live answer after the fold.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.rawBody ?? '').toContain('archival prose')
+    expect(q.answer?.text).toBe('Live answer after the fold.')
+  })
+})

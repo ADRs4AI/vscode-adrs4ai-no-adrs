@@ -1309,9 +1309,43 @@ export function extractQuestion(
     answerLine = undefined;
   };
 
+  // FORMAT RULING (Riddle 5, 2026-08-06, Gleaner's 0530 dispatch — system3
+  // etude 0055 specimen): **folded is archival, not invisible.** A
+  // <details>…</details> block inside a question is the author's explicit
+  // "superseded, don't treat as live" gesture (Jérémie wrapped a historical
+  // ANS round in one, and the scanner selected the ARCHIVED answer as
+  // current). Rule: content inside <details> is INERT to dialogue structure
+  // — it never opens/closes an answer round, never mints a recommendation,
+  // never flips a field; it belongs byte-faithfully to whatever container
+  // surrounds it (here: the live answer's own text, folded on render).
+  // Distinct from the HTML-comment channel (invisible-by-doctrine, framing
+  // 4): details content stays visible and preserved. And per recall-first,
+  // never SILENTLY inert: a would-be marker inside a fold gets a diagnostic.
+  // (Heading-level splitting — a "### QST:" inside <details> — happens
+  // upstream in buildSection and is a separate, ledger-noted boundary.)
+  let detailsDepth = 0;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     const absLine = section.lineStart + i + 1;
+
+    const opens = (line.match(/<details\b/gi) || []).length;
+    const closes = (line.match(/<\/details>/gi) || []).length;
+    const insideDetails = detailsDepth > 0 || opens > 0;
+    detailsDepth = Math.max(0, detailsDepth + opens - closes);
+    if (insideDetails) {
+      if (warnings && (isAnsMarkerLine(line) || RECOMMENDATION_RE.test(line) || RECOMMENDATION_BULLET_RE.test(line))) {
+        warnings.push({
+          code: 'STRUCTURAL_MARKER_INSIDE_DETAILS',
+          message: `A dialogue marker ("${line.slice(0, 40)}…") sits inside a <details> block and was treated as archival content, not live structure — the fold rule ("folded is archival") keeps it out of the current round. If this marker SHOULD be live, move it outside the <details> block.`,
+          line: absLine,
+        });
+      }
+      if (inAnswer) { answerLines.push(lines[i]); continue; }
+      if (inRecommendation) { recommendationLines.push(lines[i]); continue; }
+      if (pastRecommendation) { rawBodyLinesPost.push(lines[i]); } else { rawBodyLinesPre.push(lines[i]); }
+      continue;
+    }
 
     if (inAnswer) {
       // A new ANS marker or a Recommendation marker ends the current layer
