@@ -929,6 +929,45 @@ describe('Webview script block syntax', () => {
     })
   })
 
+  // Regression tests (fixes real founder-reported bug, Gleaner's brief
+  // 2026-08-05-2220: "It seems quoting > is not supported in our
+  // interface, it's not parsed well?"). Bug: the blockquote branch handled
+  // ONE '> text' line at a time, so a multi-paragraph quote (paragraphs
+  // separated by the standard bare-'>' idiom) fragmented into N separate
+  // <blockquote> boxes; a bare '>' continuation line (no trailing space)
+  // didn't even match '> ' at all and fell through to plain-paragraph
+  // handling, rendering as a literal stray "<p>&gt;</p>". Fixed by
+  // consuming the whole consecutive run of '> '/bare-'>' lines as one
+  // block, dequoting (bare '>' becomes a blank paragraph separator), and
+  // recursing into renderBlocks so internal paragraphs render inside ONE
+  // blockquote instead of one box per source line.
+  describe('Regression tests: a multi-paragraph blockquote renders as ONE box, not fragmented', () => {
+    function render(md: string): string {
+      const h = createWebviewHarness()
+      const renderMarkdown = h.sandbox.renderMarkdown as (md: string) => string
+      return renderMarkdown(md)
+    }
+
+    it('the exact founder specimen shape: 3 paragraphs, bare "&gt;" separators, ONE <blockquote>', () => {
+      const html = render('> First paragraph of quote.\n>\n> Second paragraph of quote.\n>\n> Third paragraph.')
+      expect((html.match(/<blockquote>/g) ?? []).length).toBe(1)
+      expect(html).not.toContain('&gt;')
+      expect(html).toBe(
+        '<blockquote><p>First paragraph of quote.</p>\n<p>Second paragraph of quote.</p>\n<p>Third paragraph.</p></blockquote>',
+      )
+    })
+
+    it('a single-line blockquote still renders correctly (no regression on the common case)', () => {
+      const html = render('> A single-line quote.')
+      expect(html).toBe('<blockquote><p>A single-line quote.</p></blockquote>')
+    })
+
+    it('a blockquote followed by a blank line and a normal paragraph: only the quote lines join, the paragraph stays outside', () => {
+      const html = render('> Quoted text.\n\nNormal paragraph after.')
+      expect(html).toBe('<blockquote><p>Quoted text.</p></blockquote>\n<p>Normal paragraph after.</p>')
+    })
+  })
+
   describe('DEBRIEF-004 residual (Quarry 5, post-4e6aff5 state-machine pass): a transient EMPTY "questions" push still trips isNewQuestion for the SAME unchanged question', () => {
     // 4e6aff5 fixed the headline symptom (positional idx drift losing text)
     // by relocating the on-screen question by draftKey, and separately fixed

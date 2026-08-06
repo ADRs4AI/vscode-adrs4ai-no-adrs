@@ -2083,7 +2083,7 @@ function renderMarkdown(md) {
       || /^\\|/.test(line)
       || /^---+$/.test(line.trim())
       || /^#{1,4}\\s+/.test(line)
-      || line.startsWith('> ')
+      || line.startsWith('> ') || line === '>'
       || /^\\d+\\.\\s+/.test(line);
   }
 
@@ -2178,8 +2178,25 @@ function renderMarkdown(md) {
       const hm = line.match(/^(#{1,4})\\s+(.*)/);
       if (hm) { out.push('<h'+(hm[1].length+1)+'>'+renderInline(hm[2])+'</h'+(hm[1].length+1)+'>'); i++; continue; }
 
-      // Blockquote
-      if (line.startsWith('> ')) { out.push('<blockquote>'+renderInline(line.slice(2))+'</blockquote>'); i++; continue; }
+      // Blockquote — consume the WHOLE consecutive run of '> '/bare-'>'
+      // lines as one logical block, not one <blockquote> per line
+      // (Gleaner's brief, 2026-08-05: a founder's 5-paragraph quote,
+      // paragraphs separated by the standard bare-'>' idiom, fragmented
+      // into 5 separate boxes with stray literal "<p>&gt;</p>" text
+      // between them, since a bare '>' line doesn't match '> ' at all and
+      // fell through to plain-paragraph handling). Dequote each line
+      // (a bare '>' becomes a blank line — the paragraph separator), then
+      // recurse into renderBlocks so internal paragraph breaks (and any
+      // nested list/code) render correctly inside the single blockquote.
+      if (line.startsWith('> ') || line === '>') {
+        const quoteLines = [];
+        while (i < lines.length && (lines[i].startsWith('> ') || lines[i] === '>')) {
+          quoteLines.push(lines[i] === '>' ? '' : lines[i].slice(2));
+          i++;
+        }
+        out.push('<blockquote>'+renderBlocks(quoteLines.join('\\n'))+'</blockquote>');
+        continue;
+      }
 
       // Unordered list — CommonMark lazy continuation: a non-blank,
       // non-indented line right after a list item, that isn't itself a new
