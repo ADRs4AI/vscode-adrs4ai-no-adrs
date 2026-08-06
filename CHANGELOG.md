@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.67] - 2026-08-06
+
+### Fixed
+- **`<details>` blocks are archival, by ruling**: a folded block inside a question — the "superseded, don't treat as live" gesture — no longer lets markers *inside* it hijack the dialogue structure (a historical `**ANS (…):**` wrapped in `<details>` was being selected as the question's *current* answer instead of the live one above it). Folded content stays byte-faithful inside its surrounding container; a would-be marker inside a fold gets a `STRUCTURAL_MARKER_INSIDE_DETAILS` hint instead of silently restructuring the round.
+
 ## [0.7.66] - 2026-08-06
 
 ### Added
