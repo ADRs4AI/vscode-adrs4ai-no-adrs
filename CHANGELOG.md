@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.68] - 2026-08-06
+
+### Added
+- **Pause an ADR, silence its questions**: a document whose `Status:` *leads* with `Deferred`, `Paused`, `Suspended`, or `On Hold` (annotations after a dash welcome: `Deferred — designed in full, not pursued now`) drops out of the Open Questions walk, the sidebar's question children, and the badge count — everywhere a human is asked for attention. The document, its questions, and the census all stay fully parsed and visible to tooling: paused is suppressed, never invisible. Leading-token strict, so a passing mention like `Proposed (deferred — …)` does not pause; the parser's own hint will suggest the canonical form.
+
 ## [0.7.67] - 2026-08-06
 
 ### Fixed
