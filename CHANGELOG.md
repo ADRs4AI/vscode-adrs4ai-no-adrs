@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.65] - 2026-08-06
+
+### Fixed
+- **A multi-paragraph blockquote now renders as one continuous quote** — previously each paragraph became its own separate box, with a stray literal `>` character floating between them.
+
 ## [0.7.64] - 2026-08-05
 
 ### Added
