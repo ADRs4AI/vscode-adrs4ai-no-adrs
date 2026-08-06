@@ -37,6 +37,7 @@ import * as path from 'path'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { CompositeIndex, RootNode } from '../index/compositeIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
+import { isDocumentPausedStatus } from '../parser/extractor'
 import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 import { pathFragmentFor } from './rootPathFragment'
@@ -375,7 +376,7 @@ export class AdrTreeItem extends vscode.TreeItem {
       return parts.join(' · ')
     }
     if (opts.kind === 'adr' && opts.adr) {
-      const openCount = opts.adr.questions.filter(q => !q.isAnswered).length
+      const openCount = isDocumentPausedStatus(opts.adr.status) ? 0 : opts.adr.questions.filter(q => !q.isAnswered).length
       const statusPart = `[${opts.adr.status}]`
       const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
       return `${statusPart}${questionPart}`
@@ -788,6 +789,8 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   }
 
   private getAdrChildren(adr: AdrFile): AdrTreeItem[] {
+    // Document-level pause (2026-08-06 ruling): a paused ADR shows no question children.
+    if (isDocumentPausedStatus(adr.status)) return []
     return this.filterQuestions(adr.questions).map(q => new AdrTreeItem({ kind: 'question', question: q, adr }))
   }
 

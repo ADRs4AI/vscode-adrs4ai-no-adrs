@@ -11,7 +11,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { parseAdr, extractAdrNumber } from '../parser/extractor'
+import { parseAdr, extractAdrNumber, isDocumentPausedStatus } from '../parser/extractor'
 import type { AdrFile, Question } from '../parser/types'
 
 export type IndexChangeEvent =
@@ -167,8 +167,10 @@ export class AdrIndex {
 
   /** All open (unanswered) questions across all ADRs, sorted by ADR number. */
   openQuestions(): Question[] {
+    // Document-level pause (2026-08-06 ruling): a Deferred/Paused/Suspended
+    // document's questions leave every human-facing count and list.
     return this.allAdrs()
-      .flatMap(a => a.questions.filter(q => !q.isAnswered));
+      .flatMap(a => isDocumentPausedStatus(a.status) ? [] : a.questions.filter(q => !q.isAnswered));
   }
 
   /** Total ADR count. */

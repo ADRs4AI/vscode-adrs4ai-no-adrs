@@ -1005,6 +1005,26 @@ function debulletAnsLine(line: string): string {
   return m ? line.slice(m[0].length) : line;
 }
 
+/**
+ * Document-level pause (Riddle ruling, 2026-08-06, founder Report on HQ
+ * ADR-0009: "This ADR is 'deferred' or suspended or whatever, but the
+ * questions still popup... we're creating a 'focus' machine"). A document
+ * whose declared Status LEADS with a pause token suspends its questions
+ * from every human-facing surface (panel, tree children, badge counts) —
+ * unconditionally, no setting; the escape hatch is editing one status
+ * line. Census and parse output stay complete (recall-first: paused is
+ * suppressed, never invisible to machinery). Leading-token-strict: a
+ * parenthetical mention ("Proposed (deferred — …)") does NOT pause — the
+ * canonical write is "- **Status**: Deferred — <why>". Composes with
+ * ADR-0036's question grid: pause is deferred-by-inheritance at document
+ * scope; QST-STATUS-VOCAB's eventual freeze should fold this vocabulary.
+ */
+export function isDocumentPausedStatus(status: string | undefined): boolean {
+  if (!status) return false;
+  const t = stripInlineEmphasis(status).trim().toLowerCase();
+  return /^(?:deferred|paused|suspended|on[ -]hold)\b/.test(t);
+}
+
 export function isAnsMarkerLine(line: string): boolean {
   const l = debulletAnsLine(line);
   return ANS_INLINE_RE.test(l) || ANS_COLON_OUTSIDE_RE.test(l);

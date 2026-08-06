@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
-import { parseAdr, detectFormat, slugify } from '../parser/extractor'
+import { parseAdr, detectFormat, slugify , isDocumentPausedStatus } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
 import { findReferencingAdrs, looksLikeSeedByContent } from '../index/seedIndex'
 
@@ -4455,5 +4455,18 @@ describe('Regression tests: folded is archival — <details> blocks are inert to
     const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
     expect(q.rawBody ?? '').toContain('archival prose')
     expect(q.answer?.text).toBe('Live answer after the fold.')
+  })
+})
+
+describe('Regression tests: document-level pause — isDocumentPausedStatus (founder Report on HQ ADR-0009, 2026-08-06)', () => {
+  it('leading pause tokens pause, with emphasis and annotations tolerated', () => {
+    for (const st of ['Deferred', 'deferred — designed in full', '**Deferred** — why', 'Paused', 'Suspended (until v1)', 'On Hold', 'on-hold — post-launch']) {
+      expect(isDocumentPausedStatus(st), st).toBe(true)
+    }
+  })
+  it('is leading-token STRICT: a parenthetical mention never pauses (no world-knowledge guessing)', () => {
+    for (const st of ['Proposed (deferred — designed in full, implementation intentionally not pursued now)', 'Accepted', 'Draft', undefined, 'Implemented — deferred cleanup remains']) {
+      expect(isDocumentPausedStatus(st as any), String(st)).toBe(false)
+    }
   })
 })

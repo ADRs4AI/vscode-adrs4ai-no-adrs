@@ -20,7 +20,7 @@ import * as path from 'path'
 import * as os from 'os'
 import type { CompositeIndex } from '../index/compositeIndex'
 import type { AdrFile, Recommendation, Question } from '../parser/types'
-import { parseAdr } from '../parser/extractor'
+import { parseAdr, isDocumentPausedStatus } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
 import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan'
@@ -486,7 +486,8 @@ export class OpenQuestionsPanel {
     // order — zero conditionals needed to keep the single-root case trivial.
     const questions: WebviewQuestion[] = []
     for (const node of this.composite.walk()) {
-      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => this.buildRows(adr.questions, this.adrRowOpts(adr)))
+      // Document-level pause (2026-08-06 ruling): paused docs' questions never reach the walk.
+      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => isDocumentPausedStatus(adr.status) ? [] : this.buildRows(adr.questions, this.adrRowOpts(adr)))
 
       const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed => {
         // Gleaner 5 / ledger row 25: the raw Date field carries whatever

@@ -388,7 +388,8 @@ export type ParseWarningCode =
   | 'NONCANONICAL_NAV_CODE_LEVEL'  // nav code heading recognized, but at the wrong heading level (## or #### instead of ###)
   | 'NONSTANDARD_FILL_PLACEHOLDER'  // ANS placeholder uses a non-canonical stock token (e.g. "[unanswered]" instead of "[Fill this in]")
   | 'NONSTANDARD_RECOMMENDATION_FORM' // Recommendation written as a dash-bullet field ("- Recommendation: ...") instead of the canonical standalone "**Recommendation**:" block
-  | 'NONCANONICAL_ANS_MARKER'       // ANS marker recognized, but with the colon outside the bold span ("**ANS** (by X):" instead of "**ANS:** (by X)")
+  | 'NONCANONICAL_ANS_MARKER'
+  | 'STRUCTURAL_MARKER_INSIDE_DETAILS'       // ANS marker recognized, but with the colon outside the bold span ("**ANS** (by X):" instead of "**ANS:** (by X)")
   | 'NONSTANDARD_STATUS_LINE_FORM'  // QST-block Status field is bold ("- **Status**:") instead of the canonical plain form ("- Status:")
   | 'NONSTANDARD_STATUS_ANNOTATION'  // QST-block Status value is "answered"/"unanswered" plus a trailing annotation (e.g. "answered 2026-07-13 (reason)")
   | 'MALFORMED_QST_HANDLE_ID'        // handle-shaped heading ("### QST-<id>:") whose id fails the grammar — recognized as a question anyway, never silently dropped (ADR-0032 QST-IDCHARSET)
