@@ -204,6 +204,8 @@ export interface Question {
   statusText: string;
   /** True if statusText is 'answered' or an answer block was found */
   isAnswered: boolean;
+  /** Closed WITHOUT an answer: declared Status leads with withdrawn|superseded|moot (2026-08-07 ruling). Excluded from open counts; never 'answered'. */
+  isRetired?: boolean;
   whyAsking?: string;
   /** The Open Follow-ups subtype's deferral reason (`- Why deferring:`) — the template's own field, extracted since v0.7.24 (Loftsman's catch). */
   whyDeferring?: string;

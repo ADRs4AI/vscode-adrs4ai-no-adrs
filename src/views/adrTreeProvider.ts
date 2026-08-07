@@ -376,13 +376,13 @@ export class AdrTreeItem extends vscode.TreeItem {
       return parts.join(' · ')
     }
     if (opts.kind === 'adr' && opts.adr) {
-      const openCount = isDocumentPausedStatus(opts.adr.status) ? 0 : opts.adr.questions.filter(q => !q.isAnswered).length
+      const openCount = isDocumentPausedStatus(opts.adr.status) ? 0 : opts.adr.questions.filter(q => !q.isAnswered && !q.isRetired).length
       const statusPart = `[${opts.adr.status}]`
       const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
       return `${statusPart}${questionPart}`
     }
     if (opts.kind === 'seed' && opts.seed) {
-      const openCount = opts.seed.questions.filter(q => !q.isAnswered).length
+      const openCount = opts.seed.questions.filter(q => !q.isAnswered && !q.isRetired).length
       const statusPart = opts.seed.isProcessed ? '[processed]' : ''
       const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
       return `${statusPart}${questionPart}`
@@ -840,7 +840,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   private filterQuestions(questions: Question[]): Question[] {
     if (this.filterMode === 'all') return questions
     if (this.filterMode === 'answered') return questions.filter(q => q.isAnswered)
-    return questions.filter(q => !q.isAnswered) // 'open' (default)
+    return questions.filter(q => !q.isAnswered && !q.isRetired) // 'open' (default; retired = closed-without-answer, 2026-08-07)
   }
 }
 

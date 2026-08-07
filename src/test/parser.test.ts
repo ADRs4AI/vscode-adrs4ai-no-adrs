@@ -4470,3 +4470,38 @@ describe('Regression tests: document-level pause — isDocumentPausedStatus (fou
     }
   })
 })
+
+describe('Regression tests: question-level retirement — withdrawn|superseded|moot close WITHOUT an answer (founder Report, system3 0061, 2026-08-07)', () => {
+  // His words: "Example of scenario where we need a 'withdrawn | superseded'
+  // keyword for a question, before it is answered." Live specimens carried
+  // hand-written "⚠️ **WITHDRAWN, superseded by Iteration 2**" glued onto
+  // headings because no mechanism existed. Third arrival of the closed-
+  // vocabulary gap (document pause v0.7.68; seed closed-family ADR-0041).
+  it('declared "withdrawn — <why>" retires: not answered, not open, still fully parsed', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: What should a P2 user see after signing in?',
+      '- Status: withdrawn — superseded by Iteration 2 (options were phrased in device terms)', '',
+      '### QST: A live one?', '- Status: unanswered', '',
+    ].join('\n')
+    const qs = parseAdr(doc, '/fake/docs/adr/0061-x.md').questions
+    expect(qs[0].isRetired).toBe(true)
+    expect(qs[0].isAnswered).toBe(false)
+    expect(qs[0].text).toContain('P2 user') // still parsed, census-visible
+    expect(qs[1].isRetired ?? false).toBe(false)
+  })
+
+  it('superseded and moot retire too; emphasis tolerated; annotation preserved', () => {
+    for (const st of ['superseded — by ADR-0070', '**Moot** — single domain landed', 'MOOT']) {
+      const doc = ['## Open Questions', '', '### QST: Q?', `- Status: ${st}`, ''].join('\n')
+      expect(parseAdr(doc, '/fake/x.md').questions[0].isRetired, st).toBe(true)
+    }
+  })
+
+  it('retirement requires DECLARATION: an answered question is never retired, and derived states never retire', () => {
+    const doc = ['## Open Questions', '', '### QST: Q?', '- Status: answered', '', '**ANS:** (by X)', 'Done.', ''].join('\n')
+    const q = parseAdr(doc, '/fake/x.md').questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.isRetired ?? false).toBe(false)
+  })
+})

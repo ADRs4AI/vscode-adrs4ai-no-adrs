@@ -1019,6 +1019,24 @@ function debulletAnsLine(line: string): string {
  * ADR-0036's question grid: pause is deferred-by-inheritance at document
  * scope; QST-STATUS-VOCAB's eventual freeze should fold this vocabulary.
  */
+/**
+ * Question-level retirement (Riddle ruling, 2026-08-07, founder Report on
+ * system3 0061: "we need a 'withdrawn | superseded' keyword for a question,
+ * before it is answered" — hand-written ⚠️ WITHDRAWN heading annotations as
+ * live specimens). Third arrival of the closed-vocabulary gap: document
+ * pause (v0.7.68), seed closed-family (ADR-0041), now per-question. A
+ * declared Status LEADING with withdrawn|superseded|moot RETIRES the
+ * question: closed-without-an-answer — leaves every open count and human
+ * surface, never counts as answered, stays parsed and census-visible.
+ * Leading-token strict, same as the document rule; canonical write is
+ * "- Status: withdrawn — <why>". Feeds QST-STATUS-VOCAB's freeze (the
+ * register's closing-token question, now founder-evidenced from the field).
+ */
+export function isRetiredStatusToken(statusText: string | undefined): boolean {
+  if (!statusText) return false;
+  return /^(?:withdrawn|superseded|moot)\b/i.test(statusText.trim());
+}
+
 export function isDocumentPausedStatus(status: string | undefined): boolean {
   if (!status) return false;
   const t = stripInlineEmphasis(status).trim().toLowerCase();
@@ -1696,6 +1714,7 @@ export function extractQuestion(
   // it (HQ ADR-0015 QST-3, the live specimen that triggered implementation).
   const declaredAnswered = ANSWERED_LEADING_TOKEN_RE.test(statusText.trim());
   const isAnswered = statusDeclared ? declaredAnswered : (declaredAnswered || !!answer);
+  const isRetired = statusDeclared && isRetiredStatusToken(statusText);
 
   if (recommendationLines.length > 0) {
     // Hard-wrap robustness: join wrapped continuation lines within each
@@ -1769,6 +1788,7 @@ export function extractQuestion(
     text: section.navCodeText || section.heading,
     statusText,
     isAnswered,
+    isRetired,
     whyAsking,
     whyDeferring,
     need,

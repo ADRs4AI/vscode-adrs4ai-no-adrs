@@ -170,7 +170,7 @@ export class AdrIndex {
     // Document-level pause (2026-08-06 ruling): a Deferred/Paused/Suspended
     // document's questions leave every human-facing count and list.
     return this.allAdrs()
-      .flatMap(a => isDocumentPausedStatus(a.status) ? [] : a.questions.filter(q => !q.isAnswered));
+      .flatMap(a => isDocumentPausedStatus(a.status) ? [] : a.questions.filter(q => !q.isAnswered && !q.isRetired));
   }
 
   /** Total ADR count. */
