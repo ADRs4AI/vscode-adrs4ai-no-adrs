@@ -844,3 +844,65 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   }
 }
 
+/**
+ * Tree-wide "most excellent report" (Jérémie's own words, 2026-08-06,
+ * docs/adr/seed-2026-08-06-feedback-on-treeview-context-menus.md; spec'd
+ * by Gleaner, docs/inbox/2026-08-06-0408-gleaner-to-fitter-tree-wide-
+ * report-spec.md): "store like the entire hierarchy of the tree view
+ * exactly every description of every caption of every tree view in the
+ * menu options... and what it links to." A flat array with `parentId`
+ * links, not nested objects — easier to grep/diff in a JSONL payload, and
+ * `id` is already collision-safe (stableTreeItemId).
+ */
+export interface TreeSnapshotNode {
+  id: string
+  parentId?: string
+  kind: AdrTreeItemKind
+  label: string
+  description?: string
+  tooltip?: string
+  resourceUri?: string
+  /** What this item's click navigates to — the command id alone when there are no arguments (e.g. "Answer Open Questions"), else the command id + its arguments (e.g. which file/question it opens). */
+  commandTarget?: string
+}
+
+function snapshotOne(item: AdrTreeItem, parentId: string | undefined): TreeSnapshotNode {
+  const label = typeof item.label === 'string' ? item.label : (item.label as vscode.TreeItemLabel | undefined)?.label
+  const description = typeof item.description === 'string' ? item.description : undefined
+  const tooltip = typeof item.tooltip === 'string' ? item.tooltip : undefined
+  const commandTarget = item.command
+    ? (item.command.arguments?.length ? `${item.command.command}(${JSON.stringify(item.command.arguments)})` : item.command.command)
+    : undefined
+  return {
+    id: String(item.id),
+    parentId,
+    kind: item.kind,
+    label: label ?? '',
+    description,
+    tooltip,
+    resourceUri: item.resourceUri?.fsPath,
+    commandTarget,
+  }
+}
+
+/**
+ * Walk the WHOLE tree from the top via the provider's own `getChildren()`
+ * — the same traversal VS Code itself uses to render, so this can never
+ * drift from what's actually on screen. Captions/descriptions/tooltips
+ * only (short strings, one row per item) — deliberately not document
+ * bodies, which stay scoped to the one clicked file (Lapidary's size-guard
+ * doctrine: "the full text of the documents the incident REFERENCES —
+ * never 'all ADRs'" applies to bodies, not to this kind of metadata).
+ */
+export function captureFullTree(provider: AdrTreeProvider): TreeSnapshotNode[] {
+  const out: TreeSnapshotNode[] = []
+  function walk(parent: AdrTreeItem | undefined): void {
+    for (const child of provider.getChildren(parent)) {
+      out.push(snapshotOne(child, parent?.id))
+      walk(child)
+    }
+  }
+  walk(undefined)
+  return out
+}
+

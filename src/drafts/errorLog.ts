@@ -64,8 +64,8 @@ export interface LedgerRecord {
   schema: 'error-record/2'
   ts: string
   extensionVersion?: string
-  /** Which subsystem wrote this record. */
-  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp'
+  /** Which subsystem wrote this record. 'treeview' (2026-08-06): the tree-wide "most excellent report" — the panel Report button's mechanism extended to every sidebar item, per Gleaner's spec (docs/inbox/2026-08-06-0408-...). */
+  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview'
   kind: string
   message: string
   /** Any file inside the owning root's docs/adr — decides which ledger this lands in. */

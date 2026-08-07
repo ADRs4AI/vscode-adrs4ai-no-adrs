@@ -110,6 +110,11 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.reportTreeItem",
+        "title": "Report",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.excludeRoot",
         "title": "Exclude This Root",
         "category": "ADR Manager"
@@ -231,6 +236,11 @@
           "command": "adrManager.copyDeepLink",
           "when": "view == adrExplorer && (viewItem == adr || viewItem == question || viewItem == seed)",
           "group": "3_copy@3"
+        },
+        {
+          "command": "adrManager.reportTreeItem",
+          "when": "view == adrExplorer",
+          "group": "9_report@1"
         }
       ]
     },

@@ -28,12 +28,14 @@ import { SeedIndex, findReferencingAdrs } from './index/seedIndex'
 import { CompositeIndex } from './index/compositeIndex'
 import { isAdrBasename, isSeedBasename, isDirectChildOf } from './index/fileGuards'
 import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from './watchers/rootWatcherLifecycle'
-import { AdrTreeProvider, type AdrTreeItem } from './views/adrTreeProvider'
+import { AdrTreeProvider, captureFullTree, type AdrTreeItem } from './views/adrTreeProvider'
+import { appendLedgerRecord, captureDocument } from './drafts/errorLog'
 import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
 import { addBlockEntry, removeBlockEntry, relativeRootPath } from './index/rootsConfigWriter'
 import { buildLocalAdrRef, buildLocalSeedRef, seedSlugFromPath } from './deeplink/protocol'
 import { buildTourJson, serializeTourJson, tourFilename, tourFilePath } from './index/tourWriter'
 import type { RootNode } from './index/compositeIndex'
+import type { Question } from './parser/types'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
 import { resolveTourEntries, unresolvedTourRefs } from './index/tourIndex'
@@ -281,6 +283,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('adrManager.copyRelativePath', (item) => {
       copyItemRelativePath(item);
+    }),
+
+    vscode.commands.registerCommand('adrManager.reportTreeItem', async (item) => {
+      if (item) await reportTreeItem(item);
     }),
 
     vscode.commands.registerCommand('adrManager.excludeRoot', async (item) => {
@@ -1368,6 +1374,106 @@ function copyItemRelativePath(item: import('./views/adrTreeProvider').AdrTreeIte
   const workspaceRoot = compositeIndex?.root.path;
   if (!fsPath || !workspaceRoot) return;
   vscode.env.clipboard.writeText(relativeRootPath(fsPath, workspaceRoot));
+}
+
+/**
+ * The file a tree item is "about", for report-capture purposes (Gleaner's
+ * spec §3): adr/seed/tour resolve via their own resourceUri; question and
+ * tour-entry items resolve via question.adrPath — already the correct
+ * path for BOTH ADR-owned and seed-owned questions, per the existing
+ * navigation pattern (resolveQuestionClickCommand uses the same field).
+ * Group headers/root/open-questions-header are not file-backed — undefined.
+ */
+function resolveReportFilePath(item: import('./views/adrTreeProvider').AdrTreeItem): string | undefined {
+  if (item.kind === 'question' || item.kind === 'tour-entry') return item.question?.adrPath;
+  if (item.kind === 'adr' || item.kind === 'seed' || item.kind === 'tour') return item.resourceUri?.fsPath;
+  return undefined;
+}
+
+/**
+ * Which ledger a tree-item report lands in (Gleaner's spec §5). File-backed
+ * items use their own path (or their question's owning file); group
+ * headers and 'root' have no natural file, so a path is synthesized whose
+ * `dirname()` resolves to the right root's configured ADR directory —
+ * never created, just a path errorLogPathFor can derive `.working/
+ * errors.jsonl` from. Deviates from the spec's literal example
+ * (hardcoded 'docs'/'adr') by reading the actual adrManager.adrDirectory
+ * setting instead — this project respects that setting everywhere else a
+ * root's ADR directory is resolved, and a report landing in the wrong
+ * ledger for a workspace with a non-default directory would be a real,
+ * silent bug.
+ */
+function resolveReportAnchorPath(item: import('./views/adrTreeProvider').AdrTreeItem, filePath: string | undefined): string | undefined {
+  if (filePath) return filePath;
+  const rootPath = item.rootNode?.path ?? compositeIndex?.root.path;
+  if (!rootPath) return undefined;
+  const adrDirRel = vscode.workspace.getConfiguration('adrManager', vscode.Uri.file(rootPath)).get<string>('adrDirectory', 'docs/adr');
+  return path.join(rootPath, adrDirRel, '.tree-report-anchor');
+}
+
+/** The already-parsed questions for a file the tree already holds in memory — no re-parse (Gleaner's spec §4). */
+function resolveReportOpenQuestions(filePath: string): Question[] | undefined {
+  const node = compositeIndex?.findRoot(filePath);
+  if (!node) return undefined;
+  const adr = node.adrs.allAdrs().find(a => a.path === filePath);
+  if (adr) return adr.questions;
+  return node.seeds.allSeeds().find(s => s.path === filePath)?.questions;
+}
+
+/**
+ * Tree-wide "most excellent report" (Jérémie's own words, 2026-08-06;
+ * spec'd by Gleaner, docs/inbox/2026-08-06-0408-gleaner-to-fitter-tree-
+ * wide-report-spec.md): "the same feature that enables that [panel Report]
+ * button also enables... report for any of the items on the tree view."
+ * Same input-box UX, same gate (adrManager.logging.observations — no new
+ * setting; a context-menu entry doesn't need reportButton.enabled's
+ * show/hide problem, it's always present, per the spec's own "last menu
+ * item... for any of the items"), same error-record/2 shape, new
+ * source: 'treeview'. Failure-soft: reporting a problem must never itself
+ * become one.
+ */
+async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeItem): Promise<void> {
+  if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.observations', true)) {
+    vscode.window.setStatusBarMessage('ADR Manager: Observation logging is turned off (adrManager.logging.observations).', 4000);
+    return;
+  }
+  const note = await vscode.window.showInputBox({
+    prompt: 'Report this tree item (optional comment) — captures the whole tree hierarchy, this item\'s file, and its open questions',
+    placeHolder: 'What did you notice? (leave blank to just mark this moment)',
+  });
+  if (note === undefined) return; // Escape/cancel — nothing recorded
+
+  try {
+    const filePath = resolveReportFilePath(item);
+    const anchorPath = resolveReportAnchorPath(item, filePath);
+    if (!anchorPath) return;
+
+    const doc = filePath ? captureDocument(filePath) : undefined;
+    const openQuestions = filePath
+      ? resolveReportOpenQuestions(filePath)?.map(q => ({ id: q.id, text: q.text, status: q.statusText }))
+      : undefined;
+
+    appendLedgerRecord({
+      schema: 'error-record/2',
+      ts: new Date().toISOString(),
+      extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+      source: 'treeview',
+      kind: 'observation',
+      message: note || 'manual tree-item report',
+      anchorPath,
+      payload: {
+        clickedItemId: item.id,
+        clickedItemKind: item.kind,
+        note: note || undefined,
+        treeHierarchy: treeProvider ? captureFullTree(treeProvider) : [],
+        openQuestions,
+      },
+      documents: doc && filePath ? { [filePath]: doc } : undefined,
+    });
+    vscode.window.setStatusBarMessage('ADR Manager: Tree item reported.', 3000);
+  } catch {
+    /* failure-soft: reporting a problem must never itself become one */
+  }
 }
 
 /**
