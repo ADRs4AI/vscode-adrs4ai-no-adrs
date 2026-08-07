@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.70] - 2026-08-07
+
+### Added
+- **"Report" now appears on every sidebar item**, last in the right-click menu — the same mechanism as the Open Questions panel's Report button, extended tree-wide. Captures the entire tree hierarchy (every caption, description, and link target), a copy of the clicked file if it's file-backed, and any parsed open questions, plus your optional note.
+
 ## [0.7.69] - 2026-08-07
 
 ### Added
