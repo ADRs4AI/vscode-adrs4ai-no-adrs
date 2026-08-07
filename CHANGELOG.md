@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.69] - 2026-08-07
+
+### Added
+- **Retire a question without answering it**: `- Status: withdrawn — <why>` (or `superseded` / `moot`) closes a question that will never be answered — it leaves the Open Questions walk, the badge, and the tree's open counts, without ever counting as *answered*. Declaration-only and leading-token strict, mirroring the document-pause rule; the question stays fully parsed and census-visible. Fills the gap that had questions carrying hand-written "⚠️ WITHDRAWN" annotations glued onto their headings.
+
 ## [0.7.68] - 2026-08-06
 
 ### Added
