@@ -1,0 +1,39 @@
+# kintsugi.lock — tool-written state; do not hand-edit.
+# What this repo HAS, per artifact (base version + exact canonical blob).
+kintsugi_schema: 1
+canonical_version: 3.9.2
+synced: '2026-08-08T16:30:03Z'
+artifacts:
+  CLAUDE.md:
+    state_at_adopt: unknown-base
+  docs/METHODOLOGY.md:
+    state_at_adopt: unknown-base
+  docs/adr/templates/adr-madr.md:
+    base_version: 3.7.0
+    base_blob: fed923064998cfb2967edc061eabed712e0ee6ef
+    state_at_adopt: unmodified+behind
+  docs/adr/templates/adr.md:
+    state_at_adopt: unknown-base
+  docs/adr/templates/debrief.md:
+    base_version: 3.7.0
+    base_blob: e0f623ce03132adf3017ffc7cd5abe737aec1580
+    state_at_adopt: unmodified+behind
+  docs/adr/templates/failure-classes.md:
+    base_version: 3.7.0
+    base_blob: 67513817866489bb52cc77b8f2a192d9b3b1122c
+    state_at_adopt: unmodified+behind
+  docs/adr/templates/seed.md:
+    state_at_adopt: unknown-base
+  docs/inbox/CONVENTIONS.md:
+    state_at_adopt: unknown-base
+  docs/inbox/ENCODING-MAP.md:
+    state_at_adopt: unknown-base
+  docs/inbox/INBOX-PROTOCOL.md:
+    base_version: 3.8.0
+    base_blob: 926bc1dc2ecc6970a16f811bb724480bb12ea8df
+    state_at_adopt: unmodified+behind
+  docs/inbox/ONBOARDING.md:
+    state_at_adopt: unknown-base
+  justfile:
+    state_at_adopt: unknown-base
+applied_bundles: []
