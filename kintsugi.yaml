@@ -15,8 +15,6 @@ artifacts:
     class: reconcile
   justfile:
     class: reconcile
-  CHANGELOG.md:
-    class: stencil
   docs/METHODOLOGY.md:
     class: stencil
   docs/adr/templates/adr.md:
@@ -62,5 +60,8 @@ features:                   # labels only in v0
 journal:
   path: TEMPLATE-UPDATES.md
   enabled: true
+
+# CHANGELOG.md deliberately untracked: it is the extension's own release
+# changelog (VS Code Marketplace), not the template's — legible absence.
 
 
