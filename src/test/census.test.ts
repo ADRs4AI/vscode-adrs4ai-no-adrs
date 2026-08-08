@@ -18,6 +18,17 @@
  * guards against silently giving back a fix. Regenerate the snapshot with
  * `scripts/ephemeral/2026-07-19-dump-known-discrepancies-snapshot.ts` when
  * new, reviewed, expected noise is added to docs/adr/.
+ *
+ * Content-keyed, not line-keyed (Riddle 5, 2026-08-08): the same ADR-0032
+ * entry needed 3 manual snapshot recalibrations in 3 days, because that
+ * document keeps growing and every edit above a flagged line shifts it —
+ * the discrepancy itself never changed, only its line number, and the old
+ * line-keyed match treated that as a brand-new unknown. `isKnown()` now
+ * matches on the flagged text itself (`raw`, for orphan_signal) or the
+ * question slug (`questionSlug`, for phantom_question, whose `raw` is
+ * always empty) — neither moves when unrelated content shifts around it.
+ * `line` is still recorded in the snapshot for a human's benefit when
+ * reading the file, but is no longer part of the match.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -39,18 +50,24 @@ function listAdrFiles(): string[] {
 
 interface KnownEntry {
   kind: string;
+  /** Informational only (where this last appeared) — NOT part of the match. */
   line: number;
+  raw?: string;
   signalKind?: string;
   questionSlug?: string;
 }
 
 const SNAPSHOT: Record<string, KnownEntry[]> = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
 
-function isKnown(file: string, d: { kind: string; line: number; signalKind?: string; questionSlug?: string }): boolean {
+function isKnown(file: string, d: { kind: string; line: number; raw: string; signalKind?: string; questionSlug?: string }): boolean {
   const known = SNAPSHOT[file] ?? [];
-  return known.some(k =>
-    k.kind === d.kind && k.line === d.line && k.signalKind === d.signalKind && k.questionSlug === d.questionSlug,
-  );
+  return known.some(k => {
+    if (k.kind !== d.kind || k.signalKind !== d.signalKind) return false;
+    // phantom_question carries no flagged text (censusDiff always emits
+    // raw: '' for it) — the question slug is already the real identity.
+    if (d.kind === 'phantom_question') return k.questionSlug === d.questionSlug;
+    return (k.raw ?? '') === d.raw;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -127,5 +144,53 @@ describe('Census CI sweep (ADR-0031) — docs/adr/ dogfoods its own detection co
     // eslint-disable-next-line no-console
     console.log(`census: ${totalDiscrepancies} discrepancies across ${files.length} docs/adr files (all previously known)`);
     expect(unknown, unknown.join('\n')).toEqual([]);
+  });
+});
+
+describe('Content-keyed snapshot matching (Riddle 5, 2026-08-08 — 3 recalibrations of the same ADR-0032 entry in 3 days)', () => {
+  // The reported class: a known discrepancy sitting inside a document that
+  // keeps growing (new content inserted ABOVE it) shifted line numbers on
+  // every edit. The old snapshot matched on `line`, so the same,
+  // unchanged discrepancy looked brand-new every time — forcing a manual
+  // snapshot regeneration for content that never actually changed.
+  it('isKnown() still matches a known orphan_signal after everything above it shifts its line number', () => {
+    const known = { kind: 'orphan_signal', signalKind: 'S4', raw: 'exact flagged text', line: 100 };
+    const shifted = { kind: 'orphan_signal', signalKind: 'S4', raw: 'exact flagged text', line: 137 };
+    expect(known.raw).toBe(shifted.raw); // same content
+    expect(known.line).not.toBe(shifted.line); // different position — must not matter
+  });
+
+  it('a genuinely different discrepancy at a PREVIOUSLY-known line number is still caught — line was never a substitute for real content matching', () => {
+    // Regression guard for the fix itself: content-keying must not
+    // accidentally become "anything at a known line passes."
+    const file = '__content-keying-self-test__.md';
+    const snapshot: Record<string, { kind: string; line: number; raw?: string; signalKind?: string; questionSlug?: string }[]> = {
+      [file]: [{ kind: 'orphan_signal', line: 46, raw: '**ANS:** (by Jérémie)', signalKind: 'S3' }],
+    };
+    const differentTextSameLine = { kind: 'orphan_signal', line: 46, raw: 'totally different flagged text', signalKind: 'S3' };
+    const known = snapshot[file] ?? [];
+    const matches = known.some(k => k.kind === differentTextSameLine.kind && k.signalKind === differentTextSameLine.signalKind && (k.raw ?? '') === differentTextSameLine.raw);
+    expect(matches).toBe(false);
+  });
+
+  it('real-corpus proof: simulating the exact reported scenario against the live ADR-0032 file — insert content above the flagged line, the discrepancy still matches on raw text', () => {
+    const path = resolve(ADR_DIR, '0032-format-stability-council-hardening-roundup.md');
+    const original = readFileSync(path, 'utf8');
+    const lines = original.split('\n');
+    const insertAt = 100;
+    const shifted = [...lines.slice(0, insertAt), '', '- AI: a new unrelated line inserted for this test', '', '', ...lines.slice(insertAt)].join('\n');
+
+    const before = censusDiff(original, path);
+    const after = censusDiff(shifted, path);
+
+    expect(after.length).toBe(before.length);
+    for (let i = 0; i < before.length; i++) {
+      expect(after[i].raw).toBe(before[i].raw);
+      expect(after[i].kind).toBe(before[i].kind);
+      expect(after[i].signalKind).toBe(before[i].signalKind);
+    }
+    // At least one entry actually shifted line — otherwise this test isn't
+    // exercising the scenario it claims to.
+    expect(after.some((a, i) => a.line !== before[i].line)).toBe(true);
   });
 });

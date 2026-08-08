@@ -3,6 +3,7 @@
     {
       "kind": "orphan_signal",
       "line": 187,
+      "raw": "Forma 2 adds (pending QST answers): open questions webview panel, hover provider, \"ADR commit\" button.",
       "signalKind": "S4"
     }
   ],
@@ -10,6 +11,7 @@
     {
       "kind": "orphan_signal",
       "line": 121,
+      "raw": "**ANS:** (by Jérémie)",
       "signalKind": "S3"
     }
   ],
@@ -17,26 +19,31 @@
     {
       "kind": "orphan_signal",
       "line": 23,
+      "raw": "**Problem 2 — QST placeholder matching**: The `[Fill this in]` pattern was too strict. `[ Fill this in  ]` (with spaces) didn't match, so the \"write answer to file\" logic fell back to inserting after the ANS header instead of replacing the placeholder. This caused double-answers on some questions. Also observed: the `- Status: unanswered` check is sensitive to whitespace and case.",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 37,
+      "raw": "**On placeholder matching**: `[Fill this in]` variants should be matched with a regex: `/^\\[.*fill\\s+this\\s+in.*\\]$/i`. This handles extra spaces, case variations, and surrounding text like `[ Fill this in ]` or `[fill this in please]`.",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 107,
+      "raw": "Also handle `[ Fill this in  ]` by trimming around the brackets:",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 126,
+      "raw": "**Fix 3 — `indexDirectory` pattern extension** (pending QST 1 answer)",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 209,
+      "raw": "**D9.4 — NONSTANDARD_FILL_PLACEHOLDER** (bracket-form variants). Specimens: `[see hand drawing — pending]` ([temp/misc-problem-adr-05/0006-buffon-node-visual-vocabulary.md:73](../../temp/misc-problem-adr-05/0006-buffon-node-visual-vocabulary.md)), `[awaiting]` ([temp/misc-problem-adr-05/0007-etude-ui-evolution.md:114-115](../../temp/misc-problem-adr-05/0007-etude-ui-evolution.md)), and `**ANS:** (by )` with empty author parens and no body ([temp/misc-problem-adr-05/0004-alternative-flight-data-sources.md:300-301](../../temp/misc-problem-adr-05/0004-alternative-flight-data-sources.md)). Fix: broaden the placeholder regex family to `/^\\[\\s*(fill\\s+this\\s+in|awaiting|pending|tbd|see\\s+.+|to\\s+fill)[^\\]]*\\]$/i` and treat `**ANS:** (by *)` followed by blank/EOF as an implicit placeholder. Pair with the ANS-finder hardening (R4 was in Iteration 1 of the master-plan seed).",
       "signalKind": "S4"
     }
   ],
@@ -44,6 +51,7 @@
     {
       "kind": "orphan_signal",
       "line": 237,
+      "raw": "- Human: Confirmed TDD approach; directed build of test suite first then implementation. Zoarium analysis (temp/misc-adr) revealed: D4 (collapsed ANS block) was the primary blocker — `(fill in)` treated as answer text, not a placeholder. D1/D2 caused display degradation. Dogfooding discovery: MISSING_SCOPE_REMAINING warning fired immediately when ADR status was set to \"Partially Implemented\".",
       "signalKind": "S4"
     }
   ],
@@ -51,11 +59,13 @@
     {
       "kind": "orphan_signal",
       "line": 139,
+      "raw": "Stacked vertically in source order, each in the yellow recommendation register with an attribution chip prefix; chip colour deterministic from the author slug; most recent visually emphasized; inferred authors visually distinguished (pending QST-1). Multiple recommendations from the same author across iterations are all kept — walking back a lean is itself part of the trace (the template's protocol text requires saying so explicitly).",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 175,
+      "raw": "List-shaped, attributed, dated, append-only in practice; legacy form bridged with inferred attribution (pending QST-1); D9.5 fires on open QSTs only (pending QST-2). Settled per Iteration-2 (\"YES TO ALL THREE\") and Iteration-4 (\"Day-1 multi\") of the source seed.",
       "signalKind": "S4"
     }
   ],
@@ -63,6 +73,7 @@
     {
       "kind": "orphan_signal",
       "line": 53,
+      "raw": "1. *Parser*: QST with `- Status: unanswered` whose block contains no `**ANS:**` token → `MISSING_ANS_BLOCK` (INFO): \"This open question has no ANS block, so answers cannot be written to it. SUGGESTED: `**ANS:** (by Human)` + `[Fill this in]`.\"",
       "signalKind": "S4"
     }
   ],
@@ -70,11 +81,13 @@
     {
       "kind": "orphan_signal",
       "line": 155,
+      "raw": "   - **Lexicon tier**: stock words (pending, TBD, todo, fill this in, tk, à venir, ...) — extensible list, not hardcoded to English.",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 156,
+      "raw": "   - **Wrapper tier**: punctuation/markup morphology (brackets, parens, italics/underscores, ellipsis-only, dash-only) — wrappers compose (`_(pending)_` = italic ∘ paren ∘ lexicon), matching `stripPlaceholderWrapper`'s current shape but generalized to N layers instead of the two (italic, paren) shipped in the same-day fix.",
       "signalKind": "S4"
     }
   ],
@@ -82,31 +95,19 @@
     {
       "kind": "orphan_signal",
       "line": 46,
+      "raw": "**ANS:** (by Jérémie)",
       "signalKind": "S3"
     },
     {
       "kind": "orphan_signal",
       "line": 47,
+      "raw": "[Fill this in]",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
-      "line": 449,
-      "signalKind": "S4"
-    },
-    {
-      "kind": "orphan_signal",
-      "line": 453,
-      "signalKind": "S3"
-    },
-    {
-      "kind": "orphan_signal",
-      "line": 454,
-      "signalKind": "S4"
-    },
-    {
-      "kind": "orphan_signal",
-      "line": 570,
+      "line": 572,
+      "raw": "- AI: (Riddle 5, chair) Every open register entry ORJ-ified — `- Aperture:` stating the exact answer shape (nine of eleven are one word/letter/phrase) + a panel-servable `**ANS:**`/`[Fill this in]` slot, so the release-gating pass is eleven units of attention instead of one wall; iteration header corrected (was stale at 1); framing 6 + STATUS-VOCAB cross-ref already current from 07-28/29",
       "signalKind": "S4"
     }
   ],
@@ -114,6 +115,7 @@
     {
       "kind": "orphan_signal",
       "line": 118,
+      "raw": "*(Pending — all four QSTs above are open.)*",
       "signalKind": "S4"
     }
   ],
@@ -121,11 +123,13 @@
     {
       "kind": "orphan_signal",
       "line": 50,
+      "raw": "**A second, unrelated bug was found and fixed in the same session**: the exact `[ ]` (bare empty-bracket) placeholder Jérémie used in a real file (`temp/0048-mcp-support-rfc-connecting-external-tool-servers.md`) wasn't recognized by the parser's placeholder-tolerance regex (`PLACEHOLDER_SYNONYM_RE`, which only covered named tokens like `[unanswered]`, `[tbd]`, etc. — the D9.4 class). A bare `[ ]` became a literal \"answer,\" and the question silently vanished from the panel as done. This is the same failure class as D9.4's original specimen, just a token D9.4 didn't cover yet — fixed with a dedicated `PLACEHOLDER_EMPTY_RE`, deliberately kept separate from the synonym regex rather than folded in, to avoid accidentally widening it to match *any* bracketed text (which would misread a real answer like `\"[see ADR-0014]\"` as a placeholder).",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 64,
+      "raw": "4. **D9.4's placeholder tolerance is a token list, not a closed set — treat every new gap as an expected instance of the same class, not a new bug.** This is the second specimen (`[unanswered]`, now `[ ]`) found in real usage within two days. The class isn't closed; the next gap is a matter of when, not if.",
       "signalKind": "S4"
     }
   ],
@@ -133,6 +137,7 @@
     {
       "kind": "orphan_signal",
       "line": 129,
+      "raw": "Apparently, upon further testing, `[ Fill this in  ]` -> `[Fill this in]` was enough to make the parsing work.",
       "signalKind": "S4"
     }
   ],
@@ -140,6 +145,7 @@
     {
       "kind": "orphan_signal",
       "line": 5,
+      "raw": "- **Status**: TERMINATED — duplicate capture, merged 2026-07-28",
       "signalKind": "S2"
     }
   ],
@@ -147,11 +153,13 @@
     {
       "kind": "orphan_signal",
       "line": 25,
+      "raw": "- **Status**: Draft - awaiting human answers",
       "signalKind": "S2"
     },
     {
       "kind": "orphan_signal",
       "line": 44,
+      "raw": "- **Status**: Draft",
       "signalKind": "S2"
     }
   ],
@@ -159,21 +167,25 @@
     {
       "kind": "orphan_signal",
       "line": 84,
+      "raw": "- Status: unanswered",
       "signalKind": "S2"
     },
     {
       "kind": "orphan_signal",
       "line": 87,
+      "raw": "- Status: unanswered",
       "signalKind": "S2"
     },
     {
       "kind": "orphan_signal",
       "line": 90,
+      "raw": "- Status: unanswered",
       "signalKind": "S2"
     },
     {
       "kind": "orphan_signal",
       "line": 95,
+      "raw": "- Status: unanswered",
       "signalKind": "S2"
     }
   ],
@@ -181,46 +193,55 @@
     {
       "kind": "orphan_signal",
       "line": 104,
+      "raw": "| [temp/misc-adr/0002-python-package-toolchain.md:70](../../temp/misc-adr/0002-python-package-toolchain.md#L70) | `**ANS:** (fill in)` |",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 105,
+      "raw": "| [temp/misc-adr/0003-shortcode-parsing-strategy.md:62](../../temp/misc-adr/0003-shortcode-parsing-strategy.md#L62) | `**ANS:** (fill in)` |",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 106,
+      "raw": "| [temp/misc-adr/0004-canvas-url-persistence.md:58](../../temp/misc-adr/0004-canvas-url-persistence.md#L58) | `**ANS:** (fill in)` |",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 107,
+      "raw": "| [temp/misc-adr/0005-github-action-design.md:75](../../temp/misc-adr/0005-github-action-design.md#L75) | `**ANS:** (fill in)` |",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 110,
+      "raw": "matches these cleanly. No variation observed within the exact `**ANS:** (fill in)`",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 207,
+      "raw": "No `**ANS:** (by Human)`, no `[Fill this in]` — **no writable target at all.**",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 218,
+      "raw": "ANS form (`**ANS:** (by Human)\\n\\n[Fill this in]`) at the end of the QST block.",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 322,
+      "raw": "doesn't match `[Fill this in]`.",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 734,
+      "raw": "  to cover `[awaiting]`, `[pending]`, `[tbd]`, `[see …]`",
       "signalKind": "S4"
     }
   ],
@@ -228,11 +249,13 @@
     {
       "kind": "orphan_signal",
       "line": 26,
+      "raw": "> [Fill this in]",
       "signalKind": "S4"
     },
     {
       "kind": "orphan_signal",
       "line": 35,
+      "raw": "> [Fill this in]",
       "signalKind": "S4"
     }
   ]
