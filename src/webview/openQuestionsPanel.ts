@@ -883,8 +883,27 @@ export class OpenQuestionsPanel {
         edit.replace(uri, lineRange(doc, statusLineIdx), `- Status: ${targetStatus}`)
       }
 
-      // 2. Update the **ANS:** author line
-      if (ansHeaderLineIdx >= 0) {
+      // 2. Update the **ANS:** author line — ONLY when step 3 is going to
+      // leave it alone (the fillLineIdx branch, which replaces just the
+      // placeholder). When step 3 instead takes the "replace the whole
+      // existing answer" branch below (no placeholder — a REAL prior
+      // answer being updated), that branch's own replace range STARTS AT
+      // THIS SAME LINE and already rewrites the header as part of one
+      // combined edit. Recurring `workspace-edit-rejected` (Gleaner's
+      // brief, 2026-08-08, elenchus-monorepo — fired 2026-07-31, 08-02,
+      // 08-08, ruled out file drift and external races both times):
+      // firing BOTH edits unconditionally queued two overlapping ranges
+      // (both starting at Position(ansHeaderLineIdx, 0)) in the SAME
+      // WorkspaceEdit — VS Code's applyEdit() silently rejects the whole
+      // edit when it detects overlapping ranges on one resource, returning
+      // false with no thrown error, indistinguishable from any other
+      // rejection at this call site. 100% reproducible, purely local,
+      // whenever a question with a real (non-placeholder) existing answer
+      // is re-answered — no race, no drift, exactly what static reading
+      // plus a realistic specimen through the real scanAnswerWriteAnchors
+      // confirmed (step2 range line N..N, step3 range line N..N+1, always
+      // overlapping when both fire).
+      if (ansHeaderLineIdx >= 0 && fillLineIdx >= 0) {
         const author = msg.authorName.trim() || 'Human'
         edit.replace(uri, lineRange(doc, ansHeaderLineIdx), `**ANS:** (by ${author})`)
       }
