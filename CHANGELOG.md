@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.71] - 2026-08-08
+
+### Fixed
+- **"The edit could not be applied" no longer fires when re-answering a question that already has a real answer** — the write was silently queuing two conflicting edits on the same line, which VS Code rejects outright. Answering, then later updating that same answer, now always lands.
+
 ## [0.7.70] - 2026-08-07
 
 ### Added
