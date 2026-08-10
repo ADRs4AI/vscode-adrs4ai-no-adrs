@@ -4559,4 +4559,49 @@ describe('Regression tests: a numbered sub-list nested under "- Why asking:"/"- 
     const q = parseAdr(doc, '/fake/x.md').questions[0]
     expect(q.whyAsking).toBe('this sentence wraps across two source lines with no list at all.')
   })
+
+  // Round 2 (Gleaner's brief, 2026-08-10, relaying Jérémie's direct
+  // correction on v0.7.72: "it unwraps structural elements... this is a
+  // systemic problem"). Round 1 only special-cased numbered markers and
+  // was never tested against the bullet sibling, which is WORSE: a nested
+  // "- **Option D exists**..." line, once trimmed, is indistinguishable
+  // by character alone from a genuine new top-level field ("- Need:"), so
+  // the old guard excluded it from continuation entirely — it never even
+  // reached whyAsking, landing in rawBody instead and vanishing from the
+  // "why" section's render. Fixed generically this time: indentation
+  // relative to the field's own column decides nesting, matching the
+  // pattern already correct in unwrap-adrs.mjs and renderBlocks — never
+  // the marker character.
+  it('a BULLET sub-list nested under "- Why asking:" is preserved too — the class Round 1 missed', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Q?',
+      '- Why asking: intro sentence:',
+      '  - **Option D exists**: the fourth path nobody named yet.',
+      '  - **The renaming falsifier closed.** Direction flipped.',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/0116-session-type-editor.md').questions[0]
+    expect(q.whyAsking).toBe(
+      'intro sentence:\n'
+      + '- **Option D exists**: the fourth path nobody named yet.\n'
+      + '- **The renaming falsifier closed.** Direction flipped.',
+    )
+    // Round 1's failure mode: content silently relocated to rawBody instead
+    // of just mis-rendering — assert it does NOT leak there anymore.
+    expect(q.rawBody ?? '').not.toContain('Option D exists')
+  })
+
+  it('a genuine SIBLING field ("- Need:" at the same column, not indented) still correctly ends the continuation', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Q?',
+      '- Why asking: intro.',
+      '- Need: something else entirely.',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/x.md').questions[0]
+    expect(q.whyAsking).toBe('intro.')
+    expect(q.need).toBe('something else entirely.')
+  })
 })

@@ -1262,6 +1262,14 @@ export function extractQuestion(
   let inWhyAsking = false;
   let inWhyDeferring = false;
   let inNeed = false;
+  // Base indentation of whichever of the three fields above is currently
+  // open — the column its own "- Why asking:"/"- Need:"/"- Why deferring:"
+  // marker started at. Mutually exclusive with the three flags above (only
+  // one field is ever "in progress" at a time), so one shared variable is
+  // enough. Used below to tell a genuinely NESTED list item (indented
+  // further than the field itself) apart from a new SIBLING field at the
+  // field's own column — see the fix note at isContinuation.
+  let fieldBaseIndent = 0;
   const answerLines: string[] = [];
   // Dialogue layering (system3 ADR-0033, 2026-07-24): a QST block can hold
   // MULTIPLE answer rounds interleaved with updated recommendations
@@ -1421,30 +1429,47 @@ export function extractQuestion(
       }
     }
 
-    // Multi-line field continuation: an indented line (starts with whitespace)
-    // that is not blank, not a new bullet field, and not a block element.
+    // Multi-line field continuation: an indented line (starts with
+    // whitespace) that is not blank and not a new SIBLING field.
+    //
+    // Nested-list fix, round 2 (Gleaner's brief, 2026-08-10, relaying
+    // Jérémie's direct correction on v0.7.72: "it unwraps structural
+    // elements... this is a systemic problem"). Round 1 (2026-08-09) only
+    // special-cased ordered markers ("1. ") — Gleaner never tested the
+    // bullet sibling before calling it fixed, and bullets are WORSE: a
+    // nested "- **Option D exists**..." line, once trimmed, is
+    // indistinguishable by CHARACTER ALONE from a genuine new top-level
+    // field ("- Need: ..."), so the old `!/^-\s+/.test(line)` guard
+    // excluded it from continuation entirely — it never even reached
+    // `whyAsking`, landing in rawBody instead and vanishing from the "why"
+    // section's render. Round 1's "add another special case per marker
+    // type" was the wrong shape, per Gleaner's own review: two other
+    // places in this codebase already solve the SAME class correctly —
+    // scripts/unwrap-adrs/unwrap-adrs.mjs's isListItem/isListContinuationLine
+    // and openQuestionsPanel.ts's renderBlocks — both by checking
+    // INDENTATION relative to the surrounding construct, never by which
+    // character follows it. A genuine sibling field always starts at the
+    // SAME column as the field currently open (fieldBaseIndent, captured
+    // where "- Why asking:"/etc. was matched); anything indented FURTHER
+    // is nested content, whatever marker it uses.
+    const rawIndent = lines[i].length - lines[i].trimStart().length;
+    const isNestedRelativeToField = rawIndent > fieldBaseIndent;
+    const looksLikeSiblingField = !isNestedRelativeToField && /^-\s+/.test(line);
     const isContinuation = /^\s+\S/.test(lines[i]) && line !== ''
-      && !/^-\s+/.test(line) && !/^\*\*/.test(line);
+      && !looksLikeSiblingField && !/^\*\*/.test(line);
 
-    // A continuation line that ITSELF starts a new ordered-list item (e.g.
-    // a numbered sub-list nested under "- Why asking:") must not be glued
-    // onto the growing string with a plain space — that flattens "1. ..."/
-    // "2. ..." into inline prose with no line break at all (Gleaner's
-    // brief, 2026-08-09, elenchus-monorepo ADR-0116, confirmed against the
-    // real file: whyAsking came back as one run-on string, the literal
-    // "1."/"2." surviving as plain text once it reached renderMarkdown —
-    // the same "no concept of block-level content nested inside a list
-    // item" class as the ADR-0003 nested-fence fix, one layer up: these
-    // fields are collected as flat strings, but renderMarkdown (already
-    // block-aware) can only recognize a real ordered list if the joined
-    // string actually has a line break before each "N. " marker. Preserve
-    // that break; every other continuation line (plain wrapped prose,
-    // whether before any list starts or continuing a single item's own
-    // text) keeps the existing flat space-join — renderMarkdown's own
-    // lazy-continuation rule for list items already handles that case
-    // correctly once it re-parses the joined string from scratch.
-    const continuesOrderedItem = /^\d+\.\s+/.test(line);
-    const joiner = continuesOrderedItem ? '\n' : ' ';
+    // A continuation line that is itself a nested list item — ordered
+    // ("1. ") or bulleted ("- "/"* ") — must not be glued onto the growing
+    // string with a plain space, which flattens the marker into inline
+    // prose with no line break at all. Preserve the break so renderMarkdown
+    // (already block-aware, since the ADR-0003 nested-fence fix) can
+    // recognize a real list once it re-parses the joined string from
+    // scratch. Every other continuation line (plain wrapped prose, whether
+    // before any list starts or continuing a single item's own text) keeps
+    // the flat space-join — renderMarkdown's own lazy-continuation rule
+    // for list items already handles that case correctly on its own.
+    const continuesListItem = /^\d+\.\s+/.test(line) || /^[-*]\s+/.test(line);
+    const joiner = continuesListItem ? '\n' : ' ';
 
     if (inWhyAsking) {
       if (isContinuation) { whyAsking = (whyAsking ?? '') + joiner + line; continue; }
@@ -1512,13 +1537,25 @@ export function extractQuestion(
     }
 
     const whyMatch = line.match(WHY_ASKING_RE);
-    if (whyMatch) { whyAsking = whyMatch[1].trim(); inRecommendation = false; inWhyAsking = true; inNeed = false; inWhyDeferring = false; continue; }
+    if (whyMatch) {
+      whyAsking = whyMatch[1].trim(); inRecommendation = false; inWhyAsking = true; inNeed = false; inWhyDeferring = false;
+      fieldBaseIndent = lines[i].length - lines[i].trimStart().length;
+      continue;
+    }
 
     const whyDeferringMatch = line.match(WHY_DEFERRING_RE);
-    if (whyDeferringMatch) { whyDeferring = whyDeferringMatch[1].trim(); inRecommendation = false; inWhyDeferring = true; inWhyAsking = false; inNeed = false; continue; }
+    if (whyDeferringMatch) {
+      whyDeferring = whyDeferringMatch[1].trim(); inRecommendation = false; inWhyDeferring = true; inWhyAsking = false; inNeed = false;
+      fieldBaseIndent = lines[i].length - lines[i].trimStart().length;
+      continue;
+    }
 
     const needMatch = line.match(NEED_RE);
-    if (needMatch) { need = needMatch[1].trim(); inRecommendation = false; inNeed = true; inWhyAsking = false; continue; }
+    if (needMatch) {
+      need = needMatch[1].trim(); inRecommendation = false; inNeed = true; inWhyAsking = false;
+      fieldBaseIndent = lines[i].length - lines[i].trimStart().length;
+      continue;
+    }
 
     // Recommendation: starts with **My recommendation**: and may span multiple lines
     const recMatch = line.match(RECOMMENDATION_RE);
