@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.72] - 2026-08-10
+
+### Fixed
+- **A numbered sub-list under "Why asking" or "Need" now renders as a real list** — previously it flattened into one run-on line with the literal "1."/"2." showing as plain text.
+- **Fixed a cross-question content leak**: switching from a question with a long body/context to one without could leave the previous question's text behind on screen, invisible-but-present, and sometimes visible again mixed into unrelated content. Each field now clears fully when empty, not just hidden.
+
 ## [0.7.71] - 2026-08-08
 
 ### Fixed
