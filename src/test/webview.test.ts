@@ -1696,3 +1696,61 @@ describe("Regression tests: comment-strip must not eat backtick-quoted comment e
     expect(h.element('body').innerHTML).toContain('keep me')
   })
 })
+
+// Regression tests (fixes real founder-reported bug, Gleaner's briefs
+// 2026-08-09/2026-08-10: a SECOND founder Report on the same question
+// proved the first was worse than guessed — the leaked text wasn't even
+// FROM the ADR on screen; it was left behind by a DIFFERENT question
+// viewed earlier in the same panel session, from an entirely unrelated
+// ADR). Bug: #why/#body/#body-post's empty-state only toggled
+// `style.display = 'none'` — none of the three ever cleared `.innerHTML`,
+// unlike renderRecommendations' own empty-state two hundred lines away
+// (`wrap.innerHTML = ''`). A question with real why/body/bodyPost content
+// left that HTML sitting in the hidden div; if the NEXT question rendered
+// had that field empty, the div stayed hidden but the stale HTML was
+// still there — genuinely wrong content, not just a visual glitch,
+// confirmed against a live cross-document specimen.
+describe('Regression tests: #why/#body/#body-post clear their innerHTML on the empty-state path, not just display (cross-question stale-DOM leak)', () => {
+  const mkQ = (overrides: Record<string, unknown>) => ({
+    id: 'q1', text: 'Q1', adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1,
+    draftKey: 'key-1', fileChecksum: 'c1', totalOccurrences: 1,
+    groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr',
+    ...overrides,
+  })
+
+  it('why: populated on question 1, empty on question 2 — the stale HTML from question 1 must not survive', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [
+      mkQ({ id: 'q1', whyAsking: 'unrelated content about semantic colours from a different ADR entirely' }),
+      mkQ({ id: 'q2', text: 'Q2' }),
+    ] })
+    expect(h.element('why').innerHTML).toContain('semantic colours')
+    h.click('btn-skip') // advance to question 2, which has no why/body content at all
+    expect(h.element('why').style.display).toBe('none')
+    expect(h.element('why').innerHTML).toBe('')
+  })
+
+  it('body: same guarantee — no cross-question leak once the field goes empty', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [
+      mkQ({ id: 'q1', body: 'Leaked paragraph from an unrelated ADR.' }),
+      mkQ({ id: 'q2', text: 'Q2' }),
+    ] })
+    expect(h.element('body').innerHTML).toContain('Leaked paragraph')
+    h.click('btn-skip')
+    expect(h.element('body').style.display).toBe('none')
+    expect(h.element('body').innerHTML).toBe('')
+  })
+
+  it('body-post: same guarantee', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [
+      mkQ({ id: 'q1', bodyPost: 'Trailing leaked content.' }),
+      mkQ({ id: 'q2', text: 'Q2' }),
+    ] })
+    expect(h.element('body-post').innerHTML).toContain('Trailing leaked content')
+    h.click('btn-skip')
+    expect(h.element('body-post').style.display).toBe('none')
+    expect(h.element('body-post').innerHTML).toBe('')
+  })
+})

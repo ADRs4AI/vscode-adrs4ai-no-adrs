@@ -1426,16 +1426,36 @@ export function extractQuestion(
     const isContinuation = /^\s+\S/.test(lines[i]) && line !== ''
       && !/^-\s+/.test(line) && !/^\*\*/.test(line);
 
+    // A continuation line that ITSELF starts a new ordered-list item (e.g.
+    // a numbered sub-list nested under "- Why asking:") must not be glued
+    // onto the growing string with a plain space — that flattens "1. ..."/
+    // "2. ..." into inline prose with no line break at all (Gleaner's
+    // brief, 2026-08-09, elenchus-monorepo ADR-0116, confirmed against the
+    // real file: whyAsking came back as one run-on string, the literal
+    // "1."/"2." surviving as plain text once it reached renderMarkdown —
+    // the same "no concept of block-level content nested inside a list
+    // item" class as the ADR-0003 nested-fence fix, one layer up: these
+    // fields are collected as flat strings, but renderMarkdown (already
+    // block-aware) can only recognize a real ordered list if the joined
+    // string actually has a line break before each "N. " marker. Preserve
+    // that break; every other continuation line (plain wrapped prose,
+    // whether before any list starts or continuing a single item's own
+    // text) keeps the existing flat space-join — renderMarkdown's own
+    // lazy-continuation rule for list items already handles that case
+    // correctly once it re-parses the joined string from scratch.
+    const continuesOrderedItem = /^\d+\.\s+/.test(line);
+    const joiner = continuesOrderedItem ? '\n' : ' ';
+
     if (inWhyAsking) {
-      if (isContinuation) { whyAsking = (whyAsking ?? '') + ' ' + line; continue; }
+      if (isContinuation) { whyAsking = (whyAsking ?? '') + joiner + line; continue; }
       inWhyAsking = false; // fall through to process this line normally
     }
     if (inWhyDeferring) {
-      if (isContinuation) { whyDeferring = (whyDeferring ?? '') + ' ' + line; continue; }
+      if (isContinuation) { whyDeferring = (whyDeferring ?? '') + joiner + line; continue; }
       inWhyDeferring = false; // fall through
     }
     if (inNeed) {
-      if (isContinuation) { need = (need ?? '') + ' ' + line; continue; }
+      if (isContinuation) { need = (need ?? '') + joiner + line; continue; }
       inNeed = false; // fall through
     }
 

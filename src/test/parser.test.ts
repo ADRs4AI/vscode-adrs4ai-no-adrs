@@ -4505,3 +4505,58 @@ describe('Regression tests: question-level retirement — withdrawn|superseded|m
     expect(q.isRetired ?? false).toBe(false)
   })
 })
+
+describe('Regression tests: a numbered sub-list nested under "- Why asking:"/"- Need:" preserves its line breaks (Gleaner\'s brief, 2026-08-09, elenchus-monorepo ADR-0116)', () => {
+  // Confirmed against the real file: whyAsking came back as one run-on,
+  // space-joined string — "1. **Option D exists**..." and "2. ..." glued
+  // together with no line break at all, so renderMarkdown (already
+  // block-aware) had nothing to recognize as a list and rendered the
+  // literal "1."/"2." as plain text. isContinuation already let an
+  // ordered-list marker line through as a "continuation" of these fields
+  // — the bug was the JOIN, not the recognition: every continuation used
+  // a flat space, even when the continuation line was itself a new list
+  // item. Fix: a continuation line that starts a new "N. " item joins
+  // with a real line break instead, so renderMarkdown can tell there's a
+  // list there once it re-parses the field.
+  it('whyAsking: a leading sentence plus a nested numbered list keeps its line breaks, one marker per line', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Which option — A, B, C, or D?',
+      '- Why asking: The four options carry different tradeoffs, not buried in prose above:',
+      '  1. **Option D exists** (Basanos): the fourth path nobody named yet.',
+      '  2. **The renaming-pressure falsifier closed, and reversed.** Direction flipped.',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/0116-session-type-editor.md').questions[0]
+    expect(q.whyAsking).toBe(
+      'The four options carry different tradeoffs, not buried in prose above:\n'
+      + '1. **Option D exists** (Basanos): the fourth path nobody named yet.\n'
+      + '2. **The renaming-pressure falsifier closed, and reversed.** Direction flipped.',
+    )
+  })
+
+  it('need: same fix applies — nested numbered list preserved, not flattened', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Q?',
+      '- Need: pick one of:',
+      '  1. First choice.',
+      '  2. Second choice.',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/x.md').questions[0]
+    expect(q.need).toBe('pick one of:\n1. First choice.\n2. Second choice.')
+  })
+
+  it('a plain hard-wrapped continuation (no list) still flat-joins with a space, unchanged', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Q?',
+      '- Why asking: this sentence wraps',
+      '  across two source lines with no list at all.',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/x.md').questions[0]
+    expect(q.whyAsking).toBe('this sentence wraps across two source lines with no list at all.')
+  })
+})

@@ -2811,15 +2811,22 @@ function render() {
 
   const ctx = [q.whyAsking, q.whyDeferring ? '**Why deferring:** ' + q.whyDeferring : null, q.need ? '**Need:** ' + q.need : null].filter(Boolean).join('\\n\\n');
   if (ctx) { $id('why').style.display = 'block'; $id('why').innerHTML = renderMarkdown(ctx); }
-  else { $id('why').style.display = 'none'; }
+  // Empty-state clears innerHTML, not just display — matches
+  // renderRecommendations' own convention (wrap.innerHTML = ''). Gleaner's
+  // brief (2026-08-09): a hidden div whose content is left behind can
+  // resurface as stale HTML if it's ever shown again without an
+  // intervening populated-branch pass — real, independently-verifiable
+  // inconsistency with the one place in this file that already gets it
+  // right, whether or not it's the exact mechanism for any one report.
+  else { $id('why').style.display = 'none'; $id('why').innerHTML = ''; }
 
   if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
-  else { $id('body').style.display = 'none'; }
+  else { $id('body').style.display = 'none'; $id('body').innerHTML = ''; }
 
   renderRecommendations(q.recommendations && q.recommendations.length ? q.recommendations : (q.recommendation ? [{ text: q.recommendation }] : []));
 
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
-  else { $id('body-post').style.display = 'none'; }
+  else { $id('body-post').style.display = 'none'; $id('body-post').innerHTML = ''; }
 
   // ADR-0034 doctrine 9 (Riddle's ruling, 2026-07-28): a resolved tour entry
   // is a review stop, never silence — its live answer renders read-only in
