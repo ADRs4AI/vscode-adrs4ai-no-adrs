@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.73] - 2026-08-10
+
+### Fixed
+- **A bulleted sub-list under "Why asking" or "Need" no longer disappears** — v0.7.72 only fixed numbered sub-lists; a bulleted one was silently dropped from the "why" section entirely rather than just mis-rendered. Both nested numbered and bulleted lists now render correctly, and the underlying fix is general (indentation-based) rather than per-marker-type.
+
 ## [0.7.72] - 2026-08-10
 
 ### Fixed
