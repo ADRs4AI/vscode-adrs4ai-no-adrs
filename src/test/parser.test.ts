@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
-import { parseAdr, detectFormat, slugify , isDocumentPausedStatus } from '../parser/extractor'
+import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken } from '../parser/extractor'
 import { parseSeed } from '../parser/seedExtractor'
 import { findReferencingAdrs, looksLikeSeedByContent } from '../index/seedIndex'
 
@@ -4503,6 +4503,26 @@ describe('Regression tests: question-level retirement — withdrawn|superseded|m
     const q = parseAdr(doc, '/fake/x.md').questions[0]
     expect(q.isAnswered).toBe(true)
     expect(q.isRetired ?? false).toBe(false)
+  })
+
+  // QST-STATUS-VOCAB council round (2026-08-11): audited this function
+  // against its sibling isDocumentPausedStatus, which strips inline
+  // emphasis before matching (v0.7.27's class fix) — this one didn't.
+  // End-to-end via parseAdr() it was never actually wrong (statusText is
+  // already emphasis-stripped upstream in extractQuestion() before either
+  // function ever sees it — confirmed by reverting the change and
+  // re-testing the real path, not just this function in isolation), but
+  // the function itself wasn't SELF-sufficient the way its sibling is: a
+  // future caller invoking it directly against a raw, un-stripped status
+  // string would have gotten a silent false negative. Made it match its
+  // sibling's self-sufficiency rather than rely on an unstated caller
+  // contract — zero behavior change on the real path (1128/1129 unchanged).
+  it('isRetiredStatusToken is self-sufficient — tolerates emphasis even called directly, not just via the pre-stripped statusText parseAdr() feeds it', () => {
+    expect(isRetiredStatusToken('**withdrawn** — reason')).toBe(true)
+    expect(isRetiredStatusToken('_superseded_ — by ADR-0070')).toBe(true)
+    expect(isRetiredStatusToken('withdrawn')).toBe(true)
+    expect(isRetiredStatusToken('answered')).toBe(false)
+    expect(isRetiredStatusToken(undefined)).toBe(false)
   })
 })
 

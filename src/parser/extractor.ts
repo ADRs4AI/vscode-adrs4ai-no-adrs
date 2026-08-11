@@ -1034,7 +1034,16 @@ function debulletAnsLine(line: string): string {
  */
 export function isRetiredStatusToken(statusText: string | undefined): boolean {
   if (!statusText) return false;
-  return /^(?:withdrawn|superseded|moot)\b/i.test(statusText.trim());
+  // Found auditing this function for the QST-STATUS-VOCAB council round
+  // (2026-08-11): its sibling isDocumentPausedStatus() strips inline
+  // emphasis before matching (v0.7.27's class fix — "**answered**"/
+  // "_accepted_" must never defeat token matching) but this one, shipped
+  // later (v0.7.69), never got the same tolerance. A bold-wrapped
+  // "**withdrawn** — reason" silently failed to retire the question —
+  // exactly the DEBRIEF-007-shaped silent-miss this vocabulary exists to
+  // close, just reopened one level down by an asymmetry between two
+  // near-identical functions.
+  return /^(?:withdrawn|superseded|moot)\b/i.test(stripInlineEmphasis(statusText).trim());
 }
 
 export function isDocumentPausedStatus(status: string | undefined): boolean {
