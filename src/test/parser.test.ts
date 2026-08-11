@@ -4605,3 +4605,66 @@ describe('Regression tests: a numbered sub-list nested under "- Why asking:"/"- 
     expect(q.need).toBe('something else entirely.')
   })
 })
+
+describe('Regression tests: recommendation text preserves list-item boundaries (fourth instance of the systemic class, Gleaner\'s brief 2026-08-11-0147, our own repo ADR-0032)', () => {
+  // extractor.ts's recommendation-text extraction used unwrapParagraphs,
+  // which only ever breaks on a BLANK line — no matchListItem() check at
+  // all, unlike its sibling unwrapMarkdownish (also used for rawBody,
+  // fixed independently). Two adjacent bullets with no blank line between
+  // them — valid markdown, the real ADR-0032 A1/A2 specimen — merged into
+  // one run-on string with the second bullet's marker surviving as a
+  // literal "- **A2 — ..." tail glued mid-sentence. Fixed by swapping both
+  // recommendation-text call sites (the legacy flat `recommendation`
+  // field and the per-block `recommendations[]` split) to unwrapMarkdownish
+  // — a strict superset, identical output for plain-prose input (its own
+  // list-item pass is a no-op when there are no list items).
+  it('two adjacent recommendation bullets (no blank line between them) stay as two separate lines, not merged', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Which enum shape?',
+      '- Status: unanswered',
+      '- Why asking: intro.',
+      '- Need: pick one.', '',
+      '**Recommendation**: (by Touchstone, 2026-07-15)', '',
+      'Two honest options:', '',
+      '- **A1 — Freeze the current enum verbatim.** Simplest.',
+      '- **A2 — Freeze the current enum plus a fifth value.** Documents reality.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/0032-x.md').questions[0]
+    const rec = q.recommendations?.[0]
+    expect(rec).toBeDefined()
+    expect(rec!.text).toContain('- **A1 — Freeze the current enum verbatim.** Simplest.\n- **A2 —')
+    // Round 1's exact failure mode: A2's marker surviving as a literal
+    // mid-sentence tail glued onto A1's own text.
+    expect(rec!.text).not.toContain('Simplest. - **A2')
+  })
+
+  it('the legacy flat `recommendation` field (same call site, first before the per-block split) gets the same fix', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Which enum shape?',
+      '- Status: unanswered',
+      '- Why asking: intro.',
+      '- Need: pick one.', '',
+      '**Recommendation**: (by Touchstone, 2026-07-15)', '',
+      'Two honest options:', '',
+      '- **A1 — Freeze the current enum verbatim.** Simplest.',
+      '- **A2 — Freeze the current enum plus a fifth value.** Documents reality.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/0032-x.md').questions[0]
+    expect(q.recommendation).toContain('- **A1 — Freeze the current enum verbatim.** Simplest.\n- **A2 —')
+  })
+
+  it('plain hard-wrapped prose (no lists at all) is unaffected — identical to the old unwrapParagraphs output', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Q?',
+      '- Status: unanswered', '',
+      '**Recommendation**: (by X, 2026-07-15)', '',
+      'This sentence wraps',
+      'across two source lines with no list at all.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/x.md').questions[0]
+    expect(q.recommendations?.[0].text).toBe('This sentence wraps across two source lines with no list at all.')
+  })
+})

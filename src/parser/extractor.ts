@@ -12,7 +12,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import { KNOWN_STATUS_VALUES, requiresScopeRemaining } from './statusInfo'
 import { tokenize, extractRawSections, type RawSection, type Token, type HeadingToken } from './tokenizer'
-import { unwrapListItems, unwrapParagraphs, unwrapMarkdownish } from './hardwrap'
+import { unwrapListItems, unwrapMarkdownish } from './hardwrap'
 import type {
   AdrFile,
   AdrFormat,
@@ -1775,9 +1775,19 @@ export function extractQuestion(
 
   if (recommendationLines.length > 0) {
     // Hard-wrap robustness: join wrapped continuation lines within each
-    // paragraph, preserving genuine blank-line paragraph breaks — see
-    // unwrapParagraphs() and the matching rawBody fix above.
-    recommendation = unwrapParagraphs(recommendationLines).join('\n').trim() || undefined;
+    // paragraph, preserving genuine blank-line paragraph breaks AND list
+    // items (unwrapMarkdownish, not the narrower unwrapParagraphs — same
+    // "join lines back together" primitive independently reinvented a
+    // fourth time, Gleaner's brief 2026-08-11-0147: unwrapParagraphs only
+    // ever breaks on a blank line, no matchListItem() check at all, so two
+    // adjacent recommendation bullets with no blank line between them
+    // — perfectly valid markdown, the real ADR-0032 A1/A2 specimen —
+    // merged into one run-on string with a literal "- **A2 — ..." tail.
+    // unwrapMarkdownish is a strict superset: identical output for
+    // plain-prose input (its own list-item pass is a no-op when there are
+    // no list items), plus the boundary-awareness unwrapParagraphs never
+    // had. See the matching rawBody fix above, same function.
+    recommendation = unwrapMarkdownish(recommendationLines).join('\n').trim() || undefined;
   }
 
   let recommendations: Recommendation[] | undefined;
@@ -1813,9 +1823,10 @@ export function extractQuestion(
         if (author !== undefined) authorInferred = true;
       }
 
-      // Hard-wrap robustness: same paragraph-join as the legacy
-      // `recommendation` field above, applied per-block.
-      const text = unwrapParagraphs(bodyLines).join('\n').trim();
+      // Hard-wrap robustness: same join as the legacy `recommendation`
+      // field above (unwrapMarkdownish, not unwrapParagraphs — see that
+      // fix's comment), applied per-block.
+      const text = unwrapMarkdownish(bodyLines).join('\n').trim();
       if (!text) continue;
 
       blocks.push({
