@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.74] - 2026-08-11
+
+### Fixed
+- **Two adjacent recommendation bullets with no blank line between them no longer merge into one run-on line** — the second bullet's marker used to survive as a stray literal dash-and-text tail glued onto the first bullet's sentence.
+
 ## [0.7.73] - 2026-08-10
 
 ### Fixed
