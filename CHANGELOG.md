@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.76] - 2026-08-12
+
+### Added
+- **Seed aging threshold settings** (`adrManager.seeds.agingMode`/`.adaptiveMultiplier`/`.fixedThresholdDays`) — foundation for ADR-0041's two-axis seed lifecycle display, landing incrementally. Not yet wired into the sidebar; this ships the configurable threshold math ahead of the tree-rendering work.
+
 ## [0.7.75] - 2026-08-12
 
 ### Fixed
