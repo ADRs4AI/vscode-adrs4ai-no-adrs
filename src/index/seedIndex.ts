@@ -10,7 +10,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { parseSeed } from '../parser/seedExtractor'
-import type { SeedFile, Question } from '../parser/types'
+import { stripInlineEmphasis } from '../parser/extractor'
+import type { SeedFile, Question, DerivedAdr } from '../parser/types'
 
 // ---------------------------------------------------------------------------
 // SEED_INCOMPLETE cross-reference detection (ADR-0016)
@@ -67,6 +68,68 @@ export function looksLikeSeedByContent(content: string): boolean {
     }
   }
   return false
+}
+
+// ---------------------------------------------------------------------------
+// Axis-2 rollup (ADR-0041 item 1 — derived implementation rollup)
+// ---------------------------------------------------------------------------
+
+/**
+ * "The derived implementation rollup of its chunked ADRs (none/partial/
+ * full, aggregated from the linked ADRs' own declared Statuses — the ADRs
+ * are the truth; the seed aggregates)." A closed vocabulary distinct from
+ * axis-1's (item 7's firewall: "axis-2's rollup badge never borrows
+ * axis-1's words") — deliberately shares no token with
+ * isRetiredSeedStatus's parked/superseded/terminated.
+ *
+ * 'unknown' covers a derived ADR reference whose number doesn't resolve in
+ * the index (e.g. cross-repo herbarium specimens, or a not-yet-indexed
+ * file) — "the ADRs are the truth" only holds when the ADR is actually
+ * found; recall-first for Derived-Into applies here too: never confidently
+ * report full/none/partial when a component status can't be verified.
+ */
+export type SeedRollup = 'none' | 'partial' | 'full' | 'unknown'
+
+type AdrProgress = 'done' | 'not-done' | 'in-progress' | 'unknown'
+
+/**
+ * Leading-token-strict, same convention as isRetiredStatusToken /
+ * isDocumentPausedStatus / isRetiredSeedStatus — an AdrFile.status carries
+ * its full declared line ("Accepted — FULLY ratified 2026-08-12: ...",
+ * not just "Accepted"), so this reads the leading token and ignores the
+ * trailing annotation rather than exact-matching the whole string.
+ */
+function classifyAdrProgress(status: string | undefined): AdrProgress {
+  if (status === undefined) return 'unknown'
+  const s = stripInlineEmphasis(status).trim()
+  if (/^Partially Implemented\b/i.test(s)) return 'in-progress'
+  if (/^Implemented\b/i.test(s)) return 'done'
+  if (/^(?:Draft|Proposed|Accepted|Superseded)\b/i.test(s)) return 'not-done'
+  return 'unknown' // unrecognized status value — same "don't guess" posture as an unresolved number
+}
+
+/**
+ * Rollup only applies to chunked seeds (derivedAdrs.length > 0) — undefined
+ * means "axis-2 doesn't apply," not "no progress." A seed with 0% progress
+ * across its (real, resolved) derived ADRs is the 'none' rollup value;
+ * an unchunked seed has no rollup at all. `lookupStatus` is dependency-
+ * injected (not an AdrIndex import) to keep this pure/testable, same
+ * pattern as findReferencingAdrs above.
+ */
+export function computeSeedRollup(
+  derivedAdrs: DerivedAdr[],
+  lookupStatus: (adrNumber: number) => string | undefined,
+): SeedRollup | undefined {
+  if (derivedAdrs.length === 0) return undefined
+
+  const progresses = derivedAdrs.map(d =>
+    classifyAdrProgress(d.number !== undefined ? lookupStatus(d.number) : undefined),
+  )
+
+  if (progresses.some(p => p === 'unknown')) return 'unknown'
+  if (progresses.every(p => p === 'done')) return 'full'
+  if (progresses.every(p => p === 'not-done')) return 'none'
+  return 'partial' // mixed done/not-done, or any in-progress
 }
 
 // ---------------------------------------------------------------------------

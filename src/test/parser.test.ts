@@ -14,7 +14,8 @@ import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken } from '../parser/extractor'
 import { parseSeed, isRetiredSeedStatus } from '../parser/seedExtractor'
-import { findReferencingAdrs, looksLikeSeedByContent } from '../index/seedIndex'
+import { findReferencingAdrs, looksLikeSeedByContent, computeSeedRollup } from '../index/seedIndex'
+import type { DerivedAdr } from '../parser/types'
 
 // ---------------------------------------------------------------------------
 // Real-file fixtures — ground-truth benchmarks (user-reported failures)
@@ -1720,6 +1721,50 @@ describe('findReferencingAdrs (seedIndex.ts)', () => {
     const adrs = [{ number: 12, title: 'Some Decision', content: 'Discussed on 2026-03-07 during standup.' }]
     expect(findReferencingAdrs(seedPath, adrs)).toEqual([])
   })
+})
+
+describe('computeSeedRollup (seedIndex.ts, ADR-0041 item 1 — axis-2 rollup)', () => {
+  const num = (n: number, title = 'x'): DerivedAdr => ({ number: n, title, raw: `- ADR-${n}: ${title}` })
+
+  it('undefined for an unchunked seed — rollup does not apply, absence is not "none"', () => {
+    expect(computeSeedRollup([], () => 'Implemented')).toBeUndefined()
+  })
+
+  it('full when every derived ADR is Implemented', () => {
+    expect(computeSeedRollup([num(1), num(2)], () => 'Implemented')).toBe('full')
+  })
+
+  it('none when every derived ADR has not started (Draft/Proposed/Accepted/Superseded)', () => {
+    const lookup = (n: number) => (n === 1 ? 'Accepted' : 'Draft')
+    expect(computeSeedRollup([num(1), num(2)], lookup)).toBe('none')
+  })
+
+  it('partial on a mix of done and not-done', () => {
+    const lookup = (n: number) => (n === 1 ? 'Implemented' : 'Draft')
+    expect(computeSeedRollup([num(1), num(2)], lookup)).toBe('partial')
+  })
+
+  it('partial when a single derived ADR is itself Partially Implemented', () => {
+    expect(computeSeedRollup([num(1)], () => 'Partially Implemented')).toBe('partial')
+  })
+
+  it('unknown when a derived ADR number does not resolve in the index (never guesses full/none)', () => {
+    expect(computeSeedRollup([num(1)], () => undefined)).toBe('unknown')
+  })
+
+  it('unknown wins over resolvable siblings — never confidently reports when one component is unverifiable', () => {
+    const lookup = (n: number) => (n === 1 ? 'Implemented' : undefined)
+    expect(computeSeedRollup([num(1), num(2)], lookup)).toBe('unknown')
+  })
+
+  it('reads the leading status token, tolerating the trailing annotation an AdrFile.status actually carries (real specimen: ADR-0041\'s own declared Status)', () => {
+    // Real corpus specimen: docs/adr/0041-*.md's Status field is
+    // "Accepted — FULLY ratified 2026-08-12: all three riding QSTs
+    // answered..." — the full line, not just "Accepted".
+    const status = 'Accepted — FULLY ratified 2026-08-12: all three riding QSTs answered (tokens census-fitted...)'
+    expect(computeSeedRollup([num(41)], () => status)).toBe('none')
+  })
+
 })
 
 // ---------------------------------------------------------------------------
