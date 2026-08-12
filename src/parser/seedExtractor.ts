@@ -24,7 +24,7 @@
 import * as crypto from 'crypto'
 import * as path from 'path'
 import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr, Question, AdrSection, ParseWarning } from './types'
-import { tokenize, extractRawSections } from './tokenizer'
+import { tokenize, extractRawSections, type Token } from './tokenizer'
 import { buildSection, extractQuestion } from './extractor'
 
 // ---------------------------------------------------------------------------
@@ -37,8 +37,14 @@ const DATE_RE = /^-\s+\*\*Date\*\*:\s+(.+)$/
 const FROM_RE = /^-\s+\*\*From\*\*:\s+(.+)$/
 /** Matches "Author Name - Date" (text after ### has been stripped); date group is optional */
 const THREAD_ENTRY_DATE_RE = /^(.+?)\s+-\s+(\d{4}-\d{2}-\d{2})$/
-/** Matches ADR references in Derived Into: "- ADR-NNNN: Title" */
-const DERIVED_ADR_RE = /^-\s+ADR-(\d+):\s+(.+)$/i
+/**
+ * ADR-0041 item 3 (recall-first Derived-Into): the ADR NUMBER is the
+ * load-bearing signal (feeds the axis-2 rollup); a real ADR link must
+ * never be silently dropped just because its title didn't parse cleanly.
+ * "ADR-NNNN" (literal, no digits) is the template's own unfilled
+ * placeholder and correctly never matches (\d+ requires real digits).
+ */
+const DERIVED_ADR_NUMBER_RE = /ADR-(\d+)\b/i
 /** Matches the unprocessed placeholder text */
 const UNPROCESSED_RE = /^\*?\(?\s*This seed has not yet been chunked/i
 /** Matches **Model Response Request:** block start (colon is inside bold: **text:**) */
@@ -312,13 +318,65 @@ function parseThreadEntries(content: string, sectionLineStart: number): SeedThre
 // Derived Into parsing
 // ---------------------------------------------------------------------------
 
+/**
+ * Best-effort title extraction for a Derived-Into line already known to
+ * contain an "ADR-NNNN" mention. Tries the shapes actually observed in
+ * this repo's own 22-seed corpus, most specific first — bold
+ * ("**ADR-0039: Title**"), markdown link ("[ADR-0017 — Title](path)"),
+ * plain ("ADR-0039: Title", with a trailing "(YYYY-MM-DD)" date and/or
+ * "— annotation" tail stripped). Recall-first fallback: if none of those
+ * shapes match (e.g. "[ADR-0009 Iteration 3](...)" — no colon/dash
+ * separator at all, a real specimen in this repo's own dogfood-master-plan
+ * seed), the WHOLE line stands as the title rather than dropping the
+ * entry — an ugly title beats a silently missing one; the ADR number
+ * (already captured by the caller) is what the axis-2 rollup actually
+ * needs.
+ */
+function extractDerivedAdrTitle(trimmed: string): string {
+  const bold = trimmed.match(/\*\*ADR-\d+\s*[:—-]\s*([^*]+)\*\*/i)
+  if (bold) return bold[1].trim()
+
+  const link = trimmed.match(/\[ADR-\d+\s*[:—-]\s*([^\]]+)\]/i)
+  if (link) return link[1].trim()
+
+  const plain = trimmed.match(/ADR-\d+\s*[:—-]\s*(.+)$/i)
+  if (plain) {
+    // Only a trailing "(YYYY-MM-DD)" date is stripped here — NOT a
+    // trailing em/en-dash annotation. Unlike the bold/link forms (where
+    // the closing "**"/"]" unambiguously marks where the real title ends),
+    // a plain title has no such boundary, and this repo's own real titles
+    // routinely contain their OWN internal em-dash ("Open Questions Panel
+    // — Rich Rendering and Context" is ADR-0010's actual title) —
+    // indistinguishable from a trailing annotation without that boundary,
+    // so guessing would silently truncate real title content.
+    return plain[1]
+      .replace(/\*\*/g, '')
+      .replace(/\s*\(\d{4}-\d{2}-\d{2}\).*$/, '') // trailing date + everything after
+      .trim()
+  }
+
+  return trimmed.replace(/^-\s*/, '').replace(/\*\*/g, '').trim()
+}
+
+/**
+ * Recall-first (ADR-0041 item 3): the current repo's own Secretariat seed
+ * sat "chunked but wrenched" — its real Derived-Into line,
+ * "- **ADR-0039: Secretariat — ...** (2026-07-30) — chunked from...", is
+ * bolded AND dated AND annotated, none of which the old exact-shape regex
+ * ("- ADR-NNNN: Title" only) tolerated. Tokenizes the section's own
+ * content (not a raw split) so fenced code examples never get misread as
+ * real links — the same "quotation vs. declaration" false-positive class
+ * ADR-0041's fixture set names for Status lines, applied here too since
+ * it's the identical mechanism (tokenize() already tracks it for free).
+ */
 function parseDerivedInto(content: string): { derivedAdrs: DerivedAdr[]; isProcessed: boolean; hasPlaceholder: boolean } {
-  const lines = content.split('\n')
+  const tokens: Token[] = tokenize(content)
   const derivedAdrs: DerivedAdr[] = []
   let hasPlaceholder = false
 
-  for (const line of lines) {
-    const trimmed = line.trim()
+  for (const token of tokens) {
+    if (token.kind !== 'body' || token.inFence) continue
+    const trimmed = token.text.trim()
     if (!trimmed || trimmed.startsWith('<!--') || trimmed.startsWith('-->')) continue
 
     if (UNPROCESSED_RE.test(trimmed)) {
@@ -326,11 +384,24 @@ function parseDerivedInto(content: string): { derivedAdrs: DerivedAdr[]; isProce
       continue
     }
 
-    const adrMatch = trimmed.match(DERIVED_ADR_RE)
-    if (adrMatch) {
+    // Recall-first has a floor: only dash-bullet list items count as
+    // Derived-Into ENTRIES. Real corpus counter-examples (this repo's own
+    // seeds) that must NOT count: a "**NOT:**" prose note cross-referencing
+    // "ADR-0014/0015/0016 for Jérémie to answer" (a pointer, not a
+    // derivation claim), and a seed explicitly marked "Not chunked into an
+    // ADR — this was a diagnosable bug" whose body prose still COMPARES
+    // itself to "ADR-0023"/"ADR-0028" in passing — without this guard that
+    // seed's own explicit non-derivation gets overturned by its own prose,
+    // flipping isProcessed to true, which is the wrong-direction error for
+    // a recall-first sensor (inventing a link is worse than missing a
+    // messily-formatted one).
+    if (!/^-\s/.test(trimmed)) continue
+
+    const numMatch = trimmed.match(DERIVED_ADR_NUMBER_RE)
+    if (numMatch) {
       derivedAdrs.push({
-        number: parseInt(adrMatch[1], 10),
-        title: adrMatch[2].trim(),
+        number: parseInt(numMatch[1], 10),
+        title: extractDerivedAdrTitle(trimmed),
         raw: trimmed,
       })
     }
