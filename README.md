@@ -18,6 +18,7 @@ It's built for a specific document format ([`collab-adr-lean`](https://github.co
 - **Your answers can't be lost.** Type an answer, and it's saved as you type — even if the file changes underneath you mid-answer (an AI agent editing the same file, a git pull, a reindex), your draft survives and reloads where you left off. This isn't a hopeful claim: it's a regression test we run against the exact incident that used to destroy people's answers — see [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md), which is also the honest record of how we found the bug.
 - **Nobody has to remember the format.** The sidebar tree shows status at a glance (draft, accepted, superseded); the panel handles the QST/ANS bookkeeping; plain Markdown files without any of the extra structure still show up and work, just with fewer bells.
 - **It's yours, not a walled garden.** Everything lives in Markdown files in your repo (`docs/adr/` by default). Delete the extension tomorrow and you still have readable documents — no lock-in, no proprietary database.
+- **It scales the way AI-driven projects actually grow.** The faster you can spin up a subproject with an AI collaborator, the faster you accumulate separate ADR trees that need to reference each other — a meta-repo of meta-repos, not a hypothetical. This extension is built for that pattern natively: a single project is the simplest case of the same structure it uses for ten nested ones, not a special mode bolted on after the fact. This isn't aspirational — the team's own coordination repo nests this extension's own repo as a subproject, and the extension navigates that structure without a special mode.
 
 ## What you install
 
@@ -60,14 +61,16 @@ That's the whole loop. Everything else — deep links between ADRs, creating new
 
 ### Key settings
 
+A curated few — there are about two dozen in total by now, all browsable via the Command Palette (`ADR Manager: ...`) or the Settings UI (search "ADR").
+
 | Setting | Default | What it's for |
 |---|---|---|
-| `adrManager.adrDirectory` | `docs/adr` | Where your ADRs live, relative to the workspace root |
+| `adrManager.adrDirectory` | `docs/adr` | Where your ADRs live, relative to the workspace root (per project root, in a multi-root workspace) |
 | `adrManager.humanName` | *(git user.name)* | Pre-fills "Deciders" and "Answering as" fields |
+| `adrManager.clickOpensIn` | `panel` | Clicking a question in the sidebar opens the Open Questions panel, focused on it, by default — set to `file` to jump straight to the raw file instead |
+| `adrManager.badge.include.adr` / `.seed` | `true` / `true` | Whether ADR and seed questions each count toward the sidebar icon's open-question badge |
+| `adrManager.missingAnsBehavior` | `confirm` | What happens when the panel has to append a brand-new answer block to a question that has no `**ANS:**` marker at all — shows exactly where it will write and asks first |
 | `adrManager.aiModel` | `Sonnet 4.6 (1M)` | AI model name used in new ADR templates |
-| `adrManager.clickNavigatesTo` | `question` | Jump to the question heading or straight to the answer field |
-
-All settings and commands are also browsable via the Command Palette (`ADR Manager: ...`) and the Settings UI (search "ADR").
 
 ## Related
 
