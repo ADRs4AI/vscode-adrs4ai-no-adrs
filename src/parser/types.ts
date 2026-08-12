@@ -25,7 +25,7 @@ export type AdrStatus =
   | 'Superseded'
   | string;          // tolerate unknown statuses (warn, don't reject)
 
-/** Navigation codes used in collab-adr-lean format */
+/** Navigation codes used in the adr format */
 export type NavCode = 'QST' | 'ANS' | 'COD' | 'API' | 'FIL' | 'DOC' | 'NOT';
 
 /** @deprecated Import KNOWN_STATUS_VALUES from statusInfo.ts instead */
@@ -81,7 +81,7 @@ export interface AdrFile {
 
   /** All top-level (##) and sub-level (###, ####) sections */
   sections: AdrSection[];
-  /** Extracted QST blocks (collab-adr-lean only) */
+  /** Extracted QST blocks (adr format only) */
   questions: Question[];
   /** Inline **NAV:** occurrences (ANS, NOT, etc.) outside of section headings */
   inlineCodes: InlineNavCode[];

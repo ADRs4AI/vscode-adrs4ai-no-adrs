@@ -864,7 +864,7 @@ export function stripInlineEmphasis(text: string): string {
 // Matches: - Why asking: value
 const WHY_ASKING_RE = /^-\s+Why asking:\s+(.+)$/;
 // Matches: - Why deferring: value — the template's OWN second QST subtype
-// (## Open Follow-ups, collab-adr-lean.md lines 167-176) used this field
+// (## Open Follow-ups, templates/adr.md — formerly collab-adr-lean.md — lines 167-176) used this field
 // from the start and the parser never learned it: every Follow-up QST in
 // the ecosystem lost its stated deferral reason in every structured view
 // (Loftsman/ios-client, 2026-07-20 — found via a Jérémie regression
