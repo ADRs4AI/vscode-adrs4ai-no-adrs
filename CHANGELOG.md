@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.75] - 2026-08-12
+
+### Fixed
+- **"(stacked by Name, ...)" attribution is now recognized** — recommendations using this same-line form used to all attribute to the wrong person (whoever's inferred from the Deciders field), regardless of who actually wrote them, with the literal parenthetical leaking into the visible text.
+
 ## [0.7.74] - 2026-08-11
 
 ### Fixed
