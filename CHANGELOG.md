@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.77] - 2026-08-12
+
+### Added
+- **Seeds get real lifecycle glyphs** (ADR-0041) — no more one wrench for everything pending. The sidebar now distinguishes parked / superseded / terminated (declared), chunked with a rollup badge (`chunked · rollup: partial`), and iterating vs. quiet (staleness shown by icon brightness, not a new label). New setting `adrManager.seeds.showOpenQuestionCount` (default on) lets you hide the open-question count from the description.
+
 ## [0.7.76] - 2026-08-12
 
 ### Added
