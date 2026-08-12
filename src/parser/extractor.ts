@@ -38,7 +38,7 @@ import { KNOWN_STATUSES } from './types'
 // Format detection
 // ---------------------------------------------------------------------------
 
-/** All heading text that strongly signals collab-adr-lean format */
+/** All heading text that strongly signals the adr format (formerly collab-adr-lean) */
 const COLLAB_ADR_LEAN_SIGNALS = [
   'Quick Reference',
   'Human Context',
@@ -176,7 +176,7 @@ export function detectFormat(tokens: ReturnType<typeof tokenize>): FormatDetecti
   }
 
   if (signals.some(s => s === 'nav-code-heading' || s.startsWith('collab-section'))) {
-    return { format: 'collab-adr-lean', confidence: 'high', signals };
+    return { format: 'adr', confidence: 'high', signals };
   }
 
   if (madrSignals.length >= 2) {
@@ -2163,7 +2163,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   if (hasNonstandardQst) {
     warnings.push({
       code: 'NONSTANDARD_QST_FORMAT',
-      message: 'Some question blocks appear to use a non-standard format (e.g., ### QST-1: or **Your preference?**). The extension only extracts questions using the "### QST: text / - Status: unanswered" format. See the collab-adr-lean template for the canonical structure.',
+      message: 'Some question blocks appear to use a non-standard format (e.g., ### QST-1: or **Your preference?**). The extension only extracts questions using the "### QST: text / - Status: unanswered" format. See the adr template for the canonical structure.',
     });
   }
 

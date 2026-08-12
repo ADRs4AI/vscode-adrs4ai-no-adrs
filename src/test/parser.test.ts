@@ -544,14 +544,14 @@ describe('detectFormat', () => {
   it('detects collab-adr-lean from nav code headings', () => {
     const tokens = tokenize('# Title\n## Questions\n### QST: Some question')
     const result = detectFormat(tokens)
-    expect(result.format).toBe('collab-adr-lean')
+    expect(result.format).toBe('adr')
     expect(result.confidence).toBe('high')
   })
 
   it('detects collab-adr-lean from Quick Reference section', () => {
     const tokens = tokenize('# Title\n## Quick Reference\n## Iterations')
     const result = detectFormat(tokens)
-    expect(result.format).toBe('collab-adr-lean')
+    expect(result.format).toBe('adr')
   })
 
   it('detects standard MADR from Context and Problem Statement', () => {
@@ -587,7 +587,7 @@ describe('parseAdr', () => {
     expect(adr.status).toBe('Accepted')
     expect(adr.iteration).toBe(2)
     expect(adr.deciders).toEqual(['Jérémie Lumbroso', 'Sonnet 4.6 (1M)'])
-    expect(adr.format).toBe('collab-adr-lean')
+    expect(adr.format).toBe('adr')
   })
 
   it('extracts questions from a collab-adr-lean ADR', () => {

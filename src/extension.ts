@@ -417,7 +417,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const { patches } = normalizerCoordinator.processAll(content, adr);
           if (patches.length === 0) return [];
 
-          const label = `Normalize to collab-adr-lean format (${patches.length} fix${patches.length > 1 ? 'es' : ''})`;
+          const label = `Normalize to adr format (${patches.length} fix${patches.length > 1 ? 'es' : ''})`;
           const action = new vscode.CodeAction(label, vscode.CodeActionKind.QuickFix);
           action.diagnostics = normDiags;
           action.isPreferred = false;
@@ -749,7 +749,7 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
   }
 
   const kind = await vscode.window.showQuickPick([
-    { label: '$(file-text) New ADR', description: 'Full collab-adr-lean template with questions', value: 'adr' as const },
+    { label: '$(file-text) New ADR', description: 'Full adr template with questions', value: 'adr' as const },
     { label: '$(edit) New Seed', description: 'Brain dump — AI will chunk into ADRs', value: 'seed' as const },
   ], { title: 'What would you like to create?', placeHolder: 'Select type' });
   if (!kind) return;
@@ -920,7 +920,7 @@ grep 'Status: unanswered' docs/adr/
 ## Links
 
 - Related ADRs: (none)
-- Template: collab-adr-lean v3.1
+- Template: adr v3.1
 `;
 }
 

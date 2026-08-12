@@ -5,12 +5,13 @@
  * See ADR-0002: Parser Architecture for the design rationale.
  *
  * Two format variants are supported:
- *  - 'collab-adr-lean': the primary target (QST/ANS/COD/NOT navigation codes, iterations)
+ *  - 'adr': the primary target (QST/ANS/COD/NOT navigation codes, iterations) — formerly 'collab-adr-lean'
  *  - 'madr-standard': classic MADR format (Context and Problem Statement, Decision Outcome, etc.)
  */
 
 export type AdrFormat =
-  | 'collab-adr-lean'
+  | 'adr'                // the canonical format (renamed from 'collab-adr-lean' at the v1 freeze, founder ruling 2026-08-13)
+  | 'collab-adr-lean'     // deprecated alias — kept in the union so old consumers/records type-check; the parser no longer emits it
   | 'madr-standard'
   | 'madr-partial'   // has a title + some sections, but doesn't match either variant cleanly
   | 'unknown';       // unrecognized; shown in tree view but not indexed for questions
