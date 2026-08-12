@@ -106,6 +106,18 @@
     },
     {
       "kind": "orphan_signal",
+      "line": 769,
+      "raw": "| CORE (a)–(h) as amended: v1 core frozen; **A2 five-value doc enum** (`+ Partially Implemented`); four-token question grid in (c); `<!-- @adr-<action>: <value> -->` SHAPE frozen as the extension channel; `[Fill this in]` sole write-emission placeholder | Template + skill (HQ lockstep); version marker emission in write tools | Shipwright (template), Flint (emission), Lapidary (HQ carry) |",
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
+      "line": 779,
+      "raw": "| ANS-PENDING: **C** — status-annotation headline + `[Pending: …]` overflow, with a ✗ example of prose-in-ANS | Template teaching | Shipwright |",
+      "signalKind": "S4"
+    },
+    {
+      "kind": "orphan_signal",
       "line": 588,
       "raw": "- AI: (Riddle 5, chair) Every open register entry ORJ-ified — `- Aperture:` stating the exact answer shape (nine of eleven are one word/letter/phrase) + a panel-servable `**ANS:**`/`[Fill this in]` slot, so the release-gating pass is eleven units of attention instead of one wall; iteration header corrected (was stale at 1); framing 6 + STATUS-VOCAB cross-ref already current from 07-28/29",
       "signalKind": "S4"
