@@ -127,6 +127,19 @@ export interface AdrSection {
   /** Value from <!-- @adr-anchor: custom-slug --> comment immediately after heading */
   anchorOverride?: string;
   /**
+   * ADR-0032 QST-DISMISSAL-MARKER (ratified 2026-08-12): the `<reason-slug>`
+   * from a `<!-- @adr-dismissed: <reason-slug> -->` marker on this heading
+   * line — a human ruling this candidate "never actually a question" (false
+   * positive), distinct from RETIREMENT (`Question.isRetired` — was real,
+   * now closed). Placed on the heading line itself (not a following body
+   * line, unlike @adr-anchor) so the parser sees it at QST-recognition
+   * time, no body-lookahead. Stripped from `heading`/`navCodeText` before
+   * those are computed — `headingRaw` stays byte-faithful, marker included.
+   * Initial sanctioned vocabulary: "not-a-question" only; the marker SHAPE
+   * is frozen, the reason vocabulary grows on evidence (never speculatively).
+   */
+  dismissedReason?: string;
+  /**
    * HQ ADR-0012 (QST Identifier Grammar): the explicit, author-chosen id
    * from "### QST-<ID>: text", NFD-folded to [A-Z0-9-]{1,24} — interior
    * hyphens allowed since the 2026-07-16 widening (ADR-0032 QST-IDCHARSET,
@@ -206,6 +219,17 @@ export interface Question {
   isAnswered: boolean;
   /** Closed WITHOUT an answer: declared Status leads with withdrawn|superseded|moot (2026-08-07 ruling). Excluded from open counts; never 'answered'. */
   isRetired?: boolean;
+  /**
+   * ADR-0032 QST-DISMISSAL-MARKER: the reason-slug from a
+   * `<!-- @adr-dismissed: <reason-slug> -->` marker on this question's
+   * heading — "never actually a question" (false positive), NOT the same
+   * mechanism as isRetired ("was real, now closed"). Excluded from open
+   * counts, same as isRetired, but a distinct field so consumers (panel,
+   * census) can give the two different UI treatment per ADR-0032's design
+   * note (e.g. "not-a-question" hides the row; a future "stale" reason
+   * might gray it with a tooltip instead).
+   */
+  dismissedReason?: string;
   whyAsking?: string;
   /** The Open Follow-ups subtype's deferral reason (`- Why deferring:`) — the template's own field, extracted since v0.7.24 (Loftsman's catch). */
   whyDeferring?: string;

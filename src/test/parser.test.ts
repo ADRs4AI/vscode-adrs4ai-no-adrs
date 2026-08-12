@@ -15,6 +15,7 @@ import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken } from '../parser/extractor'
 import { parseSeed, isRetiredSeedStatus } from '../parser/seedExtractor'
 import { findReferencingAdrs, looksLikeSeedByContent, computeSeedRollup } from '../index/seedIndex'
+import { findSectionForQuestion } from '../mcp/reference'
 import type { DerivedAdr } from '../parser/types'
 
 // ---------------------------------------------------------------------------
@@ -4745,6 +4746,56 @@ describe('Regression tests: question-level retirement — withdrawn|superseded|m
     expect(isRetiredStatusToken('withdrawn')).toBe(true)
     expect(isRetiredStatusToken('answered')).toBe(false)
     expect(isRetiredStatusToken(undefined)).toBe(false)
+  })
+})
+
+describe('Regression tests: QST-DISMISSAL-MARKER — a heading-line marker for "never actually a question" (ADR-0032, ratified 2026-08-12)', () => {
+  // Distinct mechanism from retirement (withdrawn/superseded/moot — "was
+  // real, now closed"): dismissal means the candidate was never a real
+  // question in the first place (a false positive), so it lives on the
+  // heading line itself, not the Status field. Worked example straight
+  // from Touchstone's ratified spec: "### QST: What do we do? <!--
+  // @adr-dismissed: not-a-question -->".
+  it('recognizes the marker, strips it from text/slug, and still fully parses the question (panel/census must be able to SHOW dismissals)', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: What do we do? <!-- @adr-dismissed: not-a-question -->', '',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/x.md').questions[0]
+    expect(q.dismissedReason).toBe('not-a-question')
+    expect(q.text).toBe('What do we do?') // marker never leaks into displayed text
+    expect(q.slug).toBe('qst-what-do-we-do') // never leaks into the slug either
+  })
+
+  it('a dismissed question is excluded from open counts, same as retired — but the two are distinct fields (different UI treatment per reason is a downstream affordance)', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Dismissed one <!-- @adr-dismissed: not-a-question -->', '- Status: unanswered', '',
+      '### QST: A live one?', '- Status: unanswered', '',
+    ].join('\n')
+    const qs = parseAdr(doc, '/fake/x.md').questions
+    expect(qs[0].dismissedReason).toBe('not-a-question')
+    expect(qs[0].isRetired ?? false).toBe(false) // NOT the retirement mechanism
+    expect(qs[0].isAnswered).toBe(false)
+    expect(qs[1].dismissedReason).toBeUndefined()
+  })
+
+  it('undefined when no marker is present (the overwhelming common case)', () => {
+    const doc = ['## Open Questions', '', '### QST: A live one?', '- Status: unanswered', ''].join('\n')
+    expect(parseAdr(doc, '/fake/x.md').questions[0].dismissedReason).toBeUndefined()
+  })
+
+  it('round-trip byte-faithfulness: headingRaw keeps the marker even though heading/text/slug strip it', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: What do we do? <!-- @adr-dismissed: not-a-question -->', '',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const adr = parseAdr(doc, '/fake/x.md')
+    const section = findSectionForQuestion(adr, adr.questions[0])!
+    expect(section.headingRaw).toContain('@adr-dismissed: not-a-question')
+    expect(section.heading).not.toContain('@adr-dismissed')
   })
 })
 

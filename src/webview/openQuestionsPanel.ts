@@ -352,7 +352,7 @@ export class OpenQuestionsPanel {
 
     return questions
       .map((q, idx) => ({ q, ordinal: ordinals[idx], total: totals[idx] }))
-      .filter(({ q }) => !q.isAnswered && !q.isRetired && !this.shouldHideFromPanel(q))
+      .filter(({ q }) => !q.isAnswered && !q.isRetired && !q.dismissedReason && !this.shouldHideFromPanel(q))
       .map(({ q, ordinal, total }) => this.buildRow(q, ordinal, total, opts))
   }
 

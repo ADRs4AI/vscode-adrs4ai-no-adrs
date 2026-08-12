@@ -41,7 +41,7 @@ describe('openQuestionsPanel.ts: shouldHideFromPanel (hide-allowlist doctrine)',
   })
 
   it('wired into buildRows alongside the existing !isAnswered filter', () => {
-    expect(PANEL_SRC).toContain('.filter(({ q }) => !q.isAnswered && !q.isRetired && !this.shouldHideFromPanel(q))')
+    expect(PANEL_SRC).toContain('.filter(({ q }) => !q.isAnswered && !q.isRetired && !q.dismissedReason && !this.shouldHideFromPanel(q))')
   })
 
   it('package.json declares both settings, default false', () => {

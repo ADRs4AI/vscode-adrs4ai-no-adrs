@@ -426,6 +426,15 @@ export function hasNonstandardNumbering(filePath: string): boolean {
 const ANCHOR_COMMENT_RE = /^@adr-anchor:\s+(.+)$/;
 
 /**
+ * ADR-0032 QST-DISMISSAL-MARKER: `<!-- @adr-dismissed: <reason-slug> -->`
+ * embedded IN the heading line itself (unlike @adr-anchor, which is its own
+ * following body line) — e.g. "QST: What do we do? <!-- @adr-dismissed:
+ * not-a-question -->". `<reason-slug>` matches the anchor-slug grammar
+ * (`[a-z0-9][a-z0-9-]*`), same as @adr-anchor's own value grammar.
+ */
+const DISMISSAL_MARKER_RE = /\s*<!--\s*@adr-dismissed:\s*([a-z0-9][a-z0-9-]*)\s*-->/;
+
+/**
  * Which deviation (if any) a heading's nav-code identity carries — drives
  * buildSection()'s per-tier warning message. sectionSlug() ignores this
  * entirely; it only needs the matched code/text/qstId below.
@@ -525,7 +534,17 @@ export function buildSection(
   warnings: ParseWarning[],
   slugOccurrences: Map<string, number>,
 ): AdrSection {
-  const heading = raw.heading.text;
+  // ADR-0032 QST-DISMISSAL-MARKER: stripped BEFORE any downstream heading
+  // work (nav-code matching, slug, warning messages) so a dismissal marker
+  // can never leak into a slug, an anchor, or a quoted diagnostic message.
+  // headingRaw (below) is computed from raw.heading.raw independently, so
+  // round-trip serialization stays byte-faithful — only this semantic
+  // `heading` loses the marker.
+  const dismissalMatch = raw.heading.text.match(DISMISSAL_MARKER_RE);
+  const dismissedReason = dismissalMatch?.[1];
+  const heading = dismissedReason
+    ? raw.heading.text.replace(DISMISSAL_MARKER_RE, '').trimEnd()
+    : raw.heading.text;
 
   // HQ ADR-0012 / ADR-0024 / ADR-0031: every heading-shape tolerance this
   // extractor accepts lives in ONE cascade now (resolveNavHeadingIdentity),
@@ -670,6 +689,7 @@ export function buildSection(
     lineEnd,
     slug,
     anchorOverride,
+    dismissedReason,
     qstId,
     children,
     headingRaw: raw.heading.raw,
@@ -1882,6 +1902,7 @@ export function extractQuestion(
     statusText,
     isAnswered,
     isRetired,
+    dismissedReason: section.dismissedReason,
     whyAsking,
     whyDeferring,
     need,
