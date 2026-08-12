@@ -198,6 +198,24 @@ describe('projectOverview (Tier 0)', () => {
     const result = projectOverview(makeMockContext(adrs))
     expect(result.indexOf('[adr:0002]')).toBeLessThan(result.indexOf('[adr:0009]'))
   })
+
+  it('surfaces a seed\'s declared axis-1 status and derived axis-2 rollup (ADR-0041 item 1\'s "census integration") — [unset]/n/a when absent, never omitted', () => {
+    const unchunked = makeSeed({ path: '/fake/docs/adr/seed-unchunked.md' })
+    const result = projectOverview(makeMockContext([], [unchunked]))
+    expect(result).toContain('[seed:seed-unchunked] 2026-07-06 | unprocessed | status: [unset] | rollup: n/a')
+  })
+
+  it('the rollup badge is computed from the derived ADR\'s own declared Status — full when Implemented', () => {
+    const adr = makeAdr({ number: 7, status: 'Implemented' })
+    const seed = makeSeed({
+      path: '/fake/docs/adr/seed-chunked.md',
+      status: 'parked — waiting on downstream review',
+      derivedAdrs: [{ number: 7, title: 'Something Shipped', raw: '- ADR-0007: Something Shipped' }],
+      isProcessed: true,
+    })
+    const result = projectOverview(makeMockContext([adr], [seed]))
+    expect(result).toContain('status: parked — waiting on downstream review | rollup: full')
+  })
 })
 
 // Tier 1 (`lookup`, `get_outline`, `get_sections`, `list_open_questions`) is

@@ -285,6 +285,18 @@ describe('lookup', () => {
     expect(result).toContain('What if questions could exist outside any ADR?')
   })
 
+  it('a resolved seed carries its axis-1 status and computed axis-2 rollup (ADR-0041 item 1)', () => {
+    const adr = makeAdr({ number: 9, status: 'Partially Implemented' })
+    const seed = makeSeed({
+      status: 'superseded by ADR-0009',
+      derivedAdrs: [{ number: 9, title: 'Follow-up Decision', raw: '- ADR-0009: Follow-up Decision' }],
+    })
+    const seedCtx = makeContext([adr], [seed])
+    const result = lookup(seedCtx, 'seed:2026-07-05-async-question-queue')
+    expect(result).toContain('status: superseded by ADR-0009')
+    expect(result).toContain('rollup: partial')
+  })
+
   it('includes neighboring section context when context_lines is requested', () => {
     const result = lookup(ctx, 'adr:0001#decision', 5)
     expect(result).toContain('--- context before')

@@ -11,6 +11,7 @@
 
 import { createHash } from 'crypto'
 import { UNRESOLVED_LEADING_TOKEN_RE } from '../parser/extractor'
+import { computeSeedRollup } from '../index/seedIndex'
 import type { RepositoryContext } from './repositoryContext'
 import type { AdrFile, AdrSection, Question, SeedFile } from '../parser/types'
 import {
@@ -29,6 +30,16 @@ import { withPathLock } from './pathLock'
 
 function bracket(ref: string): string {
   return `[${ref}]`
+}
+
+/**
+ * ADR-0041 item 1's "census integration": the axis-2 rollup needs each
+ * derived ADR's own declared Status, looked up through the same
+ * RepositoryContext an MCP caller already has — ctx.getAdr accepts a bare
+ * number string ("41"), same as the zero-padded/`adr:` forms.
+ */
+function seedRollupLookup(ctx: RepositoryContext): (adrNumber: number) => string | undefined {
+  return (n) => ctx.getAdr(String(n))?.status
 }
 
 export interface ProjectOverviewOptions {
@@ -88,9 +99,15 @@ export function projectOverview(ctx: RepositoryContext, options: ProjectOverview
 
   if (includeSeeds) {
     lines.push('--- seeds ---')
+    const rollupLookup = seedRollupLookup(ctx)
     for (const seed of seeds) {
+      // ADR-0041's two-axis spine + item 7's vocabulary firewall: `status`
+      // (axis-1, declared) and `rollup` (axis-2, derived) are printed as
+      // distinct fields, never merged into one word — explicit-over-absent
+      // per this file's own convention (`[unset]`/`n/a`, never omitted).
+      const rollup = computeSeedRollup(seed.derivedAdrs, rollupLookup)
       lines.push(
-        `${bracket(seedRefString(seed))} ${seed.date ?? '[unknown date]'} | ${seed.isProcessed ? 'processed' : 'unprocessed'}`,
+        `${bracket(seedRefString(seed))} ${seed.date ?? '[unknown date]'} | ${seed.isProcessed ? 'processed' : 'unprocessed'} | status: ${seed.status ?? '[unset]'} | rollup: ${rollup ?? 'n/a'}`,
       )
     }
   }
@@ -141,10 +158,13 @@ function formatAdrSummary(adr: AdrFile): string {
   ].join('\n')
 }
 
-function formatSeed(seed: SeedFile): string {
+function formatSeed(ctx: RepositoryContext, seed: SeedFile): string {
   const lines = [`${bracket(seedRefString(seed))} ${seed.title}`]
   lines.push(`date: ${seed.date ?? '[unknown]'}`)
   lines.push(`processed: ${seed.isProcessed ? 'yes' : 'no'}`)
+  lines.push(`status: ${seed.status ?? '[unset]'}`)
+  const rollup = computeSeedRollup(seed.derivedAdrs, seedRollupLookup(ctx))
+  lines.push(`rollup: ${rollup ?? 'n/a'}`)
   lines.push(`brain_dump: ${seed.brainDump ? seed.brainDump.trim().replace(/\n/g, '\\n') : '[none]'}`)
   return lines.join('\n')
 }
@@ -195,7 +215,7 @@ export function lookup(ctx: RepositoryContext, ref: string, contextLines?: numbe
     case 'adr':
       return formatAdrSummary(resolved.adr)
     case 'seed':
-      return formatSeed(resolved.seed)
+      return formatSeed(ctx, resolved.seed)
   }
 }
 
@@ -233,7 +253,7 @@ export function getSections(ctx: RepositoryContext, refs: string[], tokenBudget?
       case 'adr':
         return { ref, text: formatAdrSummary(resolved.adr) }
       case 'seed':
-        return { ref, text: formatSeed(resolved.seed) }
+        return { ref, text: formatSeed(ctx, resolved.seed) }
     }
   })
 
