@@ -422,6 +422,11 @@
           "minimum": 1,
           "description": "Days of inactivity before a seed dims, when adrManager.seeds.agingMode is 'fixed'. Also the fallback used in 'adaptive' mode when there's no measurable repo-wide activity to adapt to (e.g. an empty or brand-new seed set)."
         },
+        "adrManager.seeds.showOpenQuestionCount": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a seed's open-question count (e.g. '· 3 open') in the sidebar description, alongside its lifecycle state (ADR-0041). This is content-state, not lifecycle — turn off if you'd rather the description show only lifecycle/rollup."
+        },
         "adrManager.tours.showLeanVerbPrefix": {
           "type": "boolean",
           "scope": "resource",

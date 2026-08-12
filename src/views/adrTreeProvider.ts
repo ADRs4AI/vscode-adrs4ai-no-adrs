@@ -11,8 +11,11 @@
  *       └─ ? qst-server-placement      (open question sub-item)
  *       └─ ? qst-write-atomicity
  *   ▼ Seeds (4)
- *     SEED (2026-03-07): Bug Reports   [wrench = unprocessed]
- *     SEED (2026-03-12): Debrief       [check = processed]
+ *     SEED (2026-03-07): Bug Reports   [orange wrench = iterating; dimmed wrench = quiet;
+ *                                        history/arrow-swap/circle-slash = parked/superseded/
+ *                                        terminated; green check = chunked, · rollup: N/A|
+ *                                        none|partial|full|unknown — ADR-0041, ratified 2026-08-12]
+ *     SEED (2026-03-12): Debrief       [chunked · rollup: full]
  *
  * Multi-root (ADR-0025 Decision 4, Linear Multi-Root Tree Projection —
  * founder-priority fix, 2026-07-16, "provenance vertigo": Jérémie answered
@@ -38,6 +41,9 @@ import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { CompositeIndex, RootNode } from '../index/compositeIndex'
 import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
 import { isDocumentPausedStatus } from '../parser/extractor'
+import { classifySeedAxis1, closedFamilyToken, type SeedAxis1State } from './seedLifecycle'
+import { daysSince, computeDisplayThresholdDays, type SeedAgingConfig } from './seedAging'
+import { computeSeedRollup, type SeedRollup } from '../index/seedIndex'
 import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickCommand'
 import { pathFragmentFor } from './rootPathFragment'
@@ -68,6 +74,10 @@ type AdrTreeItemOpts = {
   collapsibleState?: vscode.TreeItemCollapsibleState;
   rootNode?: RootNode;
   pathFragment?: string;
+  /** ADR-0041 axis-1: computed by the caller (getSeedGroupChildren has the repo-wide seed list a per-item classification needs — median activity age, closed-family status) and passed in already-classified. */
+  seedAxis1State?: SeedAxis1State;
+  /** ADR-0041 axis-2: computed by the caller (needs an ADR-status lookup this class doesn't own) via computeSeedRollup. undefined when the seed isn't chunked — rollup doesn't apply, not "no progress". */
+  seedRollup?: SeedRollup;
 };
 
 /**
@@ -138,6 +148,9 @@ export class AdrTreeItem extends vscode.TreeItem {
     kind: 'seed';
     seed: SeedFile;
     collapsibleState?: vscode.TreeItemCollapsibleState;
+    /** Optional so getParent()'s identity-only reconstruction (icon/description accuracy doesn't matter there — see its own comment) doesn't need to recompute a real classification; makeIcon/makeDescription fall back to the pre-ADR-0041 isProcessed-only distinction when absent. */
+    seedAxis1State?: SeedAxis1State;
+    seedRollup?: SeedRollup;
   });
   constructor(opts: {
     kind: 'tour-group';
@@ -169,6 +182,8 @@ export class AdrTreeItem extends vscode.TreeItem {
     collapsibleState?: vscode.TreeItemCollapsibleState;
     rootNode?: RootNode;
     pathFragment?: string;
+    seedAxis1State?: SeedAxis1State;
+    seedRollup?: SeedRollup;
   }) {
     const collapsible = AdrTreeItem.makeCollapsible(opts)
     const label = AdrTreeItem.makeLabel(opts)
@@ -376,16 +391,57 @@ export class AdrTreeItem extends vscode.TreeItem {
       return parts.join(' · ')
     }
     if (opts.kind === 'adr' && opts.adr) {
-      const openCount = isDocumentPausedStatus(opts.adr.status) ? 0 : opts.adr.questions.filter(q => !q.isAnswered && !q.isRetired).length
+      const openCount = isDocumentPausedStatus(opts.adr.status) ? 0 : opts.adr.questions.filter(q => !q.isAnswered && !q.isRetired && !q.dismissedReason).length
       const statusPart = `[${opts.adr.status}]`
       const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
       return `${statusPart}${questionPart}`
     }
     if (opts.kind === 'seed' && opts.seed) {
-      const openCount = opts.seed.questions.filter(q => !q.isAnswered && !q.isRetired).length
-      const statusPart = opts.seed.isProcessed ? '[processed]' : ''
-      const questionPart = openCount > 0 ? ` · ${openCount} open` : ''
-      return `${statusPart}${questionPart}`
+      // ADR-0041 (ratified 2026-08-12): two-axis display, vocabulary
+      // firewall — axis-2's rollup badge never borrows axis-1's words.
+      // "chunked · rollup: partial" is the ADR's own cited wording for
+      // its first conformance fixture (the origin seed), used verbatim.
+      // 'iterating' (the common/default case) gets no bracket tag at
+      // all — salience comes from the icon color (makeIcon below), not
+      // from crowding every seed's description with a tag that's true
+      // most of the time. seedAxis1State is undefined only for
+      // getParent()'s identity-only reconstruction, which falls back to
+      // the pre-ADR-0041 [processed] shape — accuracy doesn't matter
+      // there (see that constructor overload's own comment).
+      // ADR-0041 QST-SEEDQSTBADGE ANS, Jérémie's closing note: "Only
+      // request is that what is included in badges should be
+      // customizable." The open-QST count is the one piece of this
+      // description that's content-state, not lifecycle (his own
+      // caution, held through the fold) — the toggle below is scoped to
+      // exactly that request, not the whole description string.
+      const showOpenCount = vscode.workspace.getConfiguration('adrManager').get<boolean>('seeds.showOpenQuestionCount', true)
+      const openCount = opts.seed.questions.filter(q => !q.isAnswered && !q.isRetired && !q.dismissedReason).length
+      const questionPart = showOpenCount && openCount > 0 ? ` · ${openCount} open` : ''
+      let lifecyclePart = ''
+      switch (opts.seedAxis1State) {
+        case 'parked':
+        case 'superseded':
+        case 'terminated':
+          lifecyclePart = `[${opts.seedAxis1State}]`
+          break
+        case 'chunked':
+          lifecyclePart = opts.seedRollup ? `[chunked · rollup: ${opts.seedRollup}]` : '[chunked]'
+          break
+        case 'dormant':
+          // "quiet," not "dormant"/"stale" — Jérémie's own framing (ADR-0041
+          // QST-SEEDTHRESHOLDS ANS): "I am not in the business of making any
+          // canned judgments of value... definitely not meaning 'dim means
+          // unusual'." The word choice matters here as much as the color does.
+          lifecyclePart = '[quiet]'
+          break
+        case 'iterating':
+          lifecyclePart = ''
+          break
+        case undefined:
+          lifecyclePart = opts.seed.isProcessed ? '[processed]' : ''
+          break
+      }
+      return `${lifecyclePart}${questionPart}`
     }
     if (opts.kind === 'tour' && opts.tour) {
       const parts = [
@@ -439,8 +495,10 @@ export class AdrTreeItem extends vscode.TreeItem {
         `**${s.title}**`,
         s.from ? `From: ${s.from}` : null,
         s.date ? `Date: ${s.date}` : null,
+        s.status ? `Status: ${s.status}` : null,
+        s.lastActivityDate ? `Last activity: ${s.lastActivityDate}` : null,
         s.isProcessed
-          ? `Derived into: ${s.derivedAdrs.map(d => `ADR-${String(d.number ?? '?').padStart(4, '0')}`).join(', ')}`
+          ? `Derived into: ${s.derivedAdrs.map(d => `ADR-${String(d.number ?? '?').padStart(4, '0')}`).join(', ')}${opts.seedRollup ? ` (rollup: ${opts.seedRollup})` : ''}`
           : 'Not yet processed into ADRs',
       ].filter(Boolean)
       return parts.join('\n')
@@ -516,10 +574,33 @@ export class AdrTreeItem extends vscode.TreeItem {
       return new vscode.ThemeIcon('thinking', new vscode.ThemeColor('charts.orange'))
     }
     if (opts.kind === 'seed' && opts.seed) {
-      // Orange wrench = unprocessed (needs attention); green check = processed into ADRs
-      return opts.seed.isProcessed
-        ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'))
-        : new vscode.ThemeIcon('wrench', new vscode.ThemeColor('charts.orange'))
+      // ADR-0041 (ratified 2026-08-12): the founding complaint this
+      // replaces — "21 of 22 seeds showed the same wrench glyph... not a
+      // sensitivity bug, a dimensional one" — was the old binary
+      // isProcessed ? check : wrench. Six real glyph states now, same
+      // "brightness not hue, colorblind-safe" convention already used for
+      // question isAnswered dimming above: 'iterating' and 'dormant' are
+      // the SAME wrench shape, distinguished by color only — staleness is
+      // a rendering treatment (item 6), never a new declared token.
+      switch (opts.seedAxis1State) {
+        case 'parked':
+          return new vscode.ThemeIcon('history', new vscode.ThemeColor('descriptionForeground'))
+        case 'superseded':
+          return new vscode.ThemeIcon('arrow-swap', new vscode.ThemeColor('descriptionForeground'))
+        case 'terminated':
+          return new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('descriptionForeground'))
+        case 'chunked':
+          return new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'))
+        case 'dormant':
+          return new vscode.ThemeIcon('wrench', new vscode.ThemeColor('descriptionForeground'))
+        case 'iterating':
+          return new vscode.ThemeIcon('wrench', new vscode.ThemeColor('charts.orange'))
+        case undefined:
+          // getParent()'s identity-only reconstruction — pre-ADR-0041 fallback.
+          return opts.seed.isProcessed
+            ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'))
+            : new vscode.ThemeIcon('wrench', new vscode.ThemeColor('charts.orange'))
+      }
     }
     if (opts.kind === 'tour-group') {
       return new vscode.ThemeIcon('compass', new vscode.ThemeColor('charts.orange'))
@@ -775,15 +856,46 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     })
   }
 
+  /**
+   * ADR-0041 axis-1 classification, one pass over the whole root's seed
+   * list: first the repo-wide adaptive threshold (median days-since-last-
+   * activity across the "iterating-family" population — unchunked,
+   * non-closed-family seeds, matching Naturalist's own ratifying census
+   * scope), then each seed classified against it. Computed here (not in
+   * AdrTreeItem's constructor) because the median is inherently repo-
+   * wide — a single seed's own constructor has no way to see its
+   * siblings.
+   */
   private getSeedGroupChildren(node: RootNode): AdrTreeItem[] {
-    return node.seeds.allSeeds().map(seed => {
+    const seeds = node.seeds.allSeeds()
+    const now = new Date()
+
+    const config = vscode.workspace.getConfiguration('adrManager')
+    const agingConfig: SeedAgingConfig = {
+      mode: config.get<'adaptive' | 'fixed'>('seeds.agingMode', 'adaptive'),
+      adaptiveMultiplier: config.get<number>('seeds.adaptiveMultiplier', 0.5),
+      fixedThresholdDays: config.get<number>('seeds.fixedThresholdDays', 14),
+    }
+
+    const eligibleAges = seeds
+      .filter(s => !closedFamilyToken(s.status) && !s.isProcessed)
+      .map(s => s.lastActivityDate ? daysSince(s.lastActivityDate, now) : undefined)
+      .filter((d): d is number => d !== undefined)
+    const thresholdDays = computeDisplayThresholdDays(eligibleAges, agingConfig)
+
+    return seeds.map(seed => {
       const visible = this.filterQuestions(seed.questions)
+      const age = seed.lastActivityDate ? daysSince(seed.lastActivityDate, now) : undefined
+      const axis1 = classifySeedAxis1(seed, age, thresholdDays)
+      const rollup = computeSeedRollup(seed.derivedAdrs, n => node.adrs.getByNumber(n)?.status)
       return new AdrTreeItem({
         kind: 'seed',
         seed,
         collapsibleState: visible.length > 0
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
+        seedAxis1State: axis1,
+        seedRollup: rollup,
       })
     })
   }
@@ -840,7 +952,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   private filterQuestions(questions: Question[]): Question[] {
     if (this.filterMode === 'all') return questions
     if (this.filterMode === 'answered') return questions.filter(q => q.isAnswered)
-    return questions.filter(q => !q.isAnswered && !q.isRetired) // 'open' (default; retired = closed-without-answer, 2026-08-07)
+    return questions.filter(q => !q.isAnswered && !q.isRetired && !q.dismissedReason) // 'open' (default; retired = closed-without-answer, 2026-08-07; dismissed = never-was-a-question, ADR-0032)
   }
 }
 
