@@ -396,7 +396,8 @@ export type ParseWarningCode =
   | 'NONSTANDARD_STATUS_ANNOTATION'  // QST-block Status value is "answered"/"unanswered" plus a trailing annotation (e.g. "answered 2026-07-13 (reason)")
   | 'MALFORMED_QST_HANDLE_ID'        // handle-shaped heading ("### QST-<id>:") whose id fails the grammar — recognized as a question anyway, never silently dropped (ADR-0032 QST-IDCHARSET)
   | 'EMPHASIZED_STATUS_VALUE'        // status keyword wrapped in Markdown emphasis ("**answered**", "_accepted_") — recognized via stripInlineEmphasis, never defeats token matching (ADR-0052 specimen, 2026-07-22)
-  | 'ANS_BYLINE_SCAFFOLD';           // ANS slot's entire content is a bare parenthetical ("(Name)") with no author already captured — read as an unfilled byline scaffold, not an answer (Herald's second tour, prefill noise, 2026-07-28)
+  | 'ANS_BYLINE_SCAFFOLD'            // ANS slot's entire content is a bare parenthetical ("(Name)") with no author already captured — read as an unfilled byline scaffold, not an answer (Herald's second tour, prefill noise, 2026-07-28)
+  | 'IMPLAUSIBLE_TURN_DATE';         // a seed's header Date or a Thread turn heading date is in the future relative to parse time — excluded from lastActivityDate rather than trusted (ADR-0041 item 4, corpus:003975's 2027 year-typo fixture)
 
 export interface ParseWarning {
   code: ParseWarningCode;
@@ -476,6 +477,17 @@ export interface SeedFile {
    * isRetiredSeedStatus() to classify.
    */
   status?: string;
+  /**
+   * The most recent parseable date among the header Date field and all
+   * Thread turn heading dates ("### Name - Date"), sanity-clamped: any
+   * candidate in the future relative to parse time is excluded (flagged
+   * via an IMPLAUSIBLE_TURN_DATE parse warning) rather than trusted.
+   * ADR-0041 item 4: turn dates are the one new load-bearing dependency
+   * for currency derivation; iteration count and visited-once don't need
+   * a dedicated field — they're threadEntries.length and
+   * threadEntries.length === 1 respectively.
+   */
+  lastActivityDate?: string;
   /** Content of the ## Brain Dump section */
   brainDump?: string;
   /** Thread entries from ## Thread section (new-format seeds) */

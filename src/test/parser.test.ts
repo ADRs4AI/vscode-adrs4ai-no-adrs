@@ -1314,6 +1314,42 @@ Here's an example ADR template embedded for reference:
     expect(isRetiredSeedStatus(undefined)).toBe(false)
   })
 
+  it('lastActivityDate is the most recent parseable date across header Date + Thread turn dates', () => {
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    // NEW_FORMAT_SEED: header Date 2026-03-07, both thread entries also 2026-03-07
+    expect(seed.lastActivityDate).toBe('2026-03-07')
+    expect(seed.parseWarnings.filter(w => w.code === 'IMPLAUSIBLE_TURN_DATE')).toHaveLength(0)
+  })
+
+  it('sanity-clamps an implausible future turn-date rather than trusting it (ADR-0041 item 4, corpus:003975\'s banked 2027 year-typo fixture)', () => {
+    const seed = parseSeed(
+      `# SEED: Year-typo fixture
+
+- **Date**: 2026-03-07
+- **From**: Jérémie Lumbroso
+
+## Thread
+
+### Sonnet 4.6 - 2026-03-07
+
+First real turn.
+
+### Jérémie - 2027-03-08
+
+Typo: should have been 2026-03-08.
+`,
+      '/fake/docs/adr/seed-year-typo.md',
+    )
+    // The 2027 turn date must never become the reported "most recent
+    // activity" — an unclamped scan would falsely read this stale seed
+    // as freshly active.
+    expect(seed.lastActivityDate).toBe('2026-03-07')
+    expect(seed.threadEntries[1].date).toBe('2027-03-08') // raw parse stays byte-faithful
+    const warning = seed.parseWarnings.find(w => w.code === 'IMPLAUSIBLE_TURN_DATE')
+    expect(warning).toBeDefined()
+    expect(warning!.message).toContain('2027-03-08')
+  })
+
   it('should extract the Brain Dump section', () => {
     const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
     expect(seed.brainDump).toBeDefined()

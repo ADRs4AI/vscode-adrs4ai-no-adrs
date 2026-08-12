@@ -122,6 +122,18 @@ export function parseSeed(content: string, filePath: string): SeedFile {
   // --- Questions (ADR-0018 Step 2) ---
   const { questions, warnings: parseWarnings } = extractSeedQuestions(content, filePath)
 
+  // --- Last activity date (ADR-0041 item 4: turn-date derivation) ---
+  const { lastActivityDate, clampedDates } = deriveLastActivityDate(
+    [date, ...threadEntries.map(e => e.date)],
+    new Date(parsedAt),
+  )
+  for (const c of clampedDates) {
+    parseWarnings.push({
+      code: 'IMPLAUSIBLE_TURN_DATE',
+      message: `Turn date "${c}" is in the future relative to parse time — excluded from lastActivityDate.`,
+    })
+  }
+
   return {
     path: filePath,
     title,
@@ -138,6 +150,7 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     parsedAt,
     questions,
     parseWarnings,
+    lastActivityDate,
   }
 }
 
@@ -159,6 +172,41 @@ export function parseSeed(content: string, filePath: string): SeedFile {
 export function isRetiredSeedStatus(status: string | undefined): boolean {
   if (!status) return false
   return /^(?:parked|superseded|terminated)\b/i.test(stripInlineEmphasis(status).trim())
+}
+
+// ---------------------------------------------------------------------------
+// Last activity date (ADR-0041 item 4 — turn-date derivation, sanity-clamped)
+// ---------------------------------------------------------------------------
+
+interface ActivityDerivation {
+  lastActivityDate?: string
+  /** Candidates excluded for being in the future relative to `now` */
+  clampedDates: string[]
+}
+
+/**
+ * The most recent parseable date among `candidates`, sanity-clamped
+ * against implausible future dates rather than trusted blindly. Naturalist's
+ * 108-seed run banked a wild 2027 year-typo turn heading (corpus:003975) as
+ * a misread-specimen fixture: an unclamped max-date scan would let that one
+ * typo become the seed's reported "most recent activity," inverting a
+ * genuinely stale seed into a falsely-fresh one. Same "future = no
+ * meaningful signal" convention as seedAging.ts's daysSince(), applied here
+ * to candidate SELECTION rather than age computation — mostRecentDate() in
+ * that module has no such guard, so this is the piece that must run first.
+ */
+function deriveLastActivityDate(candidates: Array<string | undefined>, now: Date): ActivityDerivation {
+  const clampedDates: string[] = []
+  let lastActivityDate: string | undefined
+  let lastActivityTime = -Infinity
+  for (const c of candidates) {
+    if (!c) continue
+    const t = new Date(c).getTime()
+    if (Number.isNaN(t)) continue
+    if (t > now.getTime()) { clampedDates.push(c); continue }
+    if (t > lastActivityTime) { lastActivityTime = t; lastActivityDate = c }
+  }
+  return { lastActivityDate, clampedDates }
 }
 
 // ---------------------------------------------------------------------------
