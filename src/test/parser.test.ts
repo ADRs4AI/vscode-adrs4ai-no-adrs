@@ -1284,6 +1284,49 @@ OK, let's go with sessions. What about refresh tokens?
     expect(firstEntry.request!.structure).toBe(false)
   })
 
+  it('should parse dash-less MRR checkboxes (ancestral pre-dash-convention stratum, ADR-0041 item 3)', () => {
+    // Real scenario: Naturalist's 108-seed classifier run found genuine
+    // MRR checkbox specimens predating the "- [ ]" dash-bullet convention
+    // (bare "[ ] text" / "[X] text"). This repo's own two local specimens
+    // (seed-2026-03-04-seeds-listing, seed-2026-03-12-bug-debrief-template)
+    // turned out to be old-format seeds with no live Thread section, so
+    // this fixture reconstructs the shape in a genuine Thread/MRR context
+    // to prove the sensor itself (not just those two files) is fixed.
+    const seed = parseSeed(
+      `# SEED: Auth Strategy Thoughts
+
+- **Date**: 2026-03-07
+- **From**: Jérémie Lumbroso
+
+## Brain Dump
+
+Thinking about tokens.
+
+## Thread
+
+### Sonnet 4.6 - 2026-03-07
+
+JWT vs session tokens.
+
+**Model Response Request:**
+
+[ ] Chunk this into ADRs
+[X] Iterate with me
+[ ] Structure in place
+
+## Derived Into
+
+*(This seed has not yet been chunked into ADRs)*
+`,
+      '/fake/docs/adr/seed-2026-03-07-auth.md',
+    )
+    const entry = seed.threadEntries[0]
+    expect(entry.request).toBeDefined()
+    expect(entry.request!.chunk).toBe(false)
+    expect(entry.request!.iterate).toBe(true)
+    expect(entry.request!.structure).toBe(false)
+  })
+
   it('should report isProcessed=false when Derived Into has the placeholder', () => {
     const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
     expect(seed.isProcessed).toBe(false)

@@ -49,8 +49,14 @@ const DERIVED_ADR_NUMBER_RE = /ADR-(\d+)\b/i
 const UNPROCESSED_RE = /^\*?\(?\s*This seed has not yet been chunked/i
 /** Matches **Model Response Request:** block start (colon is inside bold: **text:**) */
 const MRR_RE = /^\*\*Model Response Request:/
-/** Matches checkbox lines: "- [ ] text" or "- [X] text" or "- [x] text" */
-const CHECKBOX_RE = /^-\s+\[([Xx\s])\]\s+(.+)$/
+/**
+ * Matches checkbox lines: "- [ ] text" / "- [X] text" / "- [x] text", and
+ * (ADR-0041 item 3, Naturalist's 108-seed finding) the ancestral pre-dash
+ * stratum "[ ] text" / "[X] text" — real specimens predate the dash-bullet
+ * convention. Only reached while inMrr is true (gated on MRR_RE matching
+ * first), so this stays scoped to genuine Model Response Request blocks.
+ */
+const CHECKBOX_RE = /^-?\s*\[([Xx\s])\]\s+(.+)$/
 
 // ---------------------------------------------------------------------------
 // Main entry point
