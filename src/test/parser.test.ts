@@ -2467,6 +2467,47 @@ Understudy's review added two points worth keeping attached to the recommendatio
       expect(adr.deciders[0]).toBe('Jérémie Lumbroso (charter, sequencing call)')
     })
 
+    // Regression test (fixes real bug, Gleaner's brief 2026-08-11-2246:
+    // live misattribution on our own repo's ADR-0032 QST-STATUS-VOCAB
+    // council round — six real crew members' recommendations all came
+    // back as "Riddle 5", the SAME wrong Deciders-inferred name, because
+    // "(stacked by X, ...)" doesn't start with bare "by"/"from" and the
+    // whole fallback match failed).
+    it('a leading qualifier before "by" ("stacked by X, ...") is tolerated — attribution recognized, qualifier itself discarded', () => {
+      const content = `# ADR-0032: T
+
+- **Date**: 2026-08-08
+- **Status**: Draft
+- **Deciders**: Riddle 5 (Claude Fable 5, chair)
+
+## Questions
+
+### QST: What closes a question without answering it?
+- Status: unanswered
+
+**Recommendation**: (stacked by Lapidary 5, council round, 2026-08-08) On the five: ratify the four-token set.
+
+**Recommendation**: (stacked by Touchstone 4.7, Claude Opus 4.7, council round, 2026-08-08) In dialogue with Lapidary; seconding.
+
+**ANS:**
+[Fill this in]
+`
+      const adr = parseAdr(content, '/fake/docs/adr/0032-t.md')
+      const recs = adr.questions[0].recommendations!
+      expect(recs).toHaveLength(2)
+      // Attribution recognized — not the Deciders-inferred "Riddle 5" every
+      // one of the real seven came back as before the fix.
+      expect(recs[0].author).toBe('Lapidary 5, council round, 2026-08-08')
+      expect(recs[0].authorInferred).toBeFalsy()
+      expect(recs[1].author).toBe('Touchstone 4.7, Claude Opus 4.7, council round, 2026-08-08')
+      expect(recs[1].authorInferred).toBeFalsy()
+      // The literal parenthetical, "stacked" qualifier included, never
+      // leaks into the rendered body.
+      expect(recs[0].text).not.toContain('stacked by')
+      expect(recs[0].text).not.toContain('(by ')
+      expect(recs[0].text).toBe('On the five: ratify the four-token set.')
+    })
+
     it('comma rosters with parenthetical annotations split at top level only — no shard can become an inferred author', () => {
       const adr = parseAdr(
         '# ADR-1: T\n\n- **Deciders**: Ren Okafor (lead, ops), Sonnet 4.6 (1M)\n- **Status**: Draft\n\n## Questions\n\n### QST: X?\n- Status: unanswered\n\n**My recommendation**: do it.\n\n**ANS:**\n[Fill this in]\n',

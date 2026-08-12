@@ -1590,7 +1590,23 @@ export function extractQuestion(
       // em-dashes — never re-split as author,date), attributed ⇒ the block
       // spans paragraphs, extent parity as always.
       if (!recProtocolForm && !inlineAttribution) {
-        const leading = firstLine.match(/^\((?:by|from)\b\s*([^)]*)\)\s*(.*)$/i);
+        // "stacked by" (Gleaner's brief, 2026-08-11, live on our own
+        // repo's ADR-0032 council round — six real crew members'
+        // recommendations misattributed to one wrong name): a leading
+        // qualifier word before "by"/"from" ("(stacked by Lapidary 5,
+        // council round, 2026-08-08) ...") made the whole match fail —
+        // this fallback only recognized the bare preposition — so the
+        // parenthetical was never consumed as attribution, its literal
+        // text leaked as the first sentence of the recommendation body,
+        // and the author fell through to Deciders-inference, which
+        // returns the SAME wrong name for every recommendation in the
+        // file regardless of who actually wrote it. Up to two leading
+        // words are tolerated before by/from (covers "stacked by" and
+        // similar short qualifiers); the qualifier itself is intentionally
+        // NOT captured or preserved — it carries no information beyond
+        // what "this is one of several stacked Recommendation blocks"
+        // already conveys structurally.
+        const leading = firstLine.match(/^\((?:[A-Za-z]+\s+){0,2}(?:by|from)\b\s*([^)]*)\)\s*(.*)$/i);
         if (leading && leading[1].trim()) {
           inlineAttribution = leading[1].trim();
           firstLine = leading[2].trim();
