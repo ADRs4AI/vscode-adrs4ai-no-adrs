@@ -25,7 +25,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr, Question, AdrSection, ParseWarning } from './types'
 import { tokenize, extractRawSections, type Token } from './tokenizer'
-import { buildSection, extractQuestion } from './extractor'
+import { buildSection, extractQuestion, stripInlineEmphasis } from './extractor'
 
 // ---------------------------------------------------------------------------
 // Regex patterns
@@ -35,6 +35,8 @@ import { buildSection, extractQuestion } from './extractor'
 const DATE_RE = /^-\s+\*\*Date\*\*:\s+(.+)$/
 /** Matches "- **From**: Name" */
 const FROM_RE = /^-\s+\*\*From\*\*:\s+(.+)$/
+/** Matches "- **Status**: ..." (ADR-0041 item 2's seed-scoped declared status) */
+const SEED_STATUS_RE = /^-\s+\*\*Status\*\*:\s+(.+)$/
 /** Matches "Author Name - Date" (text after ### has been stripped); date group is optional */
 const THREAD_ENTRY_DATE_RE = /^(.+?)\s+-\s+(\d{4}-\d{2}-\d{2})$/
 /**
@@ -84,9 +86,10 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     }
   }
 
-  // --- Metadata (date, from) from header bullet lines ---
+  // --- Metadata (date, from, status) from header bullet lines ---
   let date: string | undefined
   let from: string | undefined
+  let status: string | undefined
   for (let i = 1; i < Math.min(10, lines.length); i++) {
     const line = lines[i].trim()
     if (line.startsWith('##')) break // stop at first section heading
@@ -94,6 +97,8 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     if (dateMatch) { date = dateMatch[1].trim(); continue }
     const fromMatch = line.match(FROM_RE)
     if (fromMatch) { from = fromMatch[1].trim(); continue }
+    const statusMatch = line.match(SEED_STATUS_RE)
+    if (statusMatch) { status = statusMatch[1].trim(); continue }
   }
 
   // --- Section splitting ---
@@ -123,6 +128,7 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     topic,
     date,
     from,
+    status,
     brainDump,
     threadEntries,
     derivedAdrs,
@@ -133,6 +139,26 @@ export function parseSeed(content: string, filePath: string): SeedFile {
     questions,
     parseWarnings,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Declared status (ADR-0041 item 2 — seed-scoped axis-1 lifecycle)
+// ---------------------------------------------------------------------------
+
+/**
+ * Closed-family axis-1 tokens for seeds, ratified by Naturalist's 108-seed
+ * classifier run (2026-08-12): "the population invents no fourth closed
+ * state." Sibling to isRetiredStatusToken (per-question) and
+ * isDocumentPausedStatus (ADR document) — third arrival of the same
+ * leading-token-strict pattern, seed-scoped this time. Canonical write is
+ * "- **Status**: TERMINATED — duplicate capture, merged 2026-07-28" (this
+ * repo's own corpus:002890 specimen); parked/superseded stay lowercase in
+ * the wild, TERMINATED is the one all-caps token, so this classifier is
+ * case-insensitive on all three rather than encoding that asymmetry.
+ */
+export function isRetiredSeedStatus(status: string | undefined): boolean {
+  if (!status) return false
+  return /^(?:parked|superseded|terminated)\b/i.test(stripInlineEmphasis(status).trim())
 }
 
 // ---------------------------------------------------------------------------

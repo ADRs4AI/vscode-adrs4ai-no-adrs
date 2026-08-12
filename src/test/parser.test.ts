@@ -13,7 +13,7 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken } from '../parser/extractor'
-import { parseSeed } from '../parser/seedExtractor'
+import { parseSeed, isRetiredSeedStatus } from '../parser/seedExtractor'
 import { findReferencingAdrs, looksLikeSeedByContent } from '../index/seedIndex'
 
 // ---------------------------------------------------------------------------
@@ -1255,6 +1255,63 @@ OK, let's go with sessions. What about refresh tokens?
     expect(seed.topic).toBe('Auth Strategy Thoughts')
     expect(seed.date).toBe('2026-03-07')
     expect(seed.from).toBe('Jérémie Lumbroso')
+  })
+
+  it('leaves status undefined when no header Status bullet is declared (most seeds — silence is not a closed state)', () => {
+    const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')
+    expect(seed.status).toBeUndefined()
+    expect(isRetiredSeedStatus(seed.status)).toBe(false)
+  })
+
+  it('parses a declared header Status bullet and classifies closed-family tokens (ADR-0041 item 2, real corpus:002890 specimen)', () => {
+    // Real scenario: this repo's own seed-2026-03-17-secretariat-parser-
+    // lossless-adr-editing.md declares "- **Status**: TERMINATED —
+    // duplicate capture, merged 2026-07-28" — the ADR's own cited specimen
+    // for the ratified closed-family vocabulary.
+    const seed = parseSeed(
+      `# SEED: Secretariat — A Lossless Parser for ADR Write Operations
+
+- **Date**: 2026-03-17
+- **From**: Jérémie Lumbroso
+- **Status**: TERMINATED — duplicate capture, merged 2026-07-28
+
+---
+
+This seed was captured twice; the other file carries the live thread.
+`,
+      '/fake/docs/adr/seed-2026-03-17-secretariat-parser-lossless-adr-editing.md',
+    )
+    expect(seed.status).toBe('TERMINATED — duplicate capture, merged 2026-07-28')
+    expect(isRetiredSeedStatus(seed.status)).toBe(true)
+  })
+
+  it('a "- **Status**:" line nested inside section content (a quoted/embedded template demonstration) is never read as the seed\'s own declared status', () => {
+    // Real scenario: seed-2026-04-17-dogfood-master-plan.md embeds full
+    // ADR template examples inline, each with their own "- **Status**:"
+    // line, deep inside ## sections — none of those are this seed's own
+    // header field.
+    const seed = parseSeed(
+      `# SEED: Dogfood Master Plan
+
+- **Date**: 2026-04-17
+- **From**: Jérémie Lumbroso
+
+## Brain Dump
+
+Here's an example ADR template embedded for reference:
+
+- **Status**: Draft - awaiting human review
+`,
+      '/fake/docs/adr/seed-2026-04-17-dogfood-master-plan.md',
+    )
+    expect(seed.status).toBeUndefined()
+  })
+
+  it('isRetiredSeedStatus tolerates bold-wrapped tokens and is case-insensitive (parked/superseded stay lowercase in the wild)', () => {
+    expect(isRetiredSeedStatus('parked — waiting on ADR-0029')).toBe(true)
+    expect(isRetiredSeedStatus('**superseded** by ADR-0007')).toBe(true)
+    expect(isRetiredSeedStatus('Draft - awaiting human review')).toBe(false)
+    expect(isRetiredSeedStatus(undefined)).toBe(false)
   })
 
   it('should extract the Brain Dump section', () => {

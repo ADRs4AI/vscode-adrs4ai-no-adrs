@@ -465,6 +465,17 @@ export interface SeedFile {
   date?: string;
   /** Author from "- **From**: Name" */
   from?: string;
+  /**
+   * Raw text from the header's "- **Status**: ..." bullet, when declared
+   * (ADR-0041 item 2's seed-scoped axis-1 lifecycle: closed-family tokens
+   * `parked | superseded | TERMINATED — <annotation>`). Undeclared for
+   * most seeds (14/108 in the ratifying census) — absence is not a
+   * closed state, just silence. Only the header bullet counts; a "Status"
+   * line appearing later, inside section content (nested template quotes,
+   * embedded examples), is not this seed's own declared status. Use
+   * isRetiredSeedStatus() to classify.
+   */
+  status?: string;
   /** Content of the ## Brain Dump section */
   brainDump?: string;
   /** Thread entries from ## Thread section (new-format seeds) */
