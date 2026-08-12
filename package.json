@@ -404,6 +404,24 @@
           "default": ["tours", "adrs", "seeds"],
           "description": "Order of the Tours/ADRs/Seeds categories in the sidebar tree. A category with nothing in it (e.g. no tours minted yet) is still omitted entirely, same as before — this only controls the order of whichever categories are actually showing."
         },
+        "adrManager.seeds.agingMode": {
+          "type": "string",
+          "enum": ["adaptive", "fixed"],
+          "default": "adaptive",
+          "description": "How the sidebar decides a seed's staleness dimming threshold (ADR-0041). 'adaptive' (default): the threshold scales with this repo's own rhythm (adrManager.seeds.adaptiveMultiplier × the repo's median days-since-last-activity among actively-iterating seeds) — a 25-day idle seed in a house whose normal pulse is a 27-day median isn't unusual. 'fixed': always adrManager.seeds.fixedThresholdDays, regardless of repo rhythm."
+        },
+        "adrManager.seeds.adaptiveMultiplier": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "description": "Multiplier applied to the repo's median seed-activity age when adrManager.seeds.agingMode is 'adaptive' (ADR-0041's ratified default: 0.5 — e.g. a 27-day median dims at ~14 days). Ignored in 'fixed' mode."
+        },
+        "adrManager.seeds.fixedThresholdDays": {
+          "type": "number",
+          "default": 14,
+          "minimum": 1,
+          "description": "Days of inactivity before a seed dims, when adrManager.seeds.agingMode is 'fixed'. Also the fallback used in 'adaptive' mode when there's no measurable repo-wide activity to adapt to (e.g. an empty or brand-new seed set)."
+        },
         "adrManager.tours.showLeanVerbPrefix": {
           "type": "boolean",
           "scope": "resource",
