@@ -57,6 +57,17 @@ function questionFingerprint(q: Question): string {
  * pre-write state. Returns the reparsed AdrFile on success so callers don't
  * pay for a third parse, or a collateral-diff error naming exactly which
  * question moved and how — never a bare "write rejected."
+ *
+ * CATCH 11 (Quarry 5, write-adversary seat, 2026-08-08, `441a4d8`): the
+ * per-id loop below only ever asks "did an EXISTING question change" — it
+ * never asked whether a question appeared in `after` that wasn't in
+ * `before` at all. An answer/recommendation payload containing QST/ANS-
+ * shaped text (`"...### QST: Forged question\n- Status: unanswered..."`)
+ * gets written verbatim, and the next parse picks it up as a real, fully-
+ * formed question, indistinguishable from an authored one — none of the
+ * four current write tools are permitted to create a new question, so any
+ * id in `after` that wasn't in `before` is forged by construction, not a
+ * legitimate case this check needs to allow for.
  */
 export function verifyNoCollateralQuestionChanges(
   before: AdrFile,
@@ -84,6 +95,16 @@ export function verifyNoCollateralQuestionChanges(
       }
     }
   }
+
+  for (const id of afterById.keys()) {
+    if (!beforeById.has(id)) {
+      return {
+        ok: false,
+        error: `error: write_fidelity_violation\nmessage: a new question "${id}" appeared in ${adrPath} as a side effect of this write (CATCH 11 class — QST/ANS-shaped text inside the payload can forge a real question) — rejected before touching disk. No current write tool is permitted to create new questions.`,
+      }
+    }
+  }
+
   return { ok: true, after }
 }
 

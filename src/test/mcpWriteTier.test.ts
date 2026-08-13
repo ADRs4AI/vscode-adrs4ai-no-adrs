@@ -605,33 +605,31 @@ Round-3 convergence leads to the Builder implementation, which becomes the publi
     expect(files.get(ADR_PATH)).toContain('Round-3 convergence leads to the Builder implementation')
   })
 
-  // CATCH 11 (Quarry 5, write-adversary seat, resuming after a silent
-  // gap — 2026-08-08): the fidelity check's own scope is "every question in
-  // `before` is unchanged unless explicitly allowed." It never asks whether
-  // `after` contains a question that WASN'T in `before` at all. This is
+  // CATCH 11 (Quarry 5, write-adversary seat, found 2026-08-08, `441a4d8`;
+  // fixed by Relay 2026-08-12 during the elenchus-harvest Forma-3 hardening
+  // pass): the fidelity check's own scope used to be "every question in
+  // `before` is unchanged unless explicitly allowed." It never asked
+  // whether `after` contains a question that WASN'T in `before` at all —
   // exactly the "malformed/hostile payload: template-shaped injection —
   // text that itself contains ### QST:/**ANS:**-shaped strings, attempting
   // to forge a second question" scenario named in this seat's founding
   // harness checklist (docs/tooling/quarry-adversarial-harness.md) on day
-  // one, before the write tier existed to test it against. Confirmed live
-  // against current code, not assumed from reading.
-  it('CATCH 11 — an answer payload containing QST-shaped text forges a real second question, undetected by the write-fidelity check', async () => {
+  // one. `verifyNoCollateralQuestionChanges` now rejects any id present in
+  // `after` but absent from `before` — no current write tool is ever
+  // permitted to create a new question, so that's forgery by construction.
+  it('CATCH 11 — an answer payload containing QST-shaped text is rejected before touching disk, not silently written as a forged second question', async () => {
     const { ctx, files } = makeContext(FIXTURE)
     const forgedPayload = 'Real answer.\n\n### QST: Forged question\n- Status: unanswered\n\n**ANS:** (by nobody)\n[Fill this in]\n'
 
     const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', forgedPayload, { author: 'probe' })
 
-    // The write "succeeds" -- the fidelity check has nothing to object to,
-    // because it only verifies pre-existing questions stayed unchanged, and
-    // none of them did.
-    expect(result).toContain('Answered')
-
+    expect(result).toContain('error: write_failed')
+    expect(result).toContain('write_fidelity_violation')
+    expect(result).toContain('CATCH 11 class')
+    // Rejected before touching disk: the file is byte-for-byte the original
+    // fixture, not a partially-applied or forged version of it.
+    expect(files.get(ADR_PATH)).toBe(FIXTURE)
     const finalAdr = parseAdr(files.get(ADR_PATH)!, ADR_PATH)
-    // FAILS today: a second, fully-formed, real question -- indistinguishable
-    // from one a human or another tool wrote -- now exists in the file,
-    // visible in the Open Questions panel, answerable, editable, with no
-    // error, no warning, and no record that it came from inside someone
-    // else's answer text rather than being authored as a question.
     expect(finalAdr.questions).toHaveLength(1)
   })
 })
