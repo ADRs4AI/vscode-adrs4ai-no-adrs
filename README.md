@@ -12,6 +12,12 @@ This extension makes the *decision* — not just the code — a durable, browsea
 
 It's built for a specific document format ([`collab-adr-lean`](https://github.com/jlumbroso/human-ai-collaboration-template-A)) — Architectural Decision Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
 
+## What this is called
+
+The practice has a name: **deliberative programming** — specifying software by capturing the reasoning behind a decision, not just the decision itself, so an AI collaborator (and your future self) can act on *why*, not only *what*. The property it depends on is **epistemic continuity**: that reasoning surviving intact across sessions, models, and however long it sits before someone reads it again.
+
+*(If "epistemic programming" rings a bell from computer-science education — Cheng, Hüsing, the ITiCSE line of work — that's a different, unrelated field about programming as a way to teach or discover epistemic beliefs. This points the other direction: not programming to learn what's true, but recording why a decision was true enough to make.)*
+
 ## Why you'd want it
 
 - **Nothing gets buried.** Every open question, across every decision in your project, shows up in one panel — sorted, counted, one click from "unresolved" to "answered."
