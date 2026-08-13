@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Study 6: study 3's tilted+cog scale, with the identity-bearing pan
+       glyphs from adr-icon-scale-marketplace.svg (document / question
+       mark) re-added — testing whether that mitigation still reads once
+       the beam is no longer level and the pans sit at different heights. -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="#FFFFFF"/>
+  <g fill="none" stroke="#B45309" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 24v72" stroke-width="5"/>
+    <path d="M46 96h36" stroke-width="5"/>
+    <path d="M20 52L108 24" stroke-width="5"/>
+    <path d="M20 52v22" stroke-width="3"/>
+    <path d="M108 24v22" stroke-width="3"/>
+    <path d="M4 74q16 16 32 0" stroke-width="4"/>
+    <path d="M92 46q16 16 32 0" stroke-width="4"/>
+    <g stroke-width="1.6">
+      <circle cx="64" cy="38" r="4.5" fill="#FFFFFF"/>
+      <circle cx="64" cy="38" r="1.4" fill="#B45309" stroke="none"/>
+      <line x1="64" y1="33.5" x2="64" y2="30.8"/>
+      <line x1="64" y1="42.5" x2="64" y2="45.2"/>
+      <line x1="59.9" y1="35.9" x2="57.2" y2="34.6"/>
+      <line x1="68.1" y1="35.9" x2="70.8" y2="34.6"/>
+      <line x1="59.9" y1="40.1" x2="57.2" y2="41.4"/>
+      <line x1="68.1" y1="40.1" x2="70.8" y2="41.4"/>
+    </g>
+    <!-- Left (lower) pan: mini document glyph -->
+    <g transform="translate(11, 58) scale(1.6)" stroke-width="1.2">
+      <path d="M3 1h6l2.5 2.5V13H3V1z"/>
+      <path d="M9 1v2.5h2.5"/>
+      <line x1="4.5" y1="6" x2="9.5" y2="6" stroke-width="1"/>
+      <line x1="4.5" y1="8.5" x2="9.5" y2="8.5" stroke-width="1"/>
+    </g>
+    <!-- Right (higher) pan: question mark -->
+    <g transform="translate(99, 30)" stroke-width="2.6">
+      <path d="M6 6c0-4 6-4 6 0s-6 2-6 6"/>
+      <circle cx="6" cy="18" r="1.6" fill="#B45309" stroke="none"/>
+    </g>
+  </g>
+</svg>

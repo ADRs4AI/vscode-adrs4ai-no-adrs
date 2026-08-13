@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Study 5: adds a tapered post (wide base, narrow top) on top of
+       study 3 — another Caliper convention ("the post TAPERS gracefully
+       from base to top"). Post is filled, not stroked, since a taper
+       needs a shape, not a line. -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="#FFFFFF"/>
+  <path d="M61 24 L67 24 L70 96 L58 96 Z" fill="#B45309"/>
+  <g fill="none" stroke="#B45309" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M45 96h38" stroke-width="5"/>
+    <path d="M20 52L108 24" stroke-width="5"/>
+    <path d="M20 52v22" stroke-width="3"/>
+    <path d="M108 24v22" stroke-width="3"/>
+    <path d="M4 74q16 16 32 0" stroke-width="4"/>
+    <path d="M92 46q16 16 32 0" stroke-width="4"/>
+    <g stroke-width="1.6">
+      <circle cx="64" cy="38" r="4.5" fill="#FFFFFF"/>
+      <circle cx="64" cy="38" r="1.4" fill="#B45309" stroke="none"/>
+      <line x1="64" y1="33.5" x2="64" y2="30.8"/>
+      <line x1="64" y1="42.5" x2="64" y2="45.2"/>
+      <line x1="59.9" y1="35.9" x2="57.2" y2="34.6"/>
+      <line x1="68.1" y1="35.9" x2="70.8" y2="34.6"/>
+      <line x1="59.9" y1="40.1" x2="57.2" y2="41.4"/>
+      <line x1="68.1" y1="40.1" x2="70.8" y2="41.4"/>
+    </g>
+  </g>
+</svg>

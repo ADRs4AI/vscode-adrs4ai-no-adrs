@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Study 2: tilted beam, dot pivot. Tilt applies Pharos's recorded
+       website-branding finding (2026-08-09 triage, concept 9.5): "the beam
+       tilts everywhere except resolved states — symmetry is earned, never
+       default." An unanswered-question sidebar icon is never a resolved
+       state, so a level beam (studies 1) may be off-brand by that rule. -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="#FFFFFF"/>
+  <g fill="none" stroke="#B45309" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 24v72" stroke-width="5"/>
+    <path d="M46 96h36" stroke-width="5"/>
+    <path d="M20 52L108 24" stroke-width="5"/>
+    <circle cx="64" cy="38" r="3.5" fill="#B45309" stroke="none"/>
+    <path d="M20 52v22" stroke-width="3"/>
+    <path d="M108 24v22" stroke-width="3"/>
+    <path d="M4 74q16 16 32 0" stroke-width="4"/>
+    <path d="M92 46q16 16 32 0" stroke-width="4"/>
+  </g>
+</svg>

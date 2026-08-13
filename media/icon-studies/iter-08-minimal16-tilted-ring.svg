@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Study 8: same as study 7, but the pivot is a small hollow ring
+       instead of a solid dot — a gesture at the cog motif that survives
+       being drawn at 16px, since real teeth do not (honest limitation,
+       not attempted here). -->
+  <path d="M8 3v10" stroke-width="1.2"/>
+  <path d="M5.5 13h5" stroke-width="1.2"/>
+  <path d="M2 6L14 3" stroke-width="1.2"/>
+  <circle cx="8" cy="4.5" r="0.9" stroke-width="0.7"/>
+  <path d="M2 6v3.3" stroke-width="0.8"/>
+  <path d="M14 3v3.3" stroke-width="0.8"/>
+  <path d="M0 9.3q2 2 4 0" stroke-width="1"/>
+  <path d="M12 6.3q2 2 4 0" stroke-width="1"/>
+</svg>
