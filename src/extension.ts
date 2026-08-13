@@ -1134,6 +1134,35 @@ async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boole
   } catch (err) {
     const label = dr.node.namespace || path.basename(dr.node.path);
     vscode.window.showErrorMessage(`ADR Manager: Commit failed (${label}) — ${err}`);
+    // Gleaner's brief (2026-08-13, docs/inbox/2026-08-13-gleaner-to-
+    // fitter-commit-failures-never-reach-error-record.md): a real,
+    // reproducible git-policy pre-commit rejection sat invisible to
+    // errors.jsonl until a human manually pasted it into conversation —
+    // the founding incident's exact shape, in a code path ADR-0035
+    // predates. anchorPath: the first changed file (already known to be
+    // under the owning root's ADR directory, per groupChangesByOwningRoot
+    // — no need to guess adrDirRel here). Failure-soft, same contract as
+    // harvestError(): logging a failure must never itself throw.
+    try {
+      const anchorPath = allPaths[0]
+      if (anchorPath) {
+        appendLedgerRecord({
+          schema: 'error-record/2',
+          ts: new Date().toISOString(),
+          extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+          source: 'commit',
+          kind: 'commit-failed',
+          message: `Commit failed (${label}) — ${err}`,
+          anchorPath,
+          payload: {
+            label,
+            rootPath: dr.node.path,
+            changedPaths: allPaths,
+            rawError: err && typeof err === 'object' ? { ...err } : String(err),
+          },
+        })
+      }
+    } catch { /* failure-soft: never let the audit trail take down commit's own error path */ }
     return false;
   }
 }
@@ -1668,7 +1697,25 @@ async function addSeedThreadTurn(item?: import('./views/adrTreeProvider').AdrTre
   edit.insert(uri, new vscode.Position(plan.insertLineIndex, 0), plan.text);
   const applied = await vscode.workspace.applyEdit(edit);
   if (!applied) {
-    vscode.window.showErrorMessage(`ADR Manager: Could not insert a new Thread turn into ${seedPath}.`);
+    const message = `Could not insert a new Thread turn into ${seedPath}.`;
+    vscode.window.showErrorMessage(`ADR Manager: ${message}`);
+    // Gleaner's brief (2026-08-13): same class as commitOneRoot's own
+    // gap — a command-handler catch/rejection that only toasted, never
+    // logged, structurally identical to the panel's own already-correct
+    // 'workspace-edit-rejected' harvest. Failure-soft, same contract.
+    try {
+      appendLedgerRecord({
+        schema: 'error-record/2',
+        ts: new Date().toISOString(),
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        source: 'treeview',
+        kind: 'workspace-edit-rejected',
+        message,
+        anchorPath: seedPath,
+        payload: { plannedInsertLine: plan.insertLineIndex, plannedText: plan.text },
+        documents: (() => { const d = captureDocument(seedPath); return d ? { [seedPath]: d } : undefined })(),
+      })
+    } catch { /* failure-soft: never let the audit trail take down this command's own error path */ }
     return;
   }
 

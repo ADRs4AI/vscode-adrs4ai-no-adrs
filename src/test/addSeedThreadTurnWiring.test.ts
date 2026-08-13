@@ -43,6 +43,24 @@ describe('extension.ts: addSeedThreadTurn', () => {
     expect(fn).toContain('const cursorLine = plan.insertLineIndex + plan.cursorLineOffset;')
     expect(fn).toContain('editor.selection = new vscode.Selection(pos, pos);')
   })
+
+  // Regression test (fixes real bug, Gleaner's brief 2026-08-13, docs/
+  // inbox/2026-08-13-gleaner-to-fitter-commit-failures-never-reach-error-
+  // record.md): applyEdit rejection here only toasted, never logged —
+  // structurally identical to the panel's own already-correct
+  // 'workspace-edit-rejected' harvest, just never wired for this command.
+  it('a rejected applyEdit is now harvested to the error ledger, not just toasted (Gleaner\'s brief, 2026-08-13)', () => {
+    const rejectionBlock = fn.match(/if \(!applied\) \{[\s\S]*?\n  \}/)![0]
+    expect(rejectionBlock).toContain("source: 'treeview'")
+    expect(rejectionBlock).toContain("kind: 'workspace-edit-rejected'")
+    expect(rejectionBlock).toContain('anchorPath: seedPath')
+    expect(rejectionBlock).toContain('captureDocument(seedPath)')
+  })
+
+  it('the ledger write is failure-soft — wrapped so it can never throw into this command\'s own error path', () => {
+    const rejectionBlock = fn.match(/if \(!applied\) \{[\s\S]*?\n  \}/)![0]
+    expect(rejectionBlock).toMatch(/try \{[\s\S]*appendLedgerRecord[\s\S]*\} catch \{/)
+  })
 })
 
 describe('package.json: Add Thread Turn command + context menu', () => {

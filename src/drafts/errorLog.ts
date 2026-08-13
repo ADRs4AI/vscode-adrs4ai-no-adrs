@@ -64,8 +64,20 @@ export interface LedgerRecord {
   schema: 'error-record/2'
   ts: string
   extensionVersion?: string
-  /** Which subsystem wrote this record. 'treeview' (2026-08-06): the tree-wide "most excellent report" — the panel Report button's mechanism extended to every sidebar item, per Gleaner's spec (docs/inbox/2026-08-06-0408-...). */
-  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview'
+  /**
+   * Which subsystem wrote this record. 'treeview' (2026-08-06): the
+   * tree-wide "most excellent report" — the panel Report button's
+   * mechanism extended to every sidebar item, per Gleaner's spec
+   * (docs/inbox/2026-08-06-0408-...); also reused for other tree-context-
+   * menu command failures (addSeedThreadTurn), rather than a third
+   * generic tag. 'commit' (2026-08-13): the ADR Commit button's own
+   * failure path — a real, reproducible git-policy pre-commit rejection
+   * sat invisible to the ledger until a human manually pasted it into
+   * conversation (Gleaner's brief, docs/inbox/2026-08-13-gleaner-to-
+   * fitter-commit-failures-never-reach-error-record.md) — genuinely
+   * distinct from a panel/roots-config/treeview event, so its own tag.
+   */
+  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview' | 'commit'
   kind: string
   message: string
   /** Any file inside the owning root's docs/adr — decides which ledger this lands in. */
