@@ -84,6 +84,11 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.configureMcpServer",
+        "title": "Configure MCP Server (Forma 3)",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.openAdr",
         "title": "Open ADR File",
         "category": "ADR Manager"

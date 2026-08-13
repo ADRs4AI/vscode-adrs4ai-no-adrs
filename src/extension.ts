@@ -261,6 +261,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       outputChannel.show();
     }),
 
+    // Founder-flagged distribution gap (Lapidary's 2026-08-14 triple
+    // dispatch, item 2): `dist/mcp-server.js` IS bundled in the .vsix
+    // (verified directly against a real `vsce package` build, not just
+    // `vsce ls` — which doesn't trigger the prepublish build and can read
+    // as "missing" against a stale dist/) and has been since `.vscodeignore`
+    // Was fixed 2026-07-28 (`df1c87b`), predating this dispatch. The actual
+    // remaining gap: a marketplace stranger has no way to know the file is
+    // there or how to point an MCP client at it — physically present isn't
+    // the same as usable. This command closes that half: shows the real
+    // installed path (`context.extensionUri`, not this source tree — same
+    // staleness-proofing as `showVersion`, above) and copies a ready-to-
+    // paste `.mcp.json` entry for the current workspace.
+    vscode.commands.registerCommand('adrManager.configureMcpServer', async () => {
+      const serverPath = vscode.Uri.joinPath(context.extensionUri, 'dist', 'mcp-server.js').fsPath;
+      const snippet = JSON.stringify(
+        {
+          mcpServers: {
+            'adrs-for-ai': {
+              command: 'node',
+              args: [serverPath, ...(workspaceRoot ? [workspaceRoot] : [])],
+            },
+          },
+        },
+        null,
+        2,
+      );
+      await vscode.env.clipboard.writeText(snippet);
+      const choice = await vscode.window.showInformationMessage(
+        `MCP server path: ${serverPath}\nA .mcp.json entry for this workspace was copied to your clipboard — paste it into .mcp.json at your workspace root.`,
+        'Show details',
+      );
+      if (choice === 'Show details') {
+        outputChannel.appendLine(`[MCP] Server binary: ${serverPath}`);
+        outputChannel.appendLine(`[MCP] Suggested .mcp.json entry:\n${snippet}`);
+        outputChannel.show();
+      }
+    }),
+
     vscode.commands.registerCommand('adrManager.openAdr', (filePath: string, lineNumber?: number) => {
       openAdrFile(filePath, lineNumber);
     }),
