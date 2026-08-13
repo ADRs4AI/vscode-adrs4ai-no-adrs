@@ -1,0 +1,33 @@
+{
+  "schema": "question-tour/1",
+  "title": "Launch-Readiness Walk — what's actually blocking ship, in order",
+  "author": {
+    "name": "Ren Okafor",
+    "model": "Sonnet 4.6 (1M)",
+    "session": "n/a",
+    "role": "solo maintainer"
+  },
+  "minted_at": "2026-07-20T09:00:00Z",
+  "minted_commit": "n/a",
+  "retired": false,
+  "theme": {
+    "background": "#651FFF",
+    "foreground": "#F5F5F0"
+  },
+  "entries": [
+    {
+      "ref": "adr:0002#horizontal-scaling-from-day-one",
+      "must_respond": true,
+      "disposition": "decide",
+      "answer_path": "ship SQLite now / plan for Postgres from day one",
+      "comment": "The architectural fork the datastore ADR hangs on. Everything downstream (the concurrency question right after this one) reads differently depending on which way this goes."
+    },
+    {
+      "ref": "adr:0002#qst-how-do-we-handle-concurrent-writes-from-multiple-household-members-on-the-same-pantry",
+      "must_respond": true,
+      "disposition": "decide",
+      "answer_path": "confirm the recommended row-level optimistic-concurrency approach, or propose an alternative",
+      "comment": "The one open question actually blocking the datastore ADR from Accepted — everything else in Larder's early decisions is already settled."
+    }
+  ]
+}

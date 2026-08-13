@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Marketplace icon candidate — "the scale" direction (Jérémie's ruling,
+       2026-08-13). Amber-700 #B45309 per ADR-0006's "icon strokes on light"
+       row, white rounded-square background, same convention as the
+       original document icon (media/adr-icon-marketplace.svg). Lapidary's
+       mitigation against a bare "legal software" read: hang the identity
+       on the pans — a document on one, a question mark on the other, mid-
+       balance. Both mini-glyphs reuse the same shapes as the original
+       brand icon for continuity, not new symbols. Candidate, not shipped —
+       the original document icon stays live until Jérémie picks. -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="#FFFFFF"/>
+  <g fill="none" stroke="#B45309" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Post -->
+    <path d="M64 24v72" stroke-width="5"/>
+    <!-- Base -->
+    <path d="M46 96h36" stroke-width="5"/>
+    <!-- Beam (level — decisions weighed, questions given weight) -->
+    <path d="M20 38h88" stroke-width="5"/>
+    <!-- Pivot -->
+    <circle cx="64" cy="38" r="3.5" fill="#B45309" stroke="none"/>
+    <!-- Chains -->
+    <path d="M20 38v22" stroke-width="3"/>
+    <path d="M108 38v22" stroke-width="3"/>
+    <!-- Pans -->
+    <path d="M4 60q16 16 32 0" stroke-width="4"/>
+    <path d="M92 60q16 16 32 0" stroke-width="4"/>
+    <!-- Left pan: mini document glyph -->
+    <g transform="translate(11, 44) scale(1.6)" stroke-width="1.2">
+      <path d="M3 1h6l2.5 2.5V13H3V1z"/>
+      <path d="M9 1v2.5h2.5"/>
+      <line x1="4.5" y1="6" x2="9.5" y2="6" stroke-width="1"/>
+      <line x1="4.5" y1="8.5" x2="9.5" y2="8.5" stroke-width="1"/>
+    </g>
+    <!-- Right pan: question mark -->
+    <g transform="translate(99, 44)" stroke-width="2.6">
+      <path d="M6 6c0-4 6-4 6 0s-6 2-6 6"/>
+      <circle cx="6" cy="18" r="1.6" fill="#B45309" stroke="none"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Candidate ActivityBar icon (theme-aware, currentColor) — "the scale"
+       direction per Jérémie's founder ruling (2026-08-13): abstract/minimal
+       on purpose at this size, per Lapidary's mitigation note (avoid a hard
+       "legal software" read) — the document-vs-question-mark detail lives
+       in the 128px marketplace variant instead, where it can actually
+       render. This file is a candidate, not yet the shipped icon; the
+       original document glyph (adr-icon.svg) stays live until a pick is made. -->
+  <!-- Post -->
+  <path d="M8 3v10" stroke-width="1.2"/>
+  <!-- Base -->
+  <path d="M5.5 13h5" stroke-width="1.2"/>
+  <!-- Beam -->
+  <path d="M2 4.5h12" stroke-width="1.2"/>
+  <!-- Pivot -->
+  <circle cx="8" cy="4.5" r="0.6" fill="currentColor" stroke="none"/>
+  <!-- Chains -->
+  <path d="M2 4.5v3.3" stroke-width="0.8"/>
+  <path d="M14 4.5v3.3" stroke-width="0.8"/>
+  <!-- Pans (shallow bowls, in balance — neither side lower) -->
+  <path d="M0 7.8q2 2 4 0" stroke-width="1"/>
+  <path d="M12 7.8q2 2 4 0" stroke-width="1"/>
+</svg>
