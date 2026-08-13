@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.78] - 2026-08-13
+
+### Fixed
+- **Commit failures and rejected "Add Thread Turn" edits now reach the error ledger**, not just a toast you'd have to copy by hand. Both write full diagnostic detail (including the raw git error) to `.working/errors.jsonl` alongside the existing on-screen message.
+
 ## [0.7.77] - 2026-08-12
 
 ### Added
