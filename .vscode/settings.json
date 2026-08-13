@@ -111,6 +111,7 @@
         "anthropic.claude-code": false,
         "*": true
     },
+    "editor.autoClosingQuotes": "never",
     // 1. Enable MonoLisa's Grade axis to reduce dark-mode glow
     // Note: You must have the 'Variable' version of MonoLisa installed for this to work.
     "editor.fontFamily": "MonoLisa",
