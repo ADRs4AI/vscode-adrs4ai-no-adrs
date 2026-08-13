@@ -45,6 +45,7 @@ import {
   addRecommendation,
   appendIteration,
   updateResolution,
+  reportObservation,
 } from './handlers'
 
 function text(value: string) {
@@ -70,6 +71,11 @@ async function main() {
   const workspaceRoot = path.resolve(process.argv[2] ?? process.env.ADR_WORKSPACE_ROOT ?? '.')
   const adrDirRel = process.env.ADR_DIR_REL ?? 'docs/adr'
   const serverVersion = readServerVersion()
+  // report_observation's fallback anchor when no adr_ref is given — a
+  // workspace-wide observation still needs a real root's ledger to land in.
+  // Never read (errorLogPathFor only needs its dirname), so it doesn't need
+  // to exist on disk.
+  const defaultReportAnchorPath = path.join(workspaceRoot, adrDirRel, '.mcp-report-observation-anchor')
 
   // Scan happens at startup — `composite`/`scannedAt` are mutable so
   // `refresh_corpus` (below) can rescan and swap them in place. Elenchus
@@ -219,6 +225,21 @@ async function main() {
       },
     },
     async ({ adr_ref, resolution, note }) => text(await updateResolution(ctx(), adr_ref, resolution, note)),
+  )
+
+  server.registerTool(
+    'report_observation',
+    {
+      description: 'The Report button, for models. Capture anything worth a specimen — a wrong result, a format the parser mishandled, a corpus that feels stale — to the error ledger (docs/adr/.working/errors.jsonl), the same substrate the panel\'s human Report button writes to. author is required (a specific model slug/seat, never "AI"). adr_ref is optional — omit it for a workspace-wide observation not tied to one ADR. This is for specimens/incidents, not prose feedback (elenchus-style mcp-feedback.md files are still the right place for that).',
+      inputSchema: {
+        note: z.string(),
+        author: z.string(),
+        adr_ref: z.string().optional(),
+        context: z.string().optional(),
+      },
+    },
+    async ({ note, author, adr_ref, context }) =>
+      text(await reportObservation(ctx(), note, defaultReportAnchorPath, { author, adrRef: adr_ref, context, scannedAt, serverVersion })),
   )
 
   const transport = new StdioServerTransport()

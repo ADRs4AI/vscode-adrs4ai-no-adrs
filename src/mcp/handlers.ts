@@ -27,6 +27,7 @@ import {
 import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution } from './writeOps'
 import { getCached, recordSuccess } from './dedupe'
 import { withPathLock } from './pathLock'
+import { appendLedgerRecord, captureDocument } from '../drafts/errorLog'
 
 function bracket(ref: string): string {
   return `[${ref}]`
@@ -562,4 +563,93 @@ export async function updateResolution(
     recordSuccess('update_resolution', options.clientMsgId, confirmation)
     return confirmation
   })
+}
+
+export interface ReportObservationOptions {
+  /** REQUIRED (Lapidary's ADR-0035 dispatch, 2026-08-13, shape note 1): "a
+   *  report without a witness name is half a report" — same model-slug
+   *  discipline as every other write tool, never a default of "AI". */
+  author: string
+  adrRef?: string
+  context?: string
+  scannedAt?: string
+  serverVersion?: string
+}
+
+/**
+ * report_observation — the Report button for transformers (Jérémie,
+ * verbatim, via Lapidary's 2026-08-13 dispatch: "one of the single biggest
+ * gifts in my life is the Report button... make ALL transformers users and
+ * collect thoroughly!"). Appends an `error-record/2` line to the target
+ * root's `docs/adr/.working/errors.jsonl` — `source: 'mcp'`, `kind:
+ * 'observation'`, sibling to the panel's own `source: 'panel'` report
+ * (`src/webview/openQuestionsPanel.ts`'s `reportObservation`), reusing the
+ * SAME primitives (`captureDocument`/`appendLedgerRecord`,
+ * `src/drafts/errorLog.ts` — vscode-free, safe to call from here) rather
+ * than re-deriving the shape. No lock, no dedup: append-only, and per the
+ * panel's own "no comment gate, always logs" discipline, a duplicate
+ * observation costs one extra JSONL line, never a correctness bug worth
+ * guarding against.
+ *
+ * `defaultAnchorPath` is supplied by the caller (the stdio server knows its
+ * own workspace root; this file stays free of that knowledge) — used only
+ * when `adr_ref` is omitted, so a workspace-wide observation still lands in
+ * a real root's ledger rather than needing a fake association to an ADR.
+ * `scanned_at`/`server_version` ride along in `payload` (Lapidary's shape
+ * note 2 — "the observer version matters, Hypomnema taught us"): a
+ * specimen captured against a stale or since-changed reader is exactly the
+ * class of confusion the elenchus 68→65 delta cost a full diagnostic pass
+ * to resolve once already.
+ *
+ * Schema note: every field used here is either an EXISTING `error-record/2`
+ * field (`schema`/`ts`/`extensionVersion`/`source`/`kind`/`message`/
+ * `anchorPath`/`documents`) or lives inside the already-freeform `payload`
+ * bag (author/context/adrRef/scannedAt) — no new top-level field, same
+ * discipline the panel's own `renderedHtml` addition held to (ADR-0035
+ * Iteration 5). Riddle's blessing is still the ship gate per ADR-0035
+ * authority (Lapidary's dispatch, shape note 4) — built and tested against
+ * that expectation, not shipped past it.
+ */
+export async function reportObservation(
+  ctx: RepositoryContext,
+  note: string,
+  defaultAnchorPath: string,
+  options: ReportObservationOptions,
+): Promise<string> {
+  if (!options.author?.trim()) {
+    return 'error: missing_author\nmessage: report_observation requires an explicit author (a specific model slug, seat name if declared — never "AI") — no default is configured.'
+  }
+  if (!note?.trim()) {
+    return 'error: missing_note\nmessage: report_observation requires a non-empty note — this captures a specimen, it is not a status ping.'
+  }
+
+  let anchorPath = defaultAnchorPath
+  if (options.adrRef) {
+    const resolved = resolveAdrByRef(ctx, options.adrRef)
+    if (resolved.kind === 'error') return formatRefError(resolved)
+    anchorPath = resolved.adr.path
+  }
+
+  const doc = captureDocument(anchorPath)
+  const logPath = appendLedgerRecord({
+    schema: 'error-record/2',
+    ts: new Date().toISOString(),
+    extensionVersion: options.serverVersion,
+    source: 'mcp',
+    kind: 'observation',
+    message: note.trim(),
+    anchorPath,
+    payload: {
+      author: options.author.trim(),
+      context: options.context,
+      adrRef: options.adrRef,
+      scannedAt: options.scannedAt,
+    },
+    documents: doc ? { [anchorPath]: doc } : undefined,
+  })
+
+  if (!logPath) {
+    return 'error: report_failed\nmessage: could not write the observation to the error ledger (failure-soft by contract — this should not normally happen; check filesystem permissions on .working/).'
+  }
+  return `Observation recorded to ${logPath}`
 }
