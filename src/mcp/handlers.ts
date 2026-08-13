@@ -33,6 +33,22 @@ function bracket(ref: string): string {
 }
 
 /**
+ * Elenchus feedback (Gadfly 5, 2026-07-27, legacy/adr:0007: six QSTs
+ * declared `unanswered` under a full decision log; Hypomnema 5, 2026-08-02,
+ * MEASURED across legacy/0021-0024: 22/22 real QSTs declared `unanswered`
+ * already carried a substantive ANS block — "every label in this corpus is
+ * wrong"): Status-authority (ADR-0031, ratified) is working exactly as
+ * designed — declared status stays sovereign, ANS content is a draft until
+ * the author flips it — but a reader has no way to tell "genuinely open" apart
+ * from "labeled open, already answered, nobody flipped the switch" without
+ * opening the file. This doesn't change isAnswered/Status-authority at all;
+ * it just surfaces the disagreement Gadfly/Hypomnema both asked for.
+ */
+function isStatusAnswerInconsistent(question: Question): boolean {
+  return !question.isAnswered && !!question.answer
+}
+
+/**
  * ADR-0041 item 1's "census integration": the axis-2 rollup needs each
  * derived ADR's own declared Status, looked up through the same
  * RepositoryContext an MCP caller already has — ctx.getAdr accepts a bare
@@ -149,12 +165,20 @@ function formatSection(adr: AdrFile, section: AdrSection): string {
   return lines.join('\n')
 }
 
+/**
+ * Elenchus feedback (Eikon 5, 2026-07-24): a bare `adr:NNNN` ref (no
+ * `#slug`) degrading to this summary — never the document body — was
+ * correct but silent; `get_sections`' own description reads as "batch-fetch
+ * multiple refs," which primed a first-time caller to expect content. The
+ * "no slug given" framing states the narrowing explicitly instead of making
+ * a caller infer it from an empty-feeling result.
+ */
 function formatAdrSummary(adr: AdrFile): string {
   const openCount = adr.questions.filter((q) => !q.isAnswered).length
   const ref = adrRefString(adr)
   return [
     `${bracket(ref)} ${adr.title} | ${adr.status} | open: ${openCount} | iter: ${adr.iteration}`,
-    `Usage: call get_outline("${ref}") for the section map, or lookup("${ref}#<slug>") for a specific part.`,
+    `Usage: no slug given — showing summary only. Call get_outline("${ref}") for the section map, or lookup("${ref}#<slug>") for a specific part.`,
   ].join('\n')
 }
 
@@ -232,7 +256,10 @@ export function getOutline(ctx: RepositoryContext, adrRef: string): string {
     let row = `${'  '.repeat(section.level - 2)}${anchor} | ${section.heading} | level ${section.level} | lines ${section.lineStart}-${section.lineEnd} | words ${words}`
     if (section.navCode === 'QST') {
       const question = adr.questions.find((q) => q.slug === section.slug)
-      if (question) row += ` | status: ${question.isAnswered ? 'answered' : question.statusText}`
+      if (question) {
+        row += ` | status: ${question.isAnswered ? 'answered' : question.statusText}`
+        if (isStatusAnswerInconsistent(question)) row += ' | inconsistent: unanswered label but has a real answer'
+      }
     }
     lines.push(row)
   }
@@ -300,6 +327,13 @@ export interface ListOpenQuestionsOptions {
    * the shared `UNRESOLVED_LEADING_TOKEN_RE`, never a private re-derivation.
    */
   court?: 'model'
+  /**
+   * Elenchus feedback (Gadfly 5, 2026-07-23, "Catch 2" — sprint triage
+   * wanted exactly "open questions in the trees I'm porting" vs.
+   * cross-cutting): scope to one root's namespace, matching the
+   * `namespace.NNNN` reference grammar that already exists for refs.
+   */
+  namespace?: string
   limit?: number
   tokenBudget?: number
 }
@@ -311,6 +345,9 @@ export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuest
     const resolved = resolveAdrByRef(ctx, options.adrRef)
     if (resolved.kind === 'error') return formatRefError(resolved)
     adrs = [resolved.adr]
+  }
+  if (options.namespace !== undefined) {
+    adrs = adrs.filter((a) => a.namespace === options.namespace)
   }
 
   type Row = { adr: AdrFile; question: Question }
@@ -327,13 +364,17 @@ export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuest
 
   const adrsWithOpen = new Set(rows.map((r) => r.adr.number)).size
   const total = rows.length
+  const inconsistentCount = rows.filter((r) => isStatusAnswerInconsistent(r.question)).length
   if (options.limit !== undefined) rows = rows.slice(0, options.limit)
 
   const courtSuffix = options.court === 'model' ? ' (court: model)' : ''
-  const lines = [`${total} open across ${adrsWithOpen} ADRs${options.limit !== undefined ? ` (limit: ${options.limit})` : ''}${courtSuffix}`]
+  const namespaceSuffix = options.namespace !== undefined ? ` (namespace: ${options.namespace})` : ''
+  const inconsistentSuffix = inconsistentCount > 0 ? ` (${inconsistentCount} inconsistent: unanswered label, real answer present)` : ''
+  const lines = [`${total} open across ${adrsWithOpen} ADRs${options.limit !== undefined ? ` (limit: ${options.limit})` : ''}${courtSuffix}${namespaceSuffix}${inconsistentSuffix}`]
   for (const { adr, question } of rows) {
+    const inconsistentTag = isStatusAnswerInconsistent(question) ? ' | inconsistent: unanswered label but has a real answer' : ''
     lines.push(
-      `${bracket(`${adrRefString(adr)}#${question.slug}`)} ${question.text} — status: ${question.statusText} | priority: ${question.priority ?? '[none]'}`,
+      `${bracket(`${adrRefString(adr)}#${question.slug}`)} ${question.text} — status: ${question.statusText} | priority: ${question.priority ?? '[none]'}${inconsistentTag}`,
     )
   }
   return lines.join('\n')

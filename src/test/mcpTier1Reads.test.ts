@@ -155,11 +155,11 @@ function makeContext(adrs: AdrFile[], seeds: SeedFile[] = []): RepositoryContext
 describe('lookup', () => {
   const ctx = makeContext([makeAdr()])
 
-  it('resolves a bare ADR number to a compact summary, not the full content', () => {
+  it('resolves a bare ADR number to a compact summary, not the full content — with an explicit "no slug given" hint (elenchus, Eikon 5, 2026-07-24: this narrowing used to be silent)', () => {
     const result = lookup(ctx, '1')
     expect(result).toContain('[adr:0001] Project Specifications')
     expect(result).toContain('open: 1')
-    expect(result).toContain('Usage: call get_outline')
+    expect(result).toContain('Usage: no slug given — showing summary only. Call get_outline')
   })
 
   it('resolves adr:NNNN#slug to the section body', () => {
@@ -319,6 +319,19 @@ describe('get_outline', () => {
     const result = getOutline(makeContext([]), '1')
     expect(result).toContain('error: not_found')
   })
+
+  // Elenchus feedback (Gadfly 5, 2026-07-27; Hypomnema 5, 2026-08-02):
+  // "an inconsistent marker in list_open_questions/get_outline output"
+  it('flags a QST declared unanswered that already carries a real answer', () => {
+    const staleUnanswered: Question = {
+      ...SCOPE_QUESTION,
+      answer: { text: 'Settled long ago.', author: 'Jérémie', line: 20 },
+    }
+    const result = getOutline(makeContext([makeAdr({ questions: [staleUnanswered, FORMAT_QUESTION] })]), '1')
+    expect(result).toContain('qst-what-is-the-scope | QST: What is the scope? | level 3 | lines 16-25 | words 9 | status: unanswered | inconsistent: unanswered label but has a real answer')
+    // The genuinely-answered question must not be tagged.
+    expect(result).not.toContain('stable-format | QST: Is the format stable? | level 3 | lines 27-39 | words 3 | status: answered | inconsistent')
+  })
 })
 
 describe('get_sections', () => {
@@ -413,6 +426,63 @@ describe('list_open_questions', () => {
       const adr = makeAdr({ questions: [SCOPE_QUESTION, unresolvedQuestion, deferredQuestion] })
       const result = listOpenQuestions(makeContext([adr]))
       expect(result).toContain('3 open across 1 ADRs')
+    })
+  })
+
+  // Elenchus feedback (Gadfly 5, 2026-07-23, "Catch 2"): sprint triage
+  // wanted "open questions in the trees I'm porting" vs. cross-cutting.
+  describe('namespace filter (elenchus Catch 2)', () => {
+    it('scopes to ADRs in the given namespace only', () => {
+      const legacyAdr = makeAdr({ namespace: 'legacy-tree' })
+      const rootAdr = makeAdr({
+        number: 2,
+        namespace: 'root-tree',
+        questions: [{ ...SCOPE_QUESTION, id: 'adr-0002-qst-x', slug: 'qst-x' }],
+      })
+      const result = listOpenQuestions(makeContext([legacyAdr, rootAdr]), { namespace: 'legacy-tree' })
+      expect(result).toContain('1 open across 1 ADRs (namespace: legacy-tree)')
+      expect(result).not.toContain('qst-x')
+    })
+
+    it('an unknown namespace returns zero rows, not an error — same recall-first posture as other filters', () => {
+      const result = listOpenQuestions(makeContext([makeAdr({ namespace: 'legacy-tree' })]), { namespace: 'nonexistent' })
+      expect(result).toContain('0 open across 0 ADRs (namespace: nonexistent)')
+    })
+  })
+
+  // Elenchus feedback (Gadfly 5, 2026-07-27, legacy/adr:0007; Hypomnema 5,
+  // 2026-08-02, MEASURED across legacy/0021-0024 — 22/22 real QSTs declared
+  // "unanswered" already carried a substantive ANS block).
+  describe('inconsistency marker (Status-authority vs. a real answer already present)', () => {
+    const staleUnanswered: Question = {
+      ...SCOPE_QUESTION,
+      id: 'adr-0001-qst-stale',
+      slug: 'qst-stale',
+      text: 'Was this ever really open?',
+      statusText: 'unanswered',
+      isAnswered: false,
+      answer: { text: 'Yes, settled long ago.', author: 'Jérémie', line: 40 },
+    }
+
+    it('flags a question declared unanswered that already has a real answer, per-row and in the summary count', () => {
+      const adr = makeAdr({ questions: [SCOPE_QUESTION, staleUnanswered] })
+      const result = listOpenQuestions(makeContext([adr]))
+      expect(result).toContain('2 open across 1 ADRs (1 inconsistent: unanswered label, real answer present)')
+      expect(result).toContain('[adr:0001#qst-stale] Was this ever really open? — status: unanswered | priority: [none] | inconsistent: unanswered label but has a real answer')
+      // A genuinely open question (no answer at all) must not be tagged.
+      expect(result).not.toContain('qst-what-is-the-scope] What is the scope? — status: unanswered | priority: [none] | inconsistent')
+    })
+
+    it('does not fire when a question is genuinely open (no answer content at all)', () => {
+      const adr = makeAdr({ questions: [SCOPE_QUESTION] })
+      const result = listOpenQuestions(makeContext([adr]))
+      expect(result).not.toContain('inconsistent')
+    })
+
+    it('does not add the summary suffix when nothing is inconsistent', () => {
+      const adr = makeAdr({ questions: [SCOPE_QUESTION] })
+      const result = listOpenQuestions(makeContext([adr]))
+      expect(result).toContain('1 open across 1 ADRs\n')
     })
   })
 })

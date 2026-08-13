@@ -71,18 +71,23 @@ async function main() {
   const adrDirRel = process.env.ADR_DIR_REL ?? 'docs/adr'
   const serverVersion = readServerVersion()
 
-  const composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
-  // Scan happens once, here, at startup — there is no per-call refresh yet
-  // (elenchus feedback 2026-07-23, Catch 1: ADRs committed mid-session are
-  // invisible until restart). scannedAt captures *when* this snapshot was
-  // taken so a stale read is at least detectable, even though it isn't yet
-  // preventable — the harder fix (mtime-based rescan or a refresh_corpus
-  // tool) is still open.
-  const scannedAt = new Date().toISOString()
+  // Scan happens at startup — `composite`/`scannedAt` are mutable so
+  // `refresh_corpus` (below) can rescan and swap them in place. Elenchus
+  // feedback (Gadfly 5, 2026-07-23 "Catch 1", recurring 2026-08-01 as a
+  // write_failed refusal on a QST that verifiably existed on disk — the
+  // corpus staleness this was always about, not a slug-derivation bug,
+  // confirmed by re-deriving that exact slug against today's corpus and
+  // finding it clean): before this, the ONLY fix was restarting the whole
+  // server process. scannedAt still captures *when* the current snapshot
+  // was taken, same purpose as before — now it's just no longer permanent.
+  let composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
+  let scannedAt = new Date().toISOString()
   // CompositeIndex already exposes allAdrs()/allSeeds() aggregated across
   // every discovered root — the adapter's IndexSource shape needs nothing
-  // more, so this is a direct pass-through, not a new integration.
-  const ctx = createRepositoryContextAdapter(composite)
+  // more, so this is a direct pass-through, not a new integration. Built
+  // fresh per call (not cached) so every tool handler sees whatever
+  // `composite` currently points at, including right after a refresh.
+  const ctx = () => createRepositoryContextAdapter(composite)
 
   const server = new McpServer({ name: 'adrs-for-ai', version: serverVersion })
 
@@ -93,7 +98,20 @@ async function main() {
       inputSchema: { include_seeds: z.boolean().optional() },
     },
     async ({ include_seeds }) =>
-      text(projectOverview(ctx, { includeSeeds: include_seeds, scannedAt, serverVersion })),
+      text(projectOverview(ctx(), { includeSeeds: include_seeds, scannedAt, serverVersion })),
+  )
+
+  server.registerTool(
+    'refresh_corpus',
+    {
+      description: 'Rescans the workspace from disk and replaces the in-memory corpus — call this if a just-created or just-edited ADR is returning not_found, or after a mid-session commit. Returns the new ADR/seed counts and scan timestamp.',
+      inputSchema: {},
+    },
+    async () => {
+      composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
+      scannedAt = new Date().toISOString()
+      return text(`Corpus rescanned: ${composite.allAdrs().length} ADRs, ${composite.allSeeds().length} seeds. scanned_at: ${scannedAt}`)
+    },
   )
 
   server.registerTool(
@@ -102,7 +120,7 @@ async function main() {
       description: 'Resolve any ADR-0008-grammar reference (adr:NNNN#slug, seed:slug#anchor, bare Question.id, bare ADR number) to its content.',
       inputSchema: { ref: z.string(), context_lines: z.number().optional() },
     },
-    async ({ ref, context_lines }) => text(lookup(ctx, ref, context_lines)),
+    async ({ ref, context_lines }) => text(lookup(ctx(), ref, context_lines)),
   )
 
   server.registerTool(
@@ -111,7 +129,7 @@ async function main() {
       description: 'Flat section map of one ADR: slug | heading | level | lines | words, with inline QST status.',
       inputSchema: { adr_ref: z.string() },
     },
-    async ({ adr_ref }) => text(getOutline(ctx, adr_ref)),
+    async ({ adr_ref }) => text(getOutline(ctx(), adr_ref)),
   )
 
   server.registerTool(
@@ -120,29 +138,30 @@ async function main() {
       description: 'Batch-fetch multiple refs in one call, each its own labeled block. Refs may span multiple ADRs.',
       inputSchema: { refs: z.array(z.string()), token_budget: z.number().optional() },
     },
-    async ({ refs, token_budget }) => text(getSections(ctx, refs, token_budget)),
+    async ({ refs, token_budget }) => text(getSections(ctx(), refs, token_budget)),
   )
 
   server.registerTool(
     'list_open_questions',
     {
-      description: "Summary line first, then one row per open question across all ADRs, or scoped to one adr_ref. court: 'model' scopes to unresolved questions — the model's own docket (ADR-0036), the ball in its court.",
+      description: "Summary line first, then one row per open question across all ADRs, or scoped to one adr_ref. court: 'model' scopes to unresolved questions — the model's own docket (ADR-0036), the ball in its court. namespace scopes to one root's tree (see project_overview's ns: column for the real value — folder names like \"legacy\" are usually NOT it).",
       inputSchema: {
         adr_ref: z.string().optional(),
         priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
         status: z.string().optional(),
         court: z.literal('model').optional(),
+        namespace: z.string().optional(),
         limit: z.number().optional(),
       },
     },
-    async ({ adr_ref, priority, status, court, limit }) =>
-      text(listOpenQuestions(ctx, { adrRef: adr_ref, priority, status, court, limit })),
+    async ({ adr_ref, priority, status, court, namespace, limit }) =>
+      text(listOpenQuestions(ctx(), { adrRef: adr_ref, priority, status, court, namespace, limit })),
   )
 
   server.registerTool(
     'answer_question',
     {
-      description: 'Answer a QST — replace semantics (a question has exactly one current answer). Anchored write, safe with no prior read.',
+      description: 'Answer a QST — replace semantics (a question has exactly one current answer). Anchored write, safe with no prior read. adr_ref and question_id are separate params here (unlike read tools, which accept a fused "adr:NNNN#slug" ref) — question_id is the bare slug/id, e.g. "qst-what-is-the-scope", not "adr:0001#qst-what-is-the-scope".',
       inputSchema: {
         adr_ref: z.string(),
         question_id: z.string(),
@@ -153,13 +172,13 @@ async function main() {
       },
     },
     async ({ adr_ref, question_id, answer_text, author, base_checksum, client_msg_id }) =>
-      text(await answerQuestion(ctx, adr_ref, question_id, answer_text, { author, baseChecksum: base_checksum, clientMsgId: client_msg_id })),
+      text(await answerQuestion(ctx(), adr_ref, question_id, answer_text, { author, baseChecksum: base_checksum, clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
     'add_recommendation',
     {
-      description: 'Stack a recommendation under a QST — append semantics (recommendations stack; the eventual answer stays singular).',
+      description: 'Stack a recommendation under a QST — append semantics (recommendations stack; the eventual answer stays singular). adr_ref and question_id are separate params here (unlike read tools, which accept a fused "adr:NNNN#slug" ref) — question_id is the bare slug/id, e.g. "qst-what-is-the-scope", not "adr:0001#qst-what-is-the-scope". If this returns write_failed "Could not locate question", the corpus may be stale (a recently created/edited ADR) — try refresh_corpus first.',
       inputSchema: {
         adr_ref: z.string(),
         question_id: z.string(),
@@ -169,7 +188,7 @@ async function main() {
       },
     },
     async ({ adr_ref, question_id, author, text: body, client_msg_id }) =>
-      text(await addRecommendation(ctx, adr_ref, question_id, author, body, { clientMsgId: client_msg_id })),
+      text(await addRecommendation(ctx(), adr_ref, question_id, author, body, { clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
@@ -186,7 +205,7 @@ async function main() {
       },
     },
     async ({ adr_ref, human, ai, outcome, date, client_msg_id }) =>
-      text(await appendIteration(ctx, adr_ref, { human, ai, outcome, date, clientMsgId: client_msg_id })),
+      text(await appendIteration(ctx(), adr_ref, { human, ai, outcome, date, clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
@@ -199,7 +218,7 @@ async function main() {
         note: z.string().optional(),
       },
     },
-    async ({ adr_ref, resolution, note }) => text(await updateResolution(ctx, adr_ref, resolution, note)),
+    async ({ adr_ref, resolution, note }) => text(await updateResolution(ctx(), adr_ref, resolution, note)),
   )
 
   const transport = new StdioServerTransport()
