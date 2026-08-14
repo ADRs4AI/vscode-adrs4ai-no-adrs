@@ -52,6 +52,7 @@ import { openQuestionCountForNode, QUESTION_SOURCES, type SourceInclusion } from
 import { resolveTourEntries, isTourDone, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
 import { orderCategories, DEFAULT_CATEGORY_ORDER, type SidebarCategory } from './categoryOrder'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
+import { stringifyCommandArg } from './commandArgDisplay'
 
 // ---------------------------------------------------------------------------
 // Tree item types
@@ -983,7 +984,9 @@ function snapshotOne(item: AdrTreeItem, parentId: string | undefined): TreeSnaps
   const description = typeof item.description === 'string' ? item.description : undefined
   const tooltip = typeof item.tooltip === 'string' ? item.tooltip : undefined
   const commandTarget = item.command
-    ? (item.command.arguments?.length ? `${item.command.command}(${JSON.stringify(item.command.arguments)})` : item.command.command)
+    ? (item.command.arguments?.length
+        ? `${item.command.command}(${item.command.arguments.map(stringifyCommandArg).join(', ')})`
+        : item.command.command)
     : undefined
   return {
     id: String(item.id),

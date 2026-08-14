@@ -50,6 +50,23 @@ describe('adrTreeProvider.ts: captureFullTree walks the WHOLE tree via the provi
     expect(snap).toContain('item.command')
     expect(snap).not.toContain('captureDocument')
   })
+
+  // Regression test (fixes real bug, Gleaner's brief 2026-08-14, docs/
+  // inbox/2026-08-14-1600-gleaner-to-fitter-treeview-report-root-cause-
+  // confirmed.md): snapshotOne used to build commandTarget via
+  // `JSON.stringify(item.command.arguments)` — a question/tour-entry's
+  // default command embeds a live self-reference in its own arguments
+  // (resolveQuestionClickCommand passes `this`), so this threw "Converting
+  // circular structure to JSON" on every Report click that reached any
+  // open question, live-reproduced by Jérémie. Fixed by routing each
+  // argument through the pure, separately-tested stringifyCommandArg
+  // (commandArgDisplay.test.ts has the real circular-reference repro).
+  it('commandTarget never calls JSON.stringify on the whole arguments array — routes each argument through stringifyCommandArg instead', () => {
+    const snap = TREE_SRC.match(/function snapshotOne\([\s\S]*?\n\}/)![0]
+    expect(snap).not.toContain('JSON.stringify(item.command.arguments)')
+    expect(snap).toContain('item.command.arguments.map(stringifyCommandArg)')
+    expect(TREE_SRC).toContain("import { stringifyCommandArg } from './commandArgDisplay'")
+  })
 })
 
 describe('extension.ts: resolveReportFilePath (Gleaner\'s spec §3)', () => {
