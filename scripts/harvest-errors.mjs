@@ -43,18 +43,29 @@ const since = sinceIdx >= 0 ? new Date(args[sinceIdx + 1]) : null
 const roots = args.filter((a, i) => !a.startsWith('--') && (sinceIdx < 0 || i !== sinceIdx + 1))
 if (roots.length === 0) roots.push(process.cwd())
 
-/** Find errors.jsonl files: direct hit, project-shaped, or parent-of-projects. */
-function findLogs(root) {
-  const direct = path.join(root, 'docs', 'adr', '.working', 'errors.jsonl')
-  if (fs.existsSync(direct)) return [direct]
+/**
+ * Find errors.jsonl files: direct hit, project-shaped, or parent-of-projects.
+ *
+ * BUG FOUND IN PRODUCTION (2026-08-14, Gleaner self-audit, same fix applied
+ * to watch-errors.mjs's copy of this function): used to `return [direct]`
+ * the instant the root itself had its own ledger, silently skipping every
+ * subproject ledger nested underneath (HQ always has both). Fixed to UNION
+ * the direct hit with a real depth-limited walk instead of early-returning.
+ */
+function findLogs(root, maxDepth = 2) {
   const found = []
-  let entries = []
-  try { entries = fs.readdirSync(root, { withFileTypes: true }) } catch { return found }
-  for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
-    const candidate = path.join(root, e.name, 'docs', 'adr', '.working', 'errors.jsonl')
-    if (fs.existsSync(candidate)) found.push(candidate)
+  function walk(dir, depth) {
+    const direct = path.join(dir, 'docs', 'adr', '.working', 'errors.jsonl')
+    if (fs.existsSync(direct)) found.push(direct)
+    if (depth >= maxDepth) return
+    let entries = []
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
+      walk(path.join(dir, e.name), depth + 1)
+    }
   }
+  walk(root, 0)
   return found
 }
 

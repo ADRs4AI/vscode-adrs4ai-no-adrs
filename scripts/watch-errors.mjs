@@ -44,17 +44,30 @@ const roots = args.filter((a, i) =>
   !a.startsWith('--') && i !== pollIdx + 1 && i !== wakeIdx + 1)
 if (roots.length === 0) roots.push(process.cwd())
 
-function findLogs(root) {
-  const direct = path.join(root, 'docs', 'adr', '.working', 'errors.jsonl')
-  if (fs.existsSync(direct)) return [direct]
+// BUG FOUND IN PRODUCTION (2026-08-14, Gleaner self-audit, Jérémie's "you're
+// no longer watching reports"): this used to `return [direct]` the instant
+// the ROOT itself had its own errors.jsonl — which HQ always does — so a
+// root with both its own ledger AND subproject ledgers (HQ's own
+// subprojects/ios-client, /pneumatic, etc.) silently watched only the top
+// one. Every HQ subproject report landed invisibly to this watcher all
+// session; only manual sweeps caught them. Fixed to UNION the direct hit
+// with a real depth-limited walk (matches the doc comment's own promise of
+// "two levels deep," which the old one-level early-return never actually
+// honored either).
+function findLogs(root, maxDepth = 2) {
   const found = []
-  let entries = []
-  try { entries = fs.readdirSync(root, { withFileTypes: true }) } catch { return found }
-  for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
-    const candidate = path.join(root, e.name, 'docs', 'adr', '.working', 'errors.jsonl')
-    if (fs.existsSync(candidate)) found.push(candidate)
+  function walk(dir, depth) {
+    const direct = path.join(dir, 'docs', 'adr', '.working', 'errors.jsonl')
+    if (fs.existsSync(direct)) found.push(direct)
+    if (depth >= maxDepth) return
+    let entries = []
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
+      walk(path.join(dir, e.name), depth + 1)
+    }
   }
+  walk(root, 0)
   return found
 }
 
