@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.81] - 2026-08-14
+
+### Added
+- **Configurable root captions** (`adrManager.roots.captionMode`, default `git-auto`) — a submodule root used to show a slugified CLAUDE.md description instead of its real name (the old git-remote reader never followed a submodule's gitlink). Choose "git slugs" (`owner/repo`), "git repo names", or "auto" (bare repo name unless a root's owner isn't the workspace's majority owner).
+- **Per-root "Expand All" and "Focus on Root"** context-menu items — expand just one root's subtree, or collapse everything and re-expand one root in a single click.
+- **Per-root "Commit changes"** context-menu item — commits that one root directly, skipping the cross-root picker.
+- **Project name in the Open Questions panel header** (`adrManager.panel.showProjectInHeader`, default `auto`) — shows the owning root's caption flush-right next to "Question N of M" when your question set spans more than one root, so you always know which project you're answering for.
+
 ## [0.7.80] - 2026-08-14
 
 ### Fixed
