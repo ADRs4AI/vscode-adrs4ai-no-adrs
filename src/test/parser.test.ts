@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
-import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken } from '../parser/extractor'
+import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken, normalizeDocumentStatus } from '../parser/extractor'
 import { parseSeed, isRetiredSeedStatus } from '../parser/seedExtractor'
 import { findReferencingAdrs, looksLikeSeedByContent, computeSeedRollup } from '../index/seedIndex'
 import { findSectionForQuestion } from '../mcp/reference'
@@ -4691,6 +4691,58 @@ describe('Regression tests: document-level pause — isDocumentPausedStatus (fou
     for (const st of ['Proposed (deferred — designed in full, implementation intentionally not pursued now)', 'Accepted', 'Draft', undefined, 'Implemented — deferred cleanup remains']) {
       expect(isDocumentPausedStatus(st as any), String(st)).toBe(false)
     }
+  })
+})
+
+describe('Regression tests: normalizeDocumentStatus — the frozen v1 spine, one function N consumers (ADR-0021 Iteration 16, 2026-08-14)', () => {
+  // Folds Flint's own 08-11 open ledger item (QST-DETECTION-LEDGER.md): any
+  // known Status value with a trailing annotation used to have no clean
+  // normalized read at all (the strict UNKNOWN_STATUS check — left
+  // untouched, see the parse-site comment — just warns; this is a NEW,
+  // separate consumer-facing read). Real confirmed specimens from the
+  // ledger row, verbatim.
+  it('normalizes the three confirmed live false-positive specimens from the ledger', () => {
+    expect(normalizeDocumentStatus('Superseded — by ADR-0005')).toBe('Superseded')
+    expect(normalizeDocumentStatus('Implemented — see PR #123')).toBe('Implemented')
+    expect(normalizeDocumentStatus('Accepted — with reservations')).toBe('Accepted')
+  })
+
+  it('recognizes all five frozen enum tokens bare, including the two-word Partially Implemented', () => {
+    for (const [raw, expected] of [
+      ['Draft', 'Draft'],
+      ['Accepted', 'Accepted'],
+      ['Implemented', 'Implemented'],
+      ['Partially Implemented', 'Partially Implemented'],
+      ['Superseded', 'Superseded'],
+    ] as const) {
+      expect(normalizeDocumentStatus(raw)).toBe(expected)
+    }
+  })
+
+  it('recognizes all four suspension states, space/hyphen tolerant on "On Hold" (same discipline as isDocumentPausedStatus)', () => {
+    for (const [raw, expected] of [
+      ['Deferred', 'Deferred'],
+      ['Paused', 'Paused'],
+      ['Suspended', 'Suspended'],
+      ['On Hold', 'On Hold'],
+      ['on-hold', 'On Hold'],
+    ] as const) {
+      expect(normalizeDocumentStatus(raw)).toBe(expected)
+    }
+  })
+
+  it('tolerates bold-wrapped tokens, same class of fix isDocumentPausedStatus/isRetiredStatusToken already carry', () => {
+    expect(normalizeDocumentStatus('**Accepted**')).toBe('Accepted')
+    expect(normalizeDocumentStatus('_Deferred_ — post-launch')).toBe('Deferred')
+  })
+
+  it('"Proposed" deliberately normalizes to unknown — excluded from the frozen v1 five-token enum (ADR-0032 QST-CORE\'s A2 ruling), unlike statusInfo.ts\'s broader tolerated vocabulary', () => {
+    expect(normalizeDocumentStatus('Proposed')).toBe('unknown')
+  })
+
+  it('unrecognized values and missing status both normalize to unknown, never throw or guess', () => {
+    expect(normalizeDocumentStatus('Gibberish')).toBe('unknown')
+    expect(normalizeDocumentStatus(undefined)).toBe('unknown')
   })
 })
 

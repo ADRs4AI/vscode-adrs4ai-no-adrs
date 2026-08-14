@@ -1072,6 +1072,61 @@ export function isDocumentPausedStatus(status: string | undefined): boolean {
   return /^(?:deferred|paused|suspended|on[ -]hold)\b/.test(t);
 }
 
+/**
+ * The frozen v1 spine (ADR-0021 Iteration 16, ADR-0032 QST-CORE's ratified
+ * A2 enum): five enum tokens + four suspension states, or 'unknown'.
+ * Deliberately does NOT include 'Proposed' — statusInfo.ts's broader
+ * ADR_STATUSES/KNOWN_STATUS_VALUES list keeps it for tree-icon/UNKNOWN_STATUS
+ * purposes, but the frozen normalization spine this function targets is
+ * exactly the nine tokens the council ratified, nothing coined new.
+ */
+export type NormalizedDocumentStatus =
+  | 'Draft' | 'Accepted' | 'Implemented' | 'Partially Implemented' | 'Superseded'
+  | 'Deferred' | 'Paused' | 'Suspended' | 'On Hold'
+  | 'unknown';
+
+/** Longest/more-specific alternatives first where a prefix relationship could otherwise misfire (none of these 9 tokens actually collide, but the ordering is kept explicit rather than relying on that fact staying true forever). */
+const NORMALIZED_DOCUMENT_STATUS_PATTERNS: ReadonlyArray<{ re: RegExp; token: NormalizedDocumentStatus }> = [
+  { re: /^Partially Implemented\b/i, token: 'Partially Implemented' },
+  { re: /^Draft\b/i, token: 'Draft' },
+  { re: /^Accepted\b/i, token: 'Accepted' },
+  { re: /^Implemented\b/i, token: 'Implemented' },
+  { re: /^Superseded\b/i, token: 'Superseded' },
+  { re: /^Deferred\b/i, token: 'Deferred' },
+  { re: /^Paused\b/i, token: 'Paused' },
+  { re: /^Suspended\b/i, token: 'Suspended' },
+  { re: /^On[ -]Hold\b/i, token: 'On Hold' },
+];
+
+/**
+ * ADR-0021 Iteration 16 (Riddle 5, 2026-08-14): "one exported function, N
+ * consumers" — the MCP's `status_normalized` field, dashboards, and the
+ * tree all read a document's declared Status through this ONE function
+ * rather than each re-deriving their own leading-token tolerance. Reuses
+ * isDocumentPausedStatus's exact discipline (stripInlineEmphasis, leading-
+ * token match) but widened to the full frozen spine, not just the pause
+ * family.
+ *
+ * Folds in Flint's own 08-11 open ledger item in the same motion
+ * (QST-DETECTION-LEDGER.md): "Any known document Status value with a
+ * trailing annotation fires spurious UNKNOWN_STATUS" — confirmed live
+ * specimens `Superseded — by ADR-0005`, `Implemented — see PR #123`,
+ * `Accepted — with reservations`. That UNKNOWN_STATUS warning itself is
+ * left untouched (D6.2's Socratic nudge toward structured fields is a
+ * deliberate, separate design choice — see the comment at this file's
+ * document-Status parse site) — this function is a NEW, additive read
+ * surface for CONSUMERS who want a clean value regardless of whether the
+ * author annotated it, not a change to what gets warned on.
+ */
+export function normalizeDocumentStatus(status: string | undefined): NormalizedDocumentStatus {
+  if (!status) return 'unknown';
+  const cleaned = stripInlineEmphasis(status).trim();
+  for (const { re, token } of NORMALIZED_DOCUMENT_STATUS_PATTERNS) {
+    if (re.test(cleaned)) return token;
+  }
+  return 'unknown';
+}
+
 export function isAnsMarkerLine(line: string): boolean {
   const l = debulletAnsLine(line);
   return ANS_INLINE_RE.test(l) || ANS_COLON_OUTSIDE_RE.test(l);
