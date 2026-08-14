@@ -251,6 +251,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
+    // Per-root Expand All (Gleaner's brief 2026-08-14, item B): the
+    // tree-wide expandAll above has to iterate every top-level item because
+    // there are several independent starting points; a single root is just
+    // one reveal() call from that same item, same expand:3 depth cap.
+    vscode.commands.registerCommand('adrManager.expandRoot', async (item) => {
+      if (!item?.rootNode || !treeView) return;
+      try {
+        await treeView.reveal(item, { expand: 3, select: false, focus: false });
+      } catch {
+        // Known VS Code API wrinkle (Lapidary's spec, 2026-07-23 `0320`) — no-op.
+      }
+    }),
+
+    // "Focus on Root" (Gleaner's brief 2026-08-14, item B — Jérémie's own
+    // idea, "streamline that functionality"): collapse everything, then
+    // expand just this root, in one click. VS Code's public TreeView API has
+    // no per-item collapse (reveal()'s `expand` option only ever expands —
+    // a documented, long-standing API gap), so there is no way to build a
+    // true "collapse THIS root only" command without either lying about
+    // what it does or quietly collapsing every other root too. This is the
+    // achievable version of the same end state: collapse-all is the one
+    // native primitive that exists, then re-expand the one root Jérémie
+    // actually wants visible. workbench.actions.treeView.<viewId>.collapseAll
+    // is VS Code's own auto-registered command for any view built with
+    // `showCollapseAll: true` (adrExplorer is) — unverified live (no
+    // Extension Development Host in this environment), so failure here
+    // degrades to "just expand this root" rather than doing nothing.
+    vscode.commands.registerCommand('adrManager.focusRoot', async (item) => {
+      if (!item?.rootNode || !treeView) return;
+      try {
+        await vscode.commands.executeCommand('workbench.actions.treeView.adrExplorer.collapseAll');
+      } catch {
+        // Unverified command id (see comment above) — proceed to expand regardless.
+      }
+      try {
+        await treeView.reveal(item, { expand: 3, select: false, focus: false });
+      } catch {
+        // Known VS Code API wrinkle (Lapidary's spec, 2026-07-23 `0320`) — no-op.
+      }
+    }),
+
     vscode.commands.registerCommand('adrManager.showVersion', () => {
       // 2026-07-30 (live founder-blocked report: report button absent after
       // reload+setting in a companion workspace): this project has a
@@ -316,8 +357,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       createNewAdr(adrDir);
     }),
 
-    vscode.commands.registerCommand('adrManager.commitAdrs', () => {
-      commitAdrChanges(adrDir);
+    vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {
+      commitAdrChanges(adrDir, item?.rootNode?.path);
     }),
 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
@@ -997,8 +1038,18 @@ interface DirtyRoot {
  * Jérémie's own framing (seed-2026-07-29): scan every project; if there's
  * just one with changes, commit it — no ceremony; if there's several,
  * show a checkbox palette so more than one can be committed at once.
+ *
+ * `targetRootPath` (Gleaner's brief 2026-08-14, item 3 — Jérémie's own
+ * words, verbatim, from a per-root Report submission: "I'd like it if
+ * there was the 'commit changes' menuitem in all roots... so you can
+ * circumvent the palette to select projects to commit"): when invoked
+ * from a specific root's context menu, commit ONLY that root, skipping
+ * the cross-root picker entirely — even when other roots also have
+ * changes. Undefined for the existing tree-wide entry points (the top
+ * toolbar button, the Command Palette), which keep scanning every root
+ * exactly as before.
  */
-async function commitAdrChanges(adrDirRel: string): Promise<void> {
+async function commitAdrChanges(adrDirRel: string, targetRootPath?: string): Promise<void> {
   if (!compositeIndex) return;
 
   const gitExtension = vscode.extensions.getExtension('vscode.git');
@@ -1019,6 +1070,16 @@ async function commitAdrChanges(adrDirRel: string): Promise<void> {
         .map((c: any) => c.uri.fsPath as string); // eslint-disable-line @typescript-eslint/no-explicit-any
       return { node: g.node, repo: g.repo, changes: g.changes, untrackedCandidates };
     });
+
+  if (targetRootPath) {
+    const targeted = dirtyRoots.find(dr => dr.node.path === targetRootPath);
+    if (!targeted) {
+      vscode.window.showInformationMessage(`ADR Manager: No ADR changes to commit in "${path.basename(targetRootPath)}".`);
+      return;
+    }
+    await commitOneRoot(targeted, true);
+    return;
+  }
 
   if (dirtyRoots.length === 0) {
     vscode.window.showInformationMessage('ADR Manager: No ADR changes to commit.');

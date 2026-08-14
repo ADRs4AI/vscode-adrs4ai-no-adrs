@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { discoverRoots, computeNamespace } from '../index/rootNode'
+import { discoverRoots, computeNamespace, gitRemoteSlugFor } from '../index/rootNode'
 
 function mkdirp(p: string): void {
   fs.mkdirSync(p, { recursive: true })
@@ -160,5 +160,62 @@ describe('computeNamespace', () => {
     const namedDir = path.join(dir, 'My Cool Project')
     mkdirp(namedDir)
     expect(computeNamespace(namedDir)).toBe('my-cool-project')
+  })
+})
+
+// Regression tests (fixes real bug, Gleaner's brief 2026-08-14, docs/inbox/
+// 2026-08-14-1740-gleaner-to-fitter-four-tree-root-features-batch.md, item
+// A): root-caused as "submodule git-remote detection never fires" —
+// computeNamespace's own git-remote reader only ever tries
+// `<root>/.git/config` directly, which doesn't exist for a submodule (whose
+// `.git` is a one-line gitlink FILE, not a directory). gitRemoteSlugFor is
+// the new, separate, submodule-aware reader built for the caption feature —
+// these tests pin the exact gitlink-following behavior that was missing.
+describe('gitRemoteSlugFor', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-remote-slug-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('parses owner/repo from an ordinary (non-submodule) repo\'s .git/config', () => {
+    mkdirp(path.join(dir, '.git'))
+    fs.writeFileSync(
+      path.join(dir, '.git', 'config'),
+      '[remote "origin"]\n\turl = git@github.com:jlumbroso/vscode-adrs-for-ai.git\n',
+    )
+    expect(gitRemoteSlugFor(dir)).toEqual({ owner: 'jlumbroso', repo: 'vscode-adrs-for-ai' })
+  })
+
+  it('follows a submodule\'s .git gitlink file to the real gitdir and reads ITS config — the exact case computeNamespace misses', () => {
+    const gitdir = path.join(dir, '.git-modules-ios-client')
+    mkdirp(gitdir)
+    fs.writeFileSync(path.join(gitdir, 'config'), '[remote "origin"]\n\turl = https://github.com/jlumbroso/ios-client.git\n')
+    const submodule = path.join(dir, 'ios-client')
+    mkdirp(submodule)
+    fs.writeFileSync(path.join(submodule, '.git'), `gitdir: ${path.relative(submodule, gitdir)}\n`)
+    expect(gitRemoteSlugFor(submodule)).toEqual({ owner: 'jlumbroso', repo: 'ios-client' })
+  })
+
+  it('returns undefined when there is no .git at all (a local-only, non-git directory)', () => {
+    expect(gitRemoteSlugFor(dir)).toBeUndefined()
+  })
+
+  it('returns undefined when .git exists but has no origin remote configured', () => {
+    mkdirp(path.join(dir, '.git'))
+    fs.writeFileSync(path.join(dir, '.git', 'config'), '[core]\n\tbare = false\n')
+    expect(gitRemoteSlugFor(dir)).toBeUndefined()
+  })
+
+  it('a submodule gitlink pointing at a nonexistent gitdir degrades to undefined, not a throw', () => {
+    const submodule = path.join(dir, 'broken-submodule')
+    mkdirp(submodule)
+    fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/nonexistent\n')
+    expect(() => gitRemoteSlugFor(submodule)).not.toThrow()
+    expect(gitRemoteSlugFor(submodule)).toBeUndefined()
   })
 })

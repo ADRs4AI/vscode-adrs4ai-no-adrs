@@ -79,6 +79,16 @@
         "icon": "$(expand-all)"
       },
       {
+        "command": "adrManager.expandRoot",
+        "title": "Expand All",
+        "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.focusRoot",
+        "title": "Focus on Root",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.showVersion",
         "title": "Show Version",
         "category": "ADR Manager"
@@ -223,6 +233,21 @@
           "group": "1_actions@1"
         },
         {
+          "command": "adrManager.commitAdrs",
+          "when": "view == adrExplorer && viewItem == root",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "adrManager.expandRoot",
+          "when": "view == adrExplorer && viewItem == root",
+          "group": "2_expand@1"
+        },
+        {
+          "command": "adrManager.focusRoot",
+          "when": "view == adrExplorer && viewItem == root",
+          "group": "2_expand@2"
+        },
+        {
           "command": "adrManager.addSeedThreadTurn",
           "when": "view == adrExplorer && viewItem == seed",
           "group": "1_actions@1"
@@ -268,6 +293,17 @@
           "type": "string",
           "default": "",
           "description": "Override the project namespace for cross-project ADR citations (e.g., 'my-project'). Auto-detected from git remote if empty."
+        },
+        "adrManager.roots.captionMode": {
+          "type": "string",
+          "enum": ["git-slugs", "git-repo-names", "git-auto"],
+          "enumDescriptions": [
+            "Always \"owner/repo\", from each root's git origin remote.",
+            "Always just the repo name, from each root's git origin remote.",
+            "Repo name alone when all (or most) roots share one owner; owner/repo only for the roots whose owner isn't the majority."
+          ],
+          "default": "git-auto",
+          "description": "How each root's caption is shown in a multi-root tree. Falls back to adrManager.adrNamespace / the auto-detected project namespace for a root with no discoverable git remote."
         },
         "adrManager.humanName": {
           "type": "string",
@@ -399,6 +435,17 @@
           "default": 0,
           "minimum": 0,
           "description": "When a question has stacked recommendations (ADR-0019), collapse all but the most recent N behind an \"N earlier recommendation(s)\" disclosure. 0 (default) never collapses — every recommendation stays expanded, like an LLM harness's thinking traces."
+        },
+        "adrManager.panel.showProjectInHeader": {
+          "type": "string",
+          "enum": ["off", "auto", "always"],
+          "enumDescriptions": [
+            "Never show which root a question belongs to.",
+            "Show it only when the current question set spans more than one root.",
+            "Always show it, even in a single-root workspace."
+          ],
+          "default": "auto",
+          "description": "Show the owning root's caption flush-right next to \"Question N of M\" in the Open Questions panel — helps when paging through questions from several projects at once (adrManager.roots.captionMode controls the exact text shown)."
         },
         "adrManager.sidebar.categoryOrder": {
           "type": "array",

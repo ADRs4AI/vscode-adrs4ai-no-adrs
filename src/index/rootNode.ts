@@ -44,6 +44,23 @@ export interface DiscoveredRoot {
   children: DiscoveredRoot[]
   /** True when `path/.git` is a file (gitlink) rather than a directory — a git submodule. Metadata only, not a structural discriminator. */
   isSubmodule: boolean
+  /**
+   * `owner/repo` parsed from the `origin` remote, submodule-aware (Gleaner's
+   * brief 2026-08-14, root-caused: `namespace`'s OWN git-remote reader never
+   * follows a submodule's `.git` gitlink file to the real gitdir, so it
+   * silently falls through to a slugified CLAUDE.md description for every
+   * submodule root). Display-only, for the tree caption — deliberately NOT
+   * fed back into `namespace` itself, which stays untouched to protect
+   * existing `namespace.NNNN` deep links from changing identity underneath
+   * anyone who's already saved one. undefined when there's no discoverable
+   * origin remote (e.g. a local-only repo with no `.git` at all).
+   */
+  gitRemoteSlug?: GitOwnerRepo
+}
+
+export interface GitOwnerRepo {
+  owner: string
+  repo: string
 }
 
 const DEFAULT_SKIP_DIRS = new Set([
@@ -104,6 +121,64 @@ function namespaceFromProjectDoc(rootPath: string): string | undefined {
 function slugify(raw: string): string {
   const slug = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return slug || 'project'
+}
+
+// ---------------------------------------------------------------------------
+// Git remote owner/repo (display-only — see DiscoveredRoot.gitRemoteSlug)
+// ---------------------------------------------------------------------------
+
+/**
+ * `path/.git` is a directory for an ordinary repo, but a one-line gitlink
+ * FILE for a submodule ("gitdir: ../../.git/modules/<name>") — this is the
+ * exact case `namespaceFromGitRemote` above never follows, since it only
+ * ever tries `path.join(rootPath, '.git', 'config')` directly. Resolving
+ * the gitlink to the real gitdir first is the standard, reliable way to
+ * reach a submodule's own `config` (same shape as a regular gitdir).
+ */
+function resolveGitDir(rootPath: string): string | undefined {
+  const gitPath = path.join(rootPath, '.git')
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(gitPath)
+  } catch {
+    return undefined
+  }
+  if (stat.isDirectory()) return gitPath
+  if (!stat.isFile()) return undefined
+  try {
+    const content = fs.readFileSync(gitPath, 'utf-8')
+    const match = content.match(/^gitdir:\s*(.+)$/m)
+    if (!match) return undefined
+    const gitdir = match[1].trim()
+    return path.isAbsolute(gitdir) ? gitdir : path.resolve(rootPath, gitdir)
+  } catch {
+    return undefined
+  }
+}
+
+export function gitRemoteSlugFor(rootPath: string): GitOwnerRepo | undefined {
+  const gitDir = resolveGitDir(rootPath)
+  if (!gitDir) return undefined
+  const configPath = path.join(gitDir, 'config')
+  try {
+    const content = fs.readFileSync(configPath, 'utf-8')
+    const match = content.match(/\[remote "origin"\][^[]*?url\s*=\s*(\S+)/)
+    if (!match) return undefined
+    return ownerRepoFromGitUrl(match[1])
+  } catch {
+    return undefined
+  }
+}
+
+function ownerRepoFromGitUrl(url: string): GitOwnerRepo | undefined {
+  // Same two URL shapes as slugFromGitUrl above ("git@host:owner/repo.git",
+  // "https://host/owner/repo.git"), split into owner/repo separately rather
+  // than joined into one slug — the caption feature needs them independent
+  // to implement "repo alone unless disambiguation is needed."
+  const cleaned = url.trim().replace(/\.git$/, '')
+  const match = cleaned.match(/[:/]([^/]+)\/([^/]+)$/)
+  if (!match) return undefined
+  return { owner: match[1], repo: match[2] }
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +304,7 @@ export function discoverRoots(workspaceRoot: string, options: RootDiscoveryOptio
           namespace: computeNamespace(childPath),
           children: scan(childPath, depth + 1),
           isSubmodule: isSubmodule(childPath),
+          gitRemoteSlug: gitRemoteSlugFor(childPath),
         })
       } else {
         // Transparent directory: not a root itself, but nested roots may
@@ -254,5 +330,6 @@ export function discoverRoots(workspaceRoot: string, options: RootDiscoveryOptio
     namespace: computeNamespace(workspaceRoot),
     children: scan(workspaceRoot, 1),
     isSubmodule: false,
+    gitRemoteSlug: gitRemoteSlugFor(workspaceRoot),
   }
 }

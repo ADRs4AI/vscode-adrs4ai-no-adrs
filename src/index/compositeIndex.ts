@@ -14,7 +14,7 @@
 import * as path from 'path'
 import { AdrIndex } from './adrIndex'
 import { SeedIndex } from './seedIndex'
-import { discoverRoots, type DiscoveredRoot, type RootDiscoveryOptions } from './rootNode'
+import { discoverRoots, type DiscoveredRoot, type RootDiscoveryOptions, type GitOwnerRepo } from './rootNode'
 import { discoverTourFiles, type TourFile } from './tourIndex'
 import type { AdrFile, SeedFile } from '../parser/types'
 
@@ -49,6 +49,8 @@ export interface RootNode {
   isSubmodule: boolean
   /** False only for the synthetic top-of-tree node in a "forest" workspace — see rootNode.ts's discoverRoots doc. */
   hasAdrDir: boolean
+  /** `owner/repo` from the origin remote, submodule-aware. See rootNode.ts's DiscoveredRoot.gitRemoteSlug — display-only, deliberately not folded into `namespace`. */
+  gitRemoteSlug?: GitOwnerRepo
 }
 
 export interface ResolveContext {
@@ -83,6 +85,7 @@ async function buildNode(discovered: DiscoveredRoot, parent: RootNode | undefine
     parent,
     isSubmodule: discovered.isSubmodule,
     hasAdrDir: discovered.hasAdrDir,
+    gitRemoteSlug: discovered.gitRemoteSlug,
   }
   node.children = await Promise.all(discovered.children.map(child => buildNode(child, node)))
   return node

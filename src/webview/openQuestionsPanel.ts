@@ -31,6 +31,7 @@ import { resolveTourEntries, isTourDone, unresolvedTourRefs, referencedDocumentP
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
+import { computeRootCaptions, type RootCaptionMode } from '../views/rootCaption'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -80,6 +81,17 @@ interface WebviewQuestion {
    * Step 3 fixed for ADR-vs-seed containers, one level up).
    */
   rootNamespace: string
+  /**
+   * Gleaner's brief 2026-08-14, item 4 — Jérémie's own words, verbatim:
+   * "in multi root projects... the questions wrap through projects, so
+   * while I am answering questions on pneumatic. I might end up being
+   * asked a question from another project... in the 'QUESTION 58 OF 92'
+   * there could be flushed right the name of the project (user/repo?)."
+   * The same caption computed for the tree (rootCaption.ts,
+   * adrManager.roots.captionMode) — reused here so the two surfaces never
+   * disagree about what a root is called.
+   */
+  rootCaption: string
   /** ADR-0023 CATCH 3 guard: sibling count sharing this question's text-hash in the ADR right now. */
   totalOccurrences: number
   /** ADR-0023 drift fence: the ADR file's content checksum at render time. */
@@ -341,6 +353,7 @@ export class OpenQuestionsPanel {
       groupSortKey: string
       groupLabel: string
       rootNamespace: string
+      rootCaption: string
     },
   ): WebviewQuestion[] {
     // ADR-0023: occurrence ordinals/counts computed over ALL questions in
@@ -390,6 +403,7 @@ export class OpenQuestionsPanel {
       groupSortKey: string
       groupLabel: string
       rootNamespace: string
+      rootCaption: string
     },
   ): WebviewQuestion {
     const draftKey = computeDraftKey(opts.containerId, q.text, ordinal)
@@ -424,6 +438,7 @@ export class OpenQuestionsPanel {
       groupSortKey: opts.groupSortKey,
       groupLabel: opts.groupLabel,
       rootNamespace: opts.rootNamespace,
+      rootCaption: opts.rootCaption,
       // ADR-0034 doctrine 9: only meaningful in tour mode (buildTourQuestions
       // overwrites tourEntry right after this call) — an already-answered
       // question is a review stop, never silence.
@@ -432,10 +447,23 @@ export class OpenQuestionsPanel {
     }
   }
 
+  /**
+   * The same per-root caption the tree shows (rootCaption.ts), computed
+   * once for the whole composite so 'git-auto' mode's majority-owner
+   * disambiguation sees every root at once, not one at a time (Gleaner's
+   * brief 2026-08-14, item 4).
+   */
+  private rootCaptions(): Map<string, string> {
+    const nodes = Array.from(this.composite.walk())
+    const mode = vscode.workspace.getConfiguration('adrManager').get<RootCaptionMode>('roots.captionMode', 'git-auto')
+    const captions = computeRootCaptions(nodes, mode)
+    return new Map(nodes.map((n, i) => [n.path, captions[i]]))
+  }
+
   /** Row-building opts for one ADR — shared between the full walk (sendQuestions) and a single resolved tour entry (buildTourRow), which only ever targets one ADR at a time. */
-  private adrRowOpts(adr: AdrFile): {
+  private adrRowOpts(adr: AdrFile, captions: Map<string, string>): {
     containerId: string; adrPath: string; checksum: string; sourceKind: 'adr'; adrNumber: number
-    adrContext: string | undefined; groupSortKey: string; groupLabel: string; rootNamespace: string
+    adrContext: string | undefined; groupSortKey: string; groupLabel: string; rootNamespace: string; rootCaption: string
   } {
     const node = this.composite.findRoot(adr.path)
     const namespace = node?.namespace ?? ''
@@ -450,6 +478,7 @@ export class OpenQuestionsPanel {
       groupSortKey: `${namespace}::0-${num}`,
       groupLabel: `ADR-${num}: ${stripAdrNumberPrefix(adr.title)}`,
       rootNamespace: namespace,
+      rootCaption: (node && captions.get(node.path)) ?? namespace,
     }
   }
 
@@ -471,6 +500,7 @@ export class OpenQuestionsPanel {
       reportButtonEnabled: cfg.get<boolean>('reportButton.enabled', false),
       // Layout surgery (2026-07-30 inbox 2020): chrome gone by default, capability kept.
       showAuthorshipField: cfg.get<boolean>('showAuthorshipField', false),
+      projectNameInHeader: cfg.get<'off' | 'auto' | 'always'>('panel.showProjectInHeader', 'auto'),
       generation: this.questionsGeneration,
     })
   }
@@ -485,9 +515,11 @@ export class OpenQuestionsPanel {
     // N=1 case: exactly one namespace, so the prefix is a no-op on display
     // order — zero conditionals needed to keep the single-root case trivial.
     const questions: WebviewQuestion[] = []
+    const captions = this.rootCaptions()
     for (const node of this.composite.walk()) {
+      const rootCaption = captions.get(node.path) ?? node.namespace
       // Document-level pause (2026-08-06 ruling): paused docs' questions never reach the walk.
-      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => isDocumentPausedStatus(adr.status) ? [] : this.buildRows(adr.questions, this.adrRowOpts(adr)))
+      const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => isDocumentPausedStatus(adr.status) ? [] : this.buildRows(adr.questions, this.adrRowOpts(adr, captions)))
 
       const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed => {
         // Gleaner 5 / ledger row 25: the raw Date field carries whatever
@@ -507,6 +539,7 @@ export class OpenQuestionsPanel {
           groupSortKey: `${node.namespace}::1-${seed.path}`,
           groupLabel: `SEED${dateStr}: ${seed.topic}`,
           rootNamespace: node.namespace,
+          rootCaption,
         })
       })
 
@@ -530,12 +563,13 @@ export class OpenQuestionsPanel {
     if (!found) return []
     const resolved = resolveTourEntries(found.tour, createRepositoryContextAdapter(this.composite))
     const rows: WebviewQuestion[] = []
+    const captions = this.rootCaptions()
     for (const entry of resolved) {
       if (entry.resolution.kind !== 'question') continue
       const row = this.buildRow(
         entry.resolution.question,
         ...this.tourEntryOrdinal(entry.resolution.adr, entry.resolution.question),
-        this.adrRowOpts(entry.resolution.adr),
+        this.adrRowOpts(entry.resolution.adr, captions),
       )
       row.tourEntry = { comment: entry.comment, disposition: entry.disposition, answerPath: entry.answerPath, mustRespond: entry.mustRespond }
       rows.push(row)
@@ -1231,12 +1265,28 @@ body{
 }
 #empty .icon{font-size:48px}
 #card{max-width:${bodyMaxWidth};margin:0 auto}
+.counter-row{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:8px;
+}
 .counter{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
   letter-spacing:.05em;
   text-transform:uppercase;
-  margin-bottom:8px;
+}
+.counter-project{
+  font-size:11px;
+  color:var(--vscode-descriptionForeground);
+  letter-spacing:.02em;
+  opacity:.75;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:50%;
 }
 .progress{
   width:100%;height:3px;
@@ -1771,7 +1821,10 @@ textarea.expanded{min-height:70vh;height:70vh}
 </div>
 
 <div id="card">
-  <div class="counter" id="counter"></div>
+  <div class="counter-row">
+    <div class="counter" id="counter"></div>
+    <div class="counter-project" id="counter-project" style="display:none"></div>
+  </div>
   <div class="progress"><div class="progress-fill" id="pbar"></div></div>
 
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
@@ -1907,6 +1960,13 @@ let questions = [], idx = 0;
 let recCollapseThreshold = 0;
 let reportButtonEnabled = false;
 let showAuthorshipField = false;
+// Gleaner's brief 2026-08-14, item 4: 'off' never shows, 'always' always
+// shows, 'auto' (default) shows only when the CURRENT question set spans
+// more than one root — computed client-side from questions[].rootCaption
+// rather than a server-sent flag, since the same session can go from N=1
+// to multi-root (or vice versa, e.g. tour mode narrowing to one root's
+// entries) without a fresh postMessage round-trip otherwise being needed.
+let projectNameMode = 'auto';
 // Insertion-preview protocol (DEBRIEF-006): the exact 'answer' message the
 // panel is waiting to resend with confirmedInsertion:true once the human
 // approves the previewed insertion point, or null when no preview is open.
@@ -2775,6 +2835,20 @@ function render() {
   } else {
     $id('counter').textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
   }
+  const counterProjectEl = $id('counter-project');
+  // rootNamespace (stable per-root identity), not rootCaption (display
+  // text that COULD coincide across two different roots depending on
+  // caption mode) — this count is "how many distinct roots," not "how
+  // many distinct-looking labels."
+  const spansMultipleRoots = new Set(questions.map(qq => qq.rootNamespace)).size > 1;
+  const showProjectName = projectNameMode === 'always' || (projectNameMode !== 'off' && spansMultipleRoots);
+  if (showProjectName && q.rootCaption) {
+    counterProjectEl.textContent = q.rootCaption;
+    counterProjectEl.style.display = '';
+  } else {
+    counterProjectEl.textContent = '';
+    counterProjectEl.style.display = 'none';
+  }
   $id('pbar').style.width = pct + '%';
   $id('adr-link').textContent = q.groupLabel;
 
@@ -2995,6 +3069,7 @@ window.addEventListener('message', e => {
     reportButtonEnabled = !!msg.reportButtonEnabled;
     $id('btn-report').style.display = reportButtonEnabled ? '' : 'none';
     showAuthorshipField = !!msg.showAuthorshipField;
+    projectNameMode = msg.projectNameInHeader || 'auto';
     if (questions.length === 0) {
       idx = 0;
     } else {

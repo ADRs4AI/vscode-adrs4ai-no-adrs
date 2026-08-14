@@ -53,6 +53,7 @@ import { resolveTourEntries, isTourDone, type TourFile, type ResolvedTourEntry }
 import { orderCategories, DEFAULT_CATEGORY_ORDER, type SidebarCategory } from './categoryOrder'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import { stringifyCommandArg } from './commandArgDisplay'
+import { computeRootCaptions, type RootCaptionMode } from './rootCaption'
 
 // ---------------------------------------------------------------------------
 // Tree item types
@@ -75,6 +76,8 @@ type AdrTreeItemOpts = {
   collapsibleState?: vscode.TreeItemCollapsibleState;
   rootNode?: RootNode;
   pathFragment?: string;
+  /** Gleaner's brief 2026-08-14, item A: computed by the caller (getRootItems has the whole discovered-roots list a mode like 'git-auto' needs for owner-majority disambiguation) via computeRootCaptions, and passed in already-resolved. Falls back to rootNode.namespace when absent — same "identity-only reconstruction doesn't need the real thing" reasoning as seedAxis1State below. */
+  rootCaption?: string;
   /** ADR-0041 axis-1: computed by the caller (getSeedGroupChildren has the repo-wide seed list a per-item classification needs — median activity age, closed-family status) and passed in already-classified. */
   seedAxis1State?: SeedAxis1State;
   /** ADR-0041 axis-2: computed by the caller (needs an ADR-status lookup this class doesn't own) via computeSeedRollup. undefined when the seed isn't chunked — rollup doesn't apply, not "no progress". */
@@ -113,6 +116,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     rootNode: RootNode;
     pathFragment: string;
     openCount: number;
+    rootCaption?: string;
   });
   constructor(opts: {
     kind: 'adr';
@@ -183,6 +187,7 @@ export class AdrTreeItem extends vscode.TreeItem {
     collapsibleState?: vscode.TreeItemCollapsibleState;
     rootNode?: RootNode;
     pathFragment?: string;
+    rootCaption?: string;
     seedAxis1State?: SeedAxis1State;
     seedRollup?: SeedRollup;
   }) {
@@ -307,7 +312,7 @@ export class AdrTreeItem extends vscode.TreeItem {
 
   private static makeLabel(opts: AdrTreeItemOpts): string {
     if (opts.kind === 'root' && opts.rootNode) {
-      return opts.rootNode.namespace
+      return opts.rootCaption ?? opts.rootNode.namespace
     }
     if (opts.kind === 'adr' && opts.adr) {
       // Defensive guard: seeds should not reach the ADR tree (they're excluded by
@@ -781,10 +786,13 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     if (nodes.length <= 1) return this.getContainerChildren(nodes[0] ?? this.composite.root)
 
     const workspaceRoot = this.composite.root.path
-    return nodes.map(node => new AdrTreeItem({
+    const captionMode = vscode.workspace.getConfiguration('adrManager').get<RootCaptionMode>('roots.captionMode', 'git-auto')
+    const captions = computeRootCaptions(nodes, captionMode)
+    return nodes.map((node, i) => new AdrTreeItem({
       kind: 'root',
       rootNode: node,
       pathFragment: pathFragmentFor(node, workspaceRoot),
+      rootCaption: captions[i],
       openCount: this.openQuestionCountFor(node),
     }))
   }
