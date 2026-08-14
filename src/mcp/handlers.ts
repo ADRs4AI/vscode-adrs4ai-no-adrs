@@ -24,7 +24,7 @@ import {
   resolveAdrByRef,
   type RefError,
 } from './reference'
-import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution } from './writeOps'
+import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution, applyBatch as applyBatchOp, type BatchOperation } from './writeOps'
 import { getCached, recordSuccess } from './dedupe'
 import { withPathLock } from './pathLock'
 import { appendLedgerRecord, captureDocument } from '../drafts/errorLog'
@@ -561,6 +561,55 @@ export async function updateResolution(
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Updated resolution for ${adrRefString(resolved.adr)} to '${resolution}'\n${result.diff}`
     recordSuccess('update_resolution', options.clientMsgId, confirmation)
+    return confirmation
+  })
+}
+
+export interface ApplyBatchOptions {
+  clientMsgId?: string
+  attempt?: number
+}
+
+/**
+ * apply_batch — ADR-0021 Iteration 8's batch-mutation QST, answered
+ * 2026-08-14. Runs each operation in `operations` against ONE adr_ref, in
+ * order, atomically: parse once (implicitly, via the first operation),
+ * write once, only if every operation succeeded. Author validation for
+ * `answer_question`/`add_recommendation` operations happens HERE, before
+ * the path lock or any read — same "fail fast, never touch disk on a
+ * validation error" discipline the single-op tools already have, since
+ * `writeOps.ts`'s pure functions don't validate author themselves (that's
+ * always been this file's job, not theirs).
+ */
+export async function applyBatch(
+  ctx: RepositoryContext,
+  adrRef: string,
+  operations: BatchOperation[],
+  options: ApplyBatchOptions = {},
+): Promise<string> {
+  if (operations.length === 0) {
+    return 'error: empty_batch\nmessage: apply_batch requires at least one operation.'
+  }
+  for (const [i, op] of operations.entries()) {
+    if ((op.tool === 'answer_question' || op.tool === 'add_recommendation') && !op.author?.trim()) {
+      return `error: missing_author\nmessage: operation ${i + 1}/${operations.length} ("${op.tool}") requires an explicit author (a specific model slug, never "AI") — no default is configured.`
+    }
+  }
+
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  return withPathLock(resolved.adr.path, async () => {
+    const cached = getCached('apply_batch', options.clientMsgId)
+    if (cached !== undefined) return cached
+
+    const currentContent = await ctx.readFile(resolved.adr.path)
+    const result = applyBatchOp(currentContent, resolved.adr.path, operations)
+    if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+    await ctx.writeFile(resolved.adr.path, result.newContent)
+    const confirmation = `Applied ${operations.length} operation(s) to ${adrRefString(resolved.adr)}\n${result.diff}`
+    recordSuccess('apply_batch', options.clientMsgId, confirmation)
     return confirmation
   })
 }

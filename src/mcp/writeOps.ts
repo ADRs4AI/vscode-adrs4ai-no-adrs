@@ -359,3 +359,92 @@ export function applyUpdateResolution(
 
   return { ok: true, newContent, diff: `+ ${newFieldLines.join('\\n')}` }
 }
+
+// ---------------------------------------------------------------------------
+// apply_batch — ADR-0021 Iteration 8's QST (batch-mutation-tool), answered
+// 2026-08-14 after 19 days unratified (Touchstone 4.7's grand re-read
+// confirmed every mechanical precondition had shipped independently;
+// Midden 5's status nudge caught it aging further with nothing blocking
+// it). Riddle's real editing unit is routinely several related mutations
+// landed together (a status flip + a superseding recommendation + an
+// iteration append, one commit) — no single existing tool models that, so
+// it was hand-rolled 21 times via Bash-executed Python, in violation of
+// this project's own CLAUDE.md ban on inline-script workflows.
+// ---------------------------------------------------------------------------
+
+export type BatchOperation =
+  | { tool: 'answer_question'; questionId: string; answerText: string; author: string }
+  | { tool: 'add_recommendation'; questionId: string; author: string; text: string; date: string }
+  | { tool: 'append_iteration'; human?: string; ai?: string; outcome?: string; date: string }
+  | { tool: 'update_resolution'; resolution: string; note?: string }
+
+/**
+ * Applies each operation in sequence, threading the previous operation's
+ * output content into the next. A thin wrapper, not a new mutation
+ * primitive — each step calls the SAME `apply*` function the single-op
+ * tools call, so there is exactly one write-safe extent algorithm per
+ * operation kind, not a second copy for the batch path.
+ *
+ * Revises the 2026-07-26 design sketch on one point, after re-deriving the
+ * mechanics rather than re-implementing the original text unexamined: that
+ * sketch proposed running ONE combined `verifyNoCollateralQuestionChanges`
+ * check at the very end instead of one per operation, worried that an
+ * intermediate state could fail fidelity when the final state wouldn't.
+ * Each `apply*` function already re-parses its OWN input as its "before"
+ * snapshot (never the batch's original content) — so per-operation checks
+ * are already INCREMENTAL, each asking only "did anything unexpected
+ * change relative to what I started with." Chaining them composes
+ * correctly by construction: no false rejection exists for a batch where
+ * each step legitimately changes only what it declares. Suppressing the
+ * per-op checks in favor of one at the end would only make root-causing a
+ * batch failure harder (which operation, of N, actually went wrong),
+ * for no compensating correctness benefit — so this keeps all N checks,
+ * simpler than the original sketch, not a compromise on it.
+ *
+ * Atomic by construction: this function returns a single WriteResult:
+ * ok:true only if every operation in the list succeeded against the
+ * accumulating buffer. If any operation fails, the function returns
+ * immediately with that operation's error and its index — nothing from
+ * this call is ever written to disk (handlers.ts writes once, only on
+ * ok:true, exactly as with every other write tool).
+ */
+export function applyBatch(
+  currentContent: string,
+  adrPath: string,
+  operations: BatchOperation[],
+): WriteResult & { diffs?: string[] } {
+  if (operations.length === 0) {
+    return { ok: false, error: 'apply_batch requires at least one operation — an empty batch has nothing to apply.' }
+  }
+
+  let content = currentContent
+  const diffs: string[] = []
+
+  for (let i = 0; i < operations.length; i++) {
+    const op = operations[i]
+    let result: WriteResult
+
+    switch (op.tool) {
+      case 'answer_question':
+        result = applyAnswerQuestion(content, adrPath, op.questionId, op.answerText, op.author)
+        break
+      case 'add_recommendation':
+        result = applyAddRecommendation(content, adrPath, op.questionId, op.author, op.text, op.date)
+        break
+      case 'append_iteration':
+        result = applyAppendIteration(content, adrPath, { human: op.human, ai: op.ai, outcome: op.outcome, date: op.date })
+        break
+      case 'update_resolution':
+        result = applyUpdateResolution(content, adrPath, op.resolution, op.note)
+        break
+    }
+
+    if (!result.ok) {
+      return { ok: false, error: `operation ${i + 1}/${operations.length} (${op.tool}) failed: ${result.error}\nNothing from this batch was written — it fails atomically, same as every operation applying alone.` }
+    }
+    content = result.newContent
+    diffs.push(`--- operation ${i + 1}/${operations.length} (${op.tool}) ---\n${result.diff}`)
+  }
+
+  return { ok: true, newContent: content, diff: diffs.join('\n'), diffs }
+}

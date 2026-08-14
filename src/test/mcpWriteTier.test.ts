@@ -13,8 +13,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createHash } from 'crypto'
 import type { RepositoryContext } from '../mcp/repositoryContext'
-import { answerQuestion, addRecommendation, appendIteration, updateResolution } from '../mcp/handlers'
-import { verifyNoCollateralQuestionChanges } from '../mcp/writeOps'
+import { answerQuestion, addRecommendation, appendIteration, updateResolution, applyBatch } from '../mcp/handlers'
+import { verifyNoCollateralQuestionChanges, type BatchOperation } from '../mcp/writeOps'
 import { parseAdr } from '../parser/extractor'
 import { _resetDedupeCacheForTests } from '../mcp/dedupe'
 
@@ -295,6 +295,145 @@ describe('updateResolution', () => {
     const result = await updateResolution(ctx, '1', 'maybe')
     expect(result).toContain('error: invalid_resolution')
     expect(writeCount()).toBe(0)
+  })
+})
+
+// ADR-0021's batch-mutation QST, answered 2026-08-14 (19 days after the
+// 2026-07-26 design sketch, per Touchstone 4.7's re-read + Midden 5's
+// status nudge — every mechanical precondition had shipped independently
+// and nothing needed a Riddle ruling first). Real editing unit: several
+// related mutations landed together in one commit, the shape Riddle
+// hand-rolled 21 times via Bash-executed Python.
+describe('applyBatch', () => {
+  const TWO_QUESTION_ADR_PATH = '/fake/docs/adr/0002-two-question-decision.md'
+  const TWO_QUESTION_FIXTURE2 = `# ADR-0002: Two Question Decision
+
+- **Date**: 2026-01-01
+- **Iteration**: 1
+- **Status**: Draft
+- **Deciders**: Jérémie Lumbroso
+
+---
+
+## Questions
+
+### QST: What is the scope?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+### QST: What is the deploy target?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+---
+
+## Iterations
+
+### Iteration 1 (2026-01-01)
+- Human: Started.
+- AI: Drafted.
+- Outcome: Draft created.
+
+---
+
+## Links
+`
+
+  function makeTwoQuestionContext() {
+    const files = new Map<string, string>([[TWO_QUESTION_ADR_PATH, TWO_QUESTION_FIXTURE2]])
+    let writes = 0
+    const ctx: RepositoryContext = {
+      listAdrs: () => [...files.entries()].map(([p, c]) => parseAdr(c, p)),
+      getAdr: (ref: string) => {
+        const num = parseInt(ref.replace(/^adr:/, ''), 10)
+        const entry = [...files.entries()].find(([p, c]) => parseAdr(c, p).number === num)
+        return entry ? parseAdr(entry[1], entry[0]) : undefined
+      },
+      listSeeds: () => [],
+      getSeed: () => undefined,
+      readFile: async (p: string) => {
+        const c = files.get(p)
+        if (c === undefined) throw new Error(`mock context: no such file ${p}`)
+        return c
+      },
+      writeFile: async (p: string, c: string) => { files.set(p, c); writes += 1 },
+      listFiles: async () => [...files.keys()],
+    }
+    return { ctx, files, writeCount: () => writes }
+  }
+
+  it('applies answer_question + add_recommendation + append_iteration in one atomic write — Riddle\'s real editing unit', async () => {
+    const { ctx, files, writeCount } = makeTwoQuestionContext()
+    const operations: BatchOperation[] = [
+      { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: 'Relay 5' },
+      { tool: 'add_recommendation', questionId: 'adr-0002-qst-what-is-the-deploy-target', author: 'Relay 5', text: 'Fly.io, given the SQLite choice.', date: '2026-08-14' },
+      { tool: 'append_iteration', human: 'Reviewed the batch.', ai: 'Answered scope, recommended deploy target.', outcome: 'Both landed in one commit.', date: '2026-08-14' },
+    ]
+    const result = await applyBatch(ctx, '2', operations)
+    expect(result).toContain('Applied 3 operation(s) to adr:0002')
+    expect(writeCount()).toBe(1) // one write for the whole batch, not three
+
+    const content = files.get(TWO_QUESTION_ADR_PATH)!
+    expect(content).toContain('SQLite for now.')
+    expect(content).toContain('Fly.io, given the SQLite choice.')
+    expect(content).toContain('### Iteration 2 (2026-08-14)')
+    expect(content).toContain('Reviewed the batch.')
+  })
+
+  it('fails atomically: if the second operation fails, NOTHING from the batch is written, including the first (valid) operation', async () => {
+    const { ctx, files, writeCount } = makeTwoQuestionContext()
+    const operations: BatchOperation[] = [
+      { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: 'Relay 5' },
+      { tool: 'answer_question', questionId: 'adr-0002-qst-does-not-exist', answerText: 'irrelevant', author: 'Relay 5' },
+    ]
+    const result = await applyBatch(ctx, '2', operations)
+    expect(result).toContain('error: write_failed')
+    expect(result).toContain('operation 2/2 (answer_question) failed')
+    expect(writeCount()).toBe(0)
+    // The first operation's change must NOT be present -- all or nothing.
+    expect(files.get(TWO_QUESTION_ADR_PATH)).not.toContain('SQLite for now.')
+    expect(files.get(TWO_QUESTION_ADR_PATH)).toBe(TWO_QUESTION_FIXTURE2)
+  })
+
+  it('validates author for answer_question/add_recommendation operations BEFORE touching disk, same discipline as the single-op tools', async () => {
+    const { ctx, writeCount } = makeTwoQuestionContext()
+    const operations: BatchOperation[] = [
+      { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: '' },
+    ]
+    const result = await applyBatch(ctx, '2', operations)
+    expect(result).toContain('error: missing_author')
+    expect(writeCount()).toBe(0)
+  })
+
+  it('rejects an empty operations array rather than silently no-op-ing', async () => {
+    const { ctx, writeCount } = makeTwoQuestionContext()
+    const result = await applyBatch(ctx, '2', [])
+    expect(result).toContain('error: empty_batch')
+    expect(writeCount()).toBe(0)
+  })
+
+  it('a batch of one operation behaves the same as calling that tool directly', async () => {
+    const { ctx, files } = makeTwoQuestionContext()
+    const result = await applyBatch(ctx, '2', [
+      { tool: 'update_resolution', resolution: 'consensus' },
+    ])
+    expect(result).toContain('Applied 1 operation(s)')
+    expect(files.get(TWO_QUESTION_ADR_PATH)).toContain('- **Resolution**: consensus')
+  })
+
+  it('supports client_msg_id dedup, same contract as every other write tool', async () => {
+    const { ctx, writeCount } = makeTwoQuestionContext()
+    const operations: BatchOperation[] = [
+      { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: 'Relay 5' },
+    ]
+    const first = await applyBatch(ctx, '2', operations, { clientMsgId: 'batch-1' })
+    const second = await applyBatch(ctx, '2', operations, { clientMsgId: 'batch-1' })
+    expect(second).toBe(first)
+    expect(writeCount()).toBe(1) // the retry did not re-apply
   })
 })
 

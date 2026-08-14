@@ -35,6 +35,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { CompositeIndex } from '../index/compositeIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
+import type { BatchOperation } from './writeOps'
 import {
   projectOverview,
   lookup,
@@ -45,6 +46,7 @@ import {
   addRecommendation,
   appendIteration,
   updateResolution,
+  applyBatch,
   reportObservation,
 } from './handlers'
 
@@ -225,6 +227,40 @@ async function main() {
       },
     },
     async ({ adr_ref, resolution, note }) => text(await updateResolution(ctx(), adr_ref, resolution, note)),
+  )
+
+  const batchOperationSchema = z.discriminatedUnion('tool', [
+    z.object({ tool: z.literal('answer_question'), question_id: z.string(), answer_text: z.string(), author: z.string() }),
+    z.object({ tool: z.literal('add_recommendation'), question_id: z.string(), author: z.string(), text: z.string(), date: z.string() }),
+    z.object({ tool: z.literal('append_iteration'), human: z.string().optional(), ai: z.string().optional(), outcome: z.string().optional(), date: z.string() }),
+    z.object({ tool: z.literal('update_resolution'), resolution: z.enum(['consensus', 'fiat', 'unresolved', 'forked', 'contested']), note: z.string().optional() }),
+  ])
+
+  server.registerTool(
+    'apply_batch',
+    {
+      description: 'Apply several related mutations to ONE ADR atomically, in order — a status flip + a superseding recommendation + an iteration append, one write. Each operation is the same shape as its single-op tool (answer_question/add_recommendation/append_iteration/update_resolution), tagged by "tool". If any operation fails, nothing in the batch is written. Not a general scripting surface — no loops or conditionals, just an ordered list.',
+      inputSchema: {
+        adr_ref: z.string(),
+        operations: z.array(batchOperationSchema),
+        client_msg_id: z.string().optional(),
+      },
+    },
+    async ({ adr_ref, operations, client_msg_id }) => {
+      const mapped: BatchOperation[] = operations.map((op) => {
+        switch (op.tool) {
+          case 'answer_question':
+            return { tool: 'answer_question', questionId: op.question_id, answerText: op.answer_text, author: op.author }
+          case 'add_recommendation':
+            return { tool: 'add_recommendation', questionId: op.question_id, author: op.author, text: op.text, date: op.date }
+          case 'append_iteration':
+            return { tool: 'append_iteration', human: op.human, ai: op.ai, outcome: op.outcome, date: op.date }
+          case 'update_resolution':
+            return { tool: 'update_resolution', resolution: op.resolution, note: op.note }
+        }
+      })
+      return text(await applyBatch(ctx(), adr_ref, mapped, { clientMsgId: client_msg_id }))
+    },
   )
 
   server.registerTool(
