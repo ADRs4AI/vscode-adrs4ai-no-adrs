@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.79] - 2026-08-14
+
+### Fixed
+- **Tree-wide Report on a root item no longer vanishes with zero trace.** A reported root tree item could silently no-op — no confirmation, no ledger entry, no error — leaving nothing to diagnose. It now logs unconditionally to the "ADR Manager" output channel whenever the report can't be anchored or something throws, so the next occurrence is diagnosable instead of a second silent void.
+
 ## [0.7.78] - 2026-08-13
 
 ### Fixed
