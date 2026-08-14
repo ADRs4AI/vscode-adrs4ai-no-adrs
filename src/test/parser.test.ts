@@ -1619,7 +1619,12 @@ Just prose, no structured questions.
     const parsed = parseSeed(content, resolve(ADR_ROOT, 'seed-2026-07-12-epistemic-programming-lane-doctrine.md'))
     expect(parsed.questions).toHaveLength(1)
     expect(parsed.questions[0].text).toBe('Does "epistemic programming" become the project\'s public term of art?')
-    expect(parsed.questions[0].isAnswered).toBe(false)
+    // Ground-truth fixtures track the LIVE file: the seed's QST was answered
+    // in 5dd7d58 (2026-08-14), so answered-ness flipped — the extraction
+    // claim this test guards (a QST under "## Lineage" in a dictation-shaped
+    // seed is FOUND at all) is unchanged. Calibrated by Riddle, flagged by
+    // Flint's completion brief; stale-fixture-vs-reality, not a regression.
+    expect(parsed.questions[0].isAnswered).toBe(true)
   })
 
   // Real specimen (Lapidary's dispatch item 2, 2026-07-12): a seed with
