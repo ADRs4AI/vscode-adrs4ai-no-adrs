@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.80] - 2026-08-14
+
+### Fixed
+- **Tree-wide Report no longer crashes on any open question** (root cause of the 0.7.79 silent failure). Reporting used to throw "Converting circular structure to JSON" the moment its full-tree snapshot reached an open question anywhere — not just root items — because a question's default click-target embeds a live reference to itself. The diagnostic snapshot now degrades gracefully instead of crashing.
+
 ## [0.7.79] - 2026-08-14
 
 ### Fixed
