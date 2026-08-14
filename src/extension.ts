@@ -123,6 +123,14 @@ let treeView: vscode.TreeView<AdrTreeItem> | undefined;
  * is a one-time subscription against the node instances live at call time.
  */
 let badgeSubscription: (() => void) | undefined;
+/**
+ * Module-scoped so failure-soft catch blocks outside activate() (e.g.
+ * reportTreeItem) can log diagnosably instead of swallowing silently.
+ * Gleaner's brief 2026-08-14: a root-item Report vanished with zero trace
+ * — no toast, no ledger write, no error — because the catch around it had
+ * nothing to log to from outside activate()'s own local scope.
+ */
+let outputChannel: vscode.OutputChannel | undefined;
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -138,9 +146,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // version from the *installed* manifest, not a hardcoded string, so it's
   // always the true running version, not what's merely in the repo.
   const runningVersion: string = context.extension.packageJSON.version ?? 'unknown';
-  const outputChannel = vscode.window.createOutputChannel('ADR Manager');
-  context.subscriptions.push(outputChannel);
-  outputChannel.appendLine(`ADR Manager v${runningVersion} activated at ${new Date().toISOString()}`);
+  const oc = vscode.window.createOutputChannel('ADR Manager');
+  outputChannel = oc;
+  context.subscriptions.push(oc);
+  oc.appendLine(`ADR Manager v${runningVersion} activated at ${new Date().toISOString()}`);
 
   // ── Root discovery + per-root watchers (ADR-0025, "GO on fromWorkspace") ──
   // No workspace open: fall back to an empty single wrapped root rather than
@@ -152,7 +161,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       workspaceRoot,
       { adrDirRel: adrDir },
       context,
-      (event, node) => outputChannel.appendLine(`[${event}] ${node.namespace} (${node.path})`),
+      (event, node) => oc.appendLine(`[${event}] ${node.namespace} (${node.path})`),
       refreshed => { compositeIndex = refreshed; onCompositeRefreshed(diagnosticCollection); },
     );
     compositeIndex = watcherLifecycle.composite;
@@ -258,7 +267,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.window.showInformationMessage(
         `ADR Manager v${runningVersion} — adrManager.reportButton.enabled resolves to ${reportButtonEnabled}`,
       );
-      outputChannel.show();
+      oc.show();
     }),
 
     // Founder-flagged distribution gap (Lapidary's 2026-08-14 triple
@@ -293,9 +302,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         'Show details',
       );
       if (choice === 'Show details') {
-        outputChannel.appendLine(`[MCP] Server binary: ${serverPath}`);
-        outputChannel.appendLine(`[MCP] Suggested .mcp.json entry:\n${snippet}`);
-        outputChannel.show();
+        oc.appendLine(`[MCP] Server binary: ${serverPath}`);
+        oc.appendLine(`[MCP] Suggested .mcp.json entry:\n${snippet}`);
+        oc.show();
       }
     }),
 
@@ -1513,7 +1522,16 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
   try {
     const filePath = resolveReportFilePath(item);
     const anchorPath = resolveReportAnchorPath(item, filePath);
-    if (!anchorPath) return;
+    if (!anchorPath) {
+      // Gleaner's brief 2026-08-14: this was the exact "silently eats
+      // itself" symptom — no anchor meant no ledger write and no toast,
+      // with nothing left behind to diagnose it by. Log unconditionally so
+      // the next occurrence has a trail, even though we still don't show
+      // the user a toast here (a report that can't be anchored yet isn't
+      // an error the user caused).
+      outputChannel?.appendLine(`[report] no anchor path for item kind=${item.kind} id=${item.id ?? '(no id)'} — report dropped`);
+      return;
+    }
 
     const doc = filePath ? captureDocument(filePath) : undefined;
     const openQuestions = filePath
@@ -1538,8 +1556,14 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
       documents: doc && filePath ? { [filePath]: doc } : undefined,
     });
     vscode.window.setStatusBarMessage('ADR Manager: Tree item reported.', 3000);
-  } catch {
-    /* failure-soft: reporting a problem must never itself become one */
+  } catch (err) {
+    // failure-soft: reporting a problem must never itself become one — but
+    // "never itself become one" doesn't mean "leave zero trace." Gleaner's
+    // brief 2026-08-14: a root-item report vanished (no toast, no ledger
+    // write, no error) and was unrecoverable from outside a debugger. Log
+    // unconditionally, still no toast — a report failing is not something
+    // to interrupt the user's flow over, but it must be diagnosable.
+    outputChannel?.appendLine(`[report] reportTreeItem threw for item kind=${item?.kind ?? '(unknown)'} id=${item?.id ?? '(no id)'}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
   }
 }
 

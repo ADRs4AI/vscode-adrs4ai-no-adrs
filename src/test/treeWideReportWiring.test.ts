@@ -122,7 +122,35 @@ describe('extension.ts: reportTreeItem — same UX discipline as the panel Repor
   })
 
   it('is failure-soft: wrapped so a capture failure never breaks the tree view', () => {
-    expect(fn).toMatch(/catch \{[\s\S]*?reporting a problem must never itself become one/)
+    expect(fn).toMatch(/catch \(err\) \{[\s\S]*?reporting a problem must never itself become one/)
+  })
+
+  // Regression tests (fixes real bug, Gleaner's brief 2026-08-14, docs/inbox/
+  // 2026-08-14-gleaner-to-fitter-treeview-report-silent-failure-on-root-
+  // items.md): a root-item Report vanished with zero trace — no toast, no
+  // ledger write, no error, live-reproduced with Jérémie on a real
+  // subproject root. Gleaner's own minimum-viable fix: log unconditionally
+  // (still no toast — a dropped report isn't a user-caused error) so the
+  // next occurrence is diagnosable instead of a second silent void.
+  it('an unresolved anchor path is now logged before the silent early return, not just dropped', () => {
+    expect(fn).toMatch(/if \(!anchorPath\) \{[\s\S]*?outputChannel\?\.appendLine\([\s\S]*?return;\s*\}/)
+  })
+
+  it('a thrown error in the try block is now logged to the output channel, not just swallowed', () => {
+    const catchBlock = fn.match(/\} catch \(err\) \{[\s\S]*?\n  \}\n\}/)![0]
+    expect(catchBlock).toContain('outputChannel?.appendLine(')
+    expect(catchBlock).toContain('err instanceof Error')
+  })
+})
+
+describe('extension.ts: outputChannel is module-scoped so failure-soft code outside activate() can log (Gleaner\'s brief, 2026-08-14)', () => {
+  it('declared at module scope, not local to activate()', () => {
+    expect(EXT_SRC).toContain('let outputChannel: vscode.OutputChannel | undefined;')
+  })
+
+  it('assigned inside activate() from a definitely-assigned local, so existing in-activate call sites stay type-safe', () => {
+    expect(EXT_SRC).toContain('const oc = vscode.window.createOutputChannel(\'ADR Manager\');')
+    expect(EXT_SRC).toContain('outputChannel = oc;')
   })
 })
 
