@@ -41,6 +41,9 @@ artifacts:
   docs/inbox/INBOX-PROTOCOL.md:
     class: stencil
 
+  scripts/tmux/seat.conf:
+    class: stencil     # load-bearing for `just launch` TODAY (Grafter's hard-fail specimen, 2026-08-14: a missing copy broke Jérémie's launch; this row makes that failure class self-healing via missing-local → create); retires to pneumatic's external row when the package absorbs tmux config — Understudy's scope-call, minor bump on its day
+
 renames:                    # canonical facts (git log --diff-filter=R v3.8.0..v3.9.1)
   "3.9.0":
     docs/adr/templates/template.md: docs/adr/templates/adr-madr.md
