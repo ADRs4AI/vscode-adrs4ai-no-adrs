@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.85] - 2026-08-15
+
+### Changed
+- **New extension icon: the scale** (`scale-only-amber`, by Caliper, brand-studio). Chosen by Jérémie over three pinion variants after live A/B on the activity bar: "the scale, as deliberation, is a powerful metaphor alone" — amber for the Marketplace tile, `currentColor` outline on the activity bar, legible at every size, beautiful without a badge and still clear with one. The documents icon retires; deliberation is the brand, files are just where it lives.
+
 ## [0.7.81] - 2026-08-14
 
 ### Added

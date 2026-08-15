@@ -1,23 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Candidate ActivityBar icon (theme-aware, currentColor) — "the scale"
-       direction per Jérémie's founder ruling (2026-08-13): abstract/minimal
-       on purpose at this size, per Lapidary's mitigation note (avoid a hard
-       "legal software" read) — the document-vs-question-mark detail lives
-       in the 128px marketplace variant instead, where it can actually
-       render. This file is a candidate, not yet the shipped icon; the
-       original document glyph (adr-icon.svg) stays live until a pick is made. -->
-  <!-- Post -->
-  <path d="M8 3v10" stroke-width="1.2"/>
-  <!-- Base -->
-  <path d="M5.5 13h5" stroke-width="1.2"/>
-  <!-- Beam -->
-  <path d="M2 4.5h12" stroke-width="1.2"/>
-  <!-- Pivot -->
-  <circle cx="8" cy="4.5" r="0.6" fill="currentColor" stroke="none"/>
-  <!-- Chains -->
-  <path d="M2 4.5v3.3" stroke-width="0.8"/>
-  <path d="M14 4.5v3.3" stroke-width="0.8"/>
-  <!-- Pans (shallow bowls, in balance — neither side lower) -->
-  <path d="M0 7.8q2 2 4 0" stroke-width="1"/>
-  <path d="M12 7.8q2 2 4 0" stroke-width="1"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="512" height="512" viewBox="135 170 754 754"
+     color="#D97706"
+     role="img" aria-labelledby="title desc"
+     shape-rendering="geometricPrecision">
+  <title id="title">Deliberative scale — dark side down — no document, full frame</title>
+  <desc id="desc">The scale alone, enlarged to fill the frame. Same geometry as the pinion pictogram's instrument. Default color: project amber via root color attribute; externally tintable.</desc>
+
+  <!-- The perfect scale, enlarged to fill the frame (strokes thicken with the transform) -->
+  <g transform="translate(512 547) scale(1.62) translate(-512 -547)">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 360.83 443.38 L 465.86 422.97
+               M 558.14 405.03 L 663.17 384.62" stroke-width="26"/>
+      <path d="M 360.83 443.38 L 296.83 589.38
+               M 360.83 443.38 L 424.83 589.38"
+            stroke-width="20"/>
+      <path d="M 663.17 384.62 L 599.17 530.62
+               M 663.17 384.62 L 727.17 530.62"
+            stroke-width="20"/>
+    </g>
+    <path d="M 286.83 588.38 H 434.83 C 432.83 630.38, 401.83 663.38, 360.83 663.38 C 319.83 663.38, 288.83 630.38, 286.83 588.38 Z" fill="currentColor"/>
+    <path d="M 589.17 529.62 H 737.17 C 735.17 571.62, 704.17 604.62, 663.17 604.62 C 622.17 604.62, 591.17 571.62, 589.17 529.62 Z M 608.17 549.62 H 718.17 C 712.17 571.62, 690.17 588.62, 663.17 588.62 C 636.17 588.62, 614.17 571.62, 608.17 549.62 Z" fill="currentColor" fill-rule="evenodd"/>
+    <path d="M 498 462 H 526 V 694 H 498 Z" fill="currentColor"/>
+    <path d="M 452 682 H 572 C 580 682 586 688 586 696 V 706 H 596
+             C 604 706 610 712 610 720 V 734 H 414 V 720
+             C 414 712 420 706 428 706 H 438 V 696
+             C 438 688 444 682 452 682 Z" fill="currentColor"/>
+    <path d="M 496.88 377.51 L 501 372.95 L 501.51 360.01 L 522.49 360.01 L 523 372.95 L 527.12 377.51 L 527.12 377.51 L 533.25 377.19 L 542.76 368.4 L 557.6 383.24 L 548.81 392.75 L 548.49 398.88 L 548.49 398.88 L 553.05 403 L 565.99 403.51 L 565.99 424.49 L 553.05 425 L 548.49 429.12 L 548.49 429.12 L 548.81 435.25 L 557.6 444.76 L 542.76 459.6 L 533.25 450.81 L 527.12 450.49 L 527.12 450.49 L 523 455.05 L 522.49 467.99 L 501.51 467.99 L 501 455.05 L 496.88 450.49 L 496.88 450.49 L 490.75 450.81 L 481.24 459.6 L 466.4 444.76 L 475.19 435.25 L 475.51 429.12 L 475.51 429.12 L 470.95 425 L 458.01 424.49 L 458.01 403.51 L 470.95 403 L 475.51 398.88 L 475.51 398.88 L 475.19 392.75 L 466.4 383.24 L 481.24 368.4 L 490.75 377.19 L 496.88 377.51 Z M 538 414 A 26 26 0 1 0 486 414 A 26 26 0 1 0 538 414 Z"
+          fill="currentColor" fill-rule="evenodd"
+          stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+    <circle cx="512" cy="414" r="14" fill="currentColor"/>
+  </g>
 </svg>
