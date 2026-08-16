@@ -16,10 +16,38 @@ import type { AdrFile, AdrSection, Question, SeedFile } from '../parser/types'
 import type { RepositoryContext } from './repositoryContext'
 import { parseDeepLinkRef } from '../deeplink/protocol'
 
+/**
+ * The document a question lives in. A question has exactly ONE container —
+ * modelled as a discriminated union rather than two optional fields so the
+ * both-set and neither-set states are unrepresentable.
+ *
+ * ADR-0034 Iteration 12: doctrine 4 ("homogeneous over both containers...
+ * stated explicitly because omission is the easy failure") was implemented
+ * everywhere except here. `ResolvedQuestion` carried a required `adr`, so a
+ * seed question could not be expressed at all, so the resolver returned the
+ * whole seed, so every consumer keying on `kind === 'question'` silently
+ * dropped it. Widening this type is the repair; the compiler then forces each
+ * consumer to say what it does with a seed-borne question, which is exactly
+ * the discovery a `kind: 'seed-question'` variant would NOT have forced.
+ */
+export type QuestionContainer =
+  | { kind: 'adr'; adr: AdrFile }
+  | { kind: 'seed'; seed: SeedFile }
+
 export interface ResolvedQuestion {
   kind: 'question'
-  adr: AdrFile
+  container: QuestionContainer
   question: Question
+}
+
+/** The on-disk path of whichever document a resolved question lives in. */
+export function containerPath(container: QuestionContainer): string {
+  return container.kind === 'adr' ? container.adr.path : container.seed.path
+}
+
+/** The ADR a question lives in, or undefined when it is seed-borne. For call sites that are genuinely ADR-only. */
+export function containerAdr(container: QuestionContainer): AdrFile | undefined {
+  return container.kind === 'adr' ? container.adr : undefined
 }
 
 export interface ResolvedSection {
@@ -54,9 +82,21 @@ export function adrRefString(adr: AdrFile): string {
   return `adr:${String(adr.number).padStart(4, '0')}`
 }
 
+/**
+ * The canonical `seed:<slug>` reference for a seed — slug WITHOUT the `seed-`
+ * filename prefix, matching the form every real tour and deep link uses.
+ *
+ * Fixed 2026-08-16 (found while repairing seed-question addressability): this
+ * emitted the whole basename, so it produced `seed:seed-2026-…`, which
+ * `RepositoryContext.getSeed` — matching on `seed-${slug}` — could not resolve.
+ * Every seed reference the MCP ever printed back to a model (`project_overview`
+ * rows, `lookup` headers) was therefore a reference that failed if the model
+ * used it. Round-trip is now covered by a regression test; `getSeed` also
+ * accepts the old form so refs already written down keep working.
+ */
 export function seedRefString(seed: SeedFile): string {
   const filename = seed.path.split('/').pop() ?? seed.title
-  return `seed:${filename.replace(/\.md$/, '')}`
+  return `seed:${filename.replace(/\.md$/, '').replace(/^seed-/, '')}`
 }
 
 /** Anchor-resolution precedence: override wins, slug is the fallback. */
@@ -131,7 +171,7 @@ function resolveAnchorInAdr(adr: AdrFile, anchor: string): ResolvedSection | Res
   }
 
   const question = questionByOwnSlug ?? questionViaOverride
-  if (question) return { kind: 'question', adr, question }
+  if (question) return { kind: 'question', container: { kind: 'adr', adr }, question }
   if (sectionMatch) return { kind: 'section', adr, section: sectionMatch }
 
   // No exact match — fall back to case-insensitive substring matching.
@@ -166,7 +206,7 @@ function resolveAnchorInAdr(adr: AdrFile, anchor: string): ResolvedSection | Res
   }
   if (candidates.length === 1) {
     const only = candidates[0]
-    return only.kind === 'question' ? { kind: 'question', adr, question: only.question } : { kind: 'section', adr, section: only.section }
+    return only.kind === 'question' ? { kind: 'question', container: { kind: 'adr', adr }, question: only.question } : { kind: 'section', adr, section: only.section }
   }
   return {
     kind: 'error',
@@ -253,7 +293,7 @@ export function resolveReference(ctx: RepositoryContext, rawRef: string): Resolv
   if (/^adr-\d{4}-/.test(ref)) {
     for (const adr of ctx.listAdrs()) {
       const question = adr.questions.find((q) => q.id === ref)
-      if (question) return { kind: 'question', adr, question }
+      if (question) return { kind: 'question', container: { kind: 'adr', adr }, question }
     }
     return { kind: 'error', error: 'not_found', message: `No question with id "${ref}" found in any ADR` }
   }
@@ -300,8 +340,36 @@ export function resolveReference(ctx: RepositoryContext, rawRef: string): Resolv
     if (!seed) {
       return { kind: 'error', error: 'not_found', message: `No seed matching "${parsed.seedSlug}"` }
     }
-    // Seed anchor drilling (e.g. #brain-dump into a specific thread entry) is
-    // out of scope for this pass — whole-seed resolution only.
+    // ADR-0034 Iteration 12 — the repair. This branch used to return the whole
+    // seed unconditionally with the comment "seed anchor drilling is out of
+    // scope for this pass," which made doctrine 4 a dead letter and every seed
+    // QST in the ecosystem unaddressable by tours, deep links, and MCP lookup
+    // alike. Jérémie's ruling, 2026-08-16: "All QSTs should be citable
+    // obviously."
+    //
+    // Question anchors resolve; other seed anchors (e.g. #brain-dump into a
+    // thread entry) still fall through to the whole seed, which is honest —
+    // SeedFile carries `questions` but not `sections`, so a question is the
+    // only sub-node the model can currently name.
+    if (parsed.anchor) {
+      const question = seed.questions.find((q) => q.slug === parsed.anchor)
+      if (question) return { kind: 'question', container: { kind: 'seed', seed }, question }
+      // A named-but-unmatched anchor is an ERROR, never a silent widening to
+      // the whole seed: doctrine 3 promises a visible broken-reference row,
+      // and "resolved to something bigger than you asked for" is precisely the
+      // silent-drop class this iteration exists to abolish.
+      if (/^qst-/i.test(parsed.anchor)) {
+        return {
+          kind: 'error',
+          error: 'not_found',
+          message: `No question "${parsed.anchor}" in ${seedRefString(seed)}`,
+          candidates: seed.questions.map((q) => `${seedRefString(seed)}#${q.slug}`),
+          hint: seed.questions.length
+            ? 'seed question anchors match the heading-derived slug; `@adr-anchor` overrides are not yet honoured on seeds'
+            : 'this seed has no parseable QST blocks',
+        }
+      }
+    }
     return { kind: 'seed', seed }
   }
 

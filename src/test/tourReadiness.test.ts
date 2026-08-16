@@ -75,35 +75,83 @@ function tour(entries: TourFile['entries']): TourFile {
   } as TourFile
 }
 
-describe('assessTour — the silent-drop class', () => {
-  // Specimen A, HQ's 2026-07-30 modularization tour: four seed-anchored entries,
-  // zero walkable, zero disclosed broken, and it sat as an empty walk from July
-  // 30 until Docent probed it — never reported, because a tour that renders
-  // nothing gives a human nothing to report. The panel's buildTourQuestions
-  // does `if (kind !== 'question') continue`; the ONLY defense is naming it.
-  it('reports a seed-anchored entry as dropped rather than omitting it silently', () => {
+describe('assessTour — seed questions are walkable (ADR-0034 iter-12)', () => {
+  // THE regression test for the founder's #1 problem. Specimen A, HQ's
+  // 2026-07-30 modularization tour: four seed-anchored entries, zero walkable,
+  // zero disclosed broken, sitting as an empty walk from July 30 until it was
+  // probed — never reported, because a tour that renders nothing gives a human
+  // nothing to report. Jérémie's ruling: "All QSTs should be citable obviously."
+  it('resolves a seed-anchored ref to the QUESTION, so the stop actually walks', () => {
     const resolved = resolveTourEntries(
       tour([{ ref: 'seed:2026-08-16-deployment#qst-one-region', must_respond: true }]),
       ctx(),
     )
     const a = assessTour(resolved)
 
-    expect(a.stops).toHaveLength(0)
+    expect(a.dropped).toHaveLength(0)
+    expect(a.stops).toHaveLength(1)
+    expect(a.awaiting).toBe(1)
+    expect(a.ready).toBe(true)
+    // Genuinely the question, in its seed — not the seed standing in for it.
+    const r = resolved[0].resolution
+    expect(r.kind).toBe('question')
+    if (r.kind === 'question') {
+      expect(r.question.slug).toBe('qst-one-region')
+      expect(r.container.kind).toBe('seed')
+      if (r.container.kind === 'seed') {
+        expect(r.container.seed.path).toContain('seed-2026-08-16-deployment.md')
+      }
+    }
+  })
+
+  // Doctrine 4, "homogeneous over both containers", as an executable claim: a
+  // seed question and an ADR question of equal substance must assess alike.
+  // The whole defect was that one container was silently second-class.
+  it('assesses a seed-borne stop identically to an ADR-borne one', () => {
+    const seedStop = assessTour(resolveTourEntries(
+      tour([{ ref: 'seed:2026-08-16-deployment#qst-one-region', must_respond: true, disposition: 'decide' }]),
+      ctx(),
+    ))
+    const adrStop = assessTour(resolveTourEntries(
+      tour([{ ref: 'adr:0001#qst-which-database', must_respond: true, disposition: 'decide' }]),
+      ctx(),
+    ))
+    // Both carry a recommendation, so both clear the answerability policy.
+    expect(seedStop.stops[0].assessment.policyViolation).toBe(false)
+    expect(adrStop.stops[0].assessment.policyViolation).toBe(false)
+    expect(seedStop.ready).toBe(true)
+    expect(adrStop.ready).toBe(true)
+  })
+
+  // The repair must not re-open the hole it closed: an anchor naming a question
+  // that does not exist is an ERROR (doctrine 3's visible broken-reference row),
+  // never a silent widening back to the whole seed — "resolved to something
+  // bigger than you asked for" is the exact class this iteration abolished.
+  it('errors on a seed question anchor that matches nothing, rather than widening to the seed', () => {
+    const resolved = resolveTourEntries(
+      tour([{ ref: 'seed:2026-08-16-deployment#qst-does-not-exist', must_respond: true }]),
+      ctx(),
+    )
+    expect(resolved[0].resolution.kind).toBe('error')
+    const a = assessTour(resolved)
     expect(a.dropped).toHaveLength(1)
-    expect(a.dropped[0].reason).toContain("resolved to 'seed'")
-    expect(a.dropped[0].reason).toContain('NOT WALKABLE')
+    expect(a.dropped[0].reason).toContain('qst-does-not-exist')
     expect(a.ready).toBe(false)
   })
 
-  it('names a tour with no walkable stops as an empty walk', () => {
-    const resolved = resolveTourEntries(
-      tour([{ ref: 'seed:2026-08-16-deployment#qst-one-region', must_respond: true }]),
-      ctx(),
-    )
-    expect(assessTour(resolved).hardFailures.join(' ')).toContain('zero walkable stops')
+  // A seed ref with no anchor at all is still a whole-seed reference — that is
+  // a legitimate thing to write, and it is still not a walkable STOP. The
+  // silent-drop naming has to survive for the cases that remain non-questions.
+  it('still names a non-question resolution as dropped, not walkable', () => {
+    const resolved = resolveTourEntries(tour([{ ref: 'seed:2026-08-16-deployment', must_respond: true }]), ctx())
+    const a = assessTour(resolved)
+    expect(a.stops).toHaveLength(0)
+    expect(a.dropped[0].reason).toContain("resolved to 'seed'")
+    expect(a.dropped[0].reason).toContain('NOT WALKABLE')
+    expect(a.hardFailures.join(' ')).toContain('zero walkable stops')
   })
 
-  it('still surfaces a genuinely unresolvable ref (doctrine 3 is not weakened by the new class)', () => {
+  it('still surfaces a genuinely unresolvable ref (doctrine 3 is not weakened)', () => {
     const resolved = resolveTourEntries(tour([{ ref: 'adr:0001#qst-nonexistent', must_respond: true }]), ctx())
     const a = assessTour(resolved)
     expect(a.dropped).toHaveLength(1)
@@ -187,10 +235,10 @@ describe('assessStop — thinness is measured, never enforced', () => {
   })
 
   it('returns undefined for an entry that is not a question', () => {
-    const resolved = resolveTourEntries(
-      tour([{ ref: 'seed:2026-08-16-deployment#qst-one-region', must_respond: true }]),
-      ctx(),
-    )
+    // A bare seed ref (no anchor) — still a whole-document resolution, so it is
+    // not a stop. Uses the no-anchor form deliberately: the anchored form now
+    // resolves to a question, which is the point of iter-12.
+    const resolved = resolveTourEntries(tour([{ ref: 'seed:2026-08-16-deployment', must_respond: true }]), ctx())
     expect(assessStop(resolved[0])).toBeUndefined()
   })
 })

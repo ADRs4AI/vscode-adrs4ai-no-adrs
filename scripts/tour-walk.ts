@@ -94,7 +94,16 @@ function walkTour(tour: TourFile, resolved: ResolvedTourEntry[]) {
     const claim = composeClaimLine(e)
     if (claim) console.log(`  [authored claim] ${claim}\n`)
     console.log(`  ${q.text}\n`)
-    console.log(`  (from ${path.basename(e.resolution.adr.path)} · status: ${q.statusText})\n`)
+    // Provenance, shown per stop (ADR-0034 iter-11 item 7, Jérémie's ask):
+    // "some discrete UI/UX affordance to know which ADR a QST in a tour is
+    // coming from... rather than the feeling that the QSTs are disembodied."
+    // It is also his own detection instrument — he could not spot the Parallax
+    // rewrite precisely because the stops rendered without their source. The
+    // container KIND is named too, since seed-vs-ADR is the distinction the
+    // illicit-copy class hid behind.
+    const c = e.resolution.container
+    const from = c.kind === 'adr' ? `ADR ${path.basename(c.adr.path)}` : `SEED ${path.basename(c.seed.path)}`
+    console.log(`  (from ${from} · status: ${q.statusText})\n`)
 
     const out: string[] = []
     const ctx = [q.whyAsking, q.whyDeferring ? `Why deferring: ${q.whyDeferring}` : '', q.need ? `Need: ${q.need}` : '']

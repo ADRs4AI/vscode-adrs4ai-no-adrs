@@ -30,7 +30,15 @@ describe('openQuestionsPanel.ts: rootCaption is computed once per send and threa
   it('tour mode threads the same captions map through, not a fresh recompute per row', () => {
     const fn = PANEL_SRC.match(/private buildTourQuestions\(slug: string\): WebviewQuestion\[\] \{[\s\S]*?\n  \}/)![0]
     expect(fn).toContain('const captions = this.rootCaptions()')
-    expect(fn).toContain('this.adrRowOpts(entry.resolution.adr, captions)')
+    // ADR-0034 iter-12 split this into a per-container branch (a tour stop's
+    // question may live in an ADR or a seed). The property under test is
+    // unchanged and now has to hold on BOTH arms: the one shared captions map
+    // is threaded through, never recomputed per row.
+    expect(fn).toContain('this.adrRowOpts(container.adr, captions)')
+    expect(fn).toContain('this.seedRowOpts(container.seed, captions)')
+    // "not a fresh recompute per row" stated as a check that can actually fail:
+    // rootCaptions() is called exactly once for the whole tour, not per entry.
+    expect(fn.match(/this\.rootCaptions\(\)/g)).toHaveLength(1)
   })
 })
 

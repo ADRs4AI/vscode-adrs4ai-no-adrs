@@ -14,15 +14,22 @@
  * testable.
  *
  * Deliberately NOT in scope for this module: `tour:<slug>` deep-link
- * grammar (ADR-0034 Decision point 4) and seed-anchor drilling in the
- * shared resolver (a pre-existing gap in mcp/reference.ts, not introduced
- * here) — both out of scope for the first slice, per the reference-
- * implementation register's own "explicit v2, not drifted into" discipline.
+ * grammar (ADR-0034 Decision point 4).
+ *
+ * RESOLVED 2026-08-16 (ADR-0034 Iteration 12): seed-anchor drilling, listed
+ * here as an accepted out-of-scope gap since the first slice, turned out to be
+ * the root cause of the founder's "honeypot of attention" report — it made
+ * every seed QST unwalkable, and the workaround (relocating questions into
+ * ADRs to obtain addressability) is what produced the hollow stops he saw.
+ * `mcp/reference.ts` now resolves `seed:<slug>#qst-<handle>` to the question.
+ * Noted here because this comment is the artifact that made the gap look
+ * settled: an "explicitly deferred" label is not the same as a harmless one,
+ * and nothing in the deferral recorded who would be hurt by it.
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { resolveReference, type ResolvedRef, type RefError } from '../mcp/reference'
+import { resolveReference, containerPath, type ResolvedRef, type RefError } from '../mcp/reference'
 import type { RepositoryContext } from '../mcp/repositoryContext'
 
 export interface TourAuthor {
@@ -214,7 +221,12 @@ export function referencedDocumentPaths(resolved: ResolvedTourEntry[]): string[]
   const seen = new Set<string>()
   for (const e of resolved) {
     const r = e.resolution
-    if (r.kind === 'question' || r.kind === 'section' || r.kind === 'adr') seen.add(r.adr.path)
+    // A question's own document, whichever container it lives in (ADR-0034
+    // iter-12): a seed-borne question contributes its SEED's path here, so the
+    // error-ledger and Problems surfaces attribute it to the file a human would
+    // actually open.
+    if (r.kind === 'question') seen.add(containerPath(r.container))
+    else if (r.kind === 'section' || r.kind === 'adr') seen.add(r.adr.path)
     else if (r.kind === 'seed') seen.add(r.seed.path)
   }
   return [...seen]

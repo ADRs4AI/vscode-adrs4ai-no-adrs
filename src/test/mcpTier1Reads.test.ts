@@ -281,7 +281,7 @@ describe('lookup', () => {
   it('resolves a whole seed when given a seed: reference', () => {
     const seedCtx = makeContext([], [makeSeed()])
     const result = lookup(seedCtx, 'seed:2026-07-05-async-question-queue')
-    expect(result).toContain('[seed:seed-2026-07-05-async-question-queue]')
+    expect(result).toContain('[seed:2026-07-05-async-question-queue]')
     expect(result).toContain('What if questions could exist outside any ADR?')
   })
 

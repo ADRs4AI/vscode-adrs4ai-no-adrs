@@ -21,6 +21,7 @@
 
 import * as vscode from 'vscode'
 import { detectDeepLinks } from '../deeplink/linkDetection'
+import { containerPath } from '../mcp/reference'
 import type { ResolvedRef, RefError } from '../mcp/reference'
 
 export type ResolveLink = (ref: string) => ResolvedRef | RefError
@@ -42,8 +43,13 @@ export class AdrDocumentLinkProvider implements vscode.DocumentLinkProvider {
 
 function targetOf(result: Exclude<ResolvedRef, RefError>): { filePath: string; line: number } {
   switch (result.kind) {
+    // ADR-0034 iter-12: a seed-borne question now lands on its own line in the
+    // seed, not at line 1 of the whole file. Before the resolver could express
+    // a seed question, `seed:...#qst-...` fell into the 'seed' case below and
+    // silently dropped the anchor — the link "worked," it just went somewhere
+    // else, which is the failure mode a broken link would at least have named.
     case 'question':
-      return { filePath: result.adr.path, line: result.question.lineStart }
+      return { filePath: containerPath(result.container), line: result.question.lineStart }
     case 'section':
       return { filePath: result.adr.path, line: result.section.lineStart }
     case 'adr':

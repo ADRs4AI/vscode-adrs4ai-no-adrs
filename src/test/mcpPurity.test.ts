@@ -160,7 +160,7 @@ describe('projectOverview (Tier 0)', () => {
     expect(result).toContain('[adr:0001] Project Specifications | Accepted | resolution: [unset] | open: 1 | iter: 2')
     expect(result).toContain('[adr:0003] MCP Server Design | Partially Implemented | resolution: [unset] | open: 0 | iter: 5')
     expect(result).toContain('--- seeds ---')
-    expect(result).toContain('[seed:seed-2026-07-06-example-topic] 2026-07-06 | unprocessed')
+    expect(result).toContain('[seed:2026-07-06-example-topic] 2026-07-06 | unprocessed')
     expect(result).toContain('Usage: call get_outline(adr_ref)')
   })
 
@@ -202,7 +202,7 @@ describe('projectOverview (Tier 0)', () => {
   it('surfaces a seed\'s declared axis-1 status and derived axis-2 rollup (ADR-0041 item 1\'s "census integration") — [unset]/n/a when absent, never omitted', () => {
     const unchunked = makeSeed({ path: '/fake/docs/adr/seed-unchunked.md' })
     const result = projectOverview(makeMockContext([], [unchunked]))
-    expect(result).toContain('[seed:seed-unchunked] 2026-07-06 | unprocessed | status: [unset] | rollup: n/a')
+    expect(result).toContain('[seed:unchunked] 2026-07-06 | unprocessed | status: [unset] | rollup: n/a')
   })
 
   it('the rollup badge is computed from the derived ADR\'s own declared Status — full when Implemented', () => {

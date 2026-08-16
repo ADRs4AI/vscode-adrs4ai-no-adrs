@@ -36,7 +36,18 @@ export function createRepositoryContextAdapter(source: IndexSource): RepositoryC
     listSeeds: () => source.allSeeds(),
     getSeed: (ref: string) => {
       const slug = ref.replace(/^seed:/, '')
-      return source.allSeeds().find((s) => path.basename(s.path, '.md') === `seed-${slug}`)
+      // Tolerant on the `seed-` filename prefix, in BOTH directions (fix,
+      // 2026-08-16): this matched only `seed-${slug}`, while `seedRefString`
+      // emitted the full basename — so every seed reference the MCP printed
+      // back (`project_overview` rows, `lookup` headers) was a reference that
+      // could not be resolved when a model handed it back. `seedRefString` now
+      // emits the canonical prefix-less form; accepting both here means neither
+      // side has to be upgraded in lockstep, and refs already written down in
+      // the wild keep working.
+      return source.allSeeds().find((s) => {
+        const name = path.basename(s.path, '.md')
+        return name === `seed-${slug}` || name === slug
+      })
     },
     readFile: async (filePath: string) => fs.promises.readFile(filePath, 'utf-8'),
     writeFile: async (filePath: string, content: string) => fs.promises.writeFile(filePath, content, 'utf-8'),

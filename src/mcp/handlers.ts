@@ -22,7 +22,9 @@ import {
   findSectionForQuestion,
   resolveReference,
   resolveAdrByRef,
+  containerAdr,
   type RefError,
+  type QuestionContainer,
 } from './reference'
 import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution, applyBatch as applyBatchOp, type BatchOperation } from './writeOps'
 import { getCached, recordSuccess } from './dedupe'
@@ -144,9 +146,18 @@ function formatRefError(err: RefError): string {
   return lines.join('\n')
 }
 
-function formatQuestion(adr: AdrFile, question: Question): string {
+/**
+ * ADR-0034 iter-12: takes the question's CONTAINER, not an AdrFile, so a
+ * seed-borne question formats identically to an ADR-borne one — doctrine 4's
+ * "homogeneous over both containers," which the resolver could not previously
+ * express. Before this, a model asking for one seed question got the entire
+ * seed document dumped back at it.
+ */
+function formatQuestion(container: QuestionContainer, question: Question): string {
+  const ref = container.kind === 'adr' ? adrRefString(container.adr) : seedRefString(container.seed)
+  const title = container.kind === 'adr' ? container.adr.title : container.seed.title
   const lines: string[] = []
-  lines.push(`${bracket(`${adrRefString(adr)}#${question.slug}`)} ${adr.title}`)
+  lines.push(`${bracket(`${ref}#${question.slug}`)} ${title}`)
   lines.push(`text: ${question.text}`)
   lines.push(`status: ${question.isAnswered ? 'answered' : question.statusText}`)
   lines.push(`recommendation: ${question.recommendation ?? '[none]'}`)
@@ -227,9 +238,14 @@ export function lookup(ctx: RepositoryContext, ref: string, contextLines?: numbe
 
   switch (resolved.kind) {
     case 'question': {
-      const section = findSectionForQuestion(resolved.adr, resolved.question)
-      const body = [formatQuestion(resolved.adr, resolved.question)]
-      body.push(...buildContextLines(resolved.adr, section, contextLines))
+      const body = [formatQuestion(resolved.container, resolved.question)]
+      // Neighbour-context lines are ADR-only: they walk `adr.sections`, and
+      // SeedFile carries `questions` without `sections`. A seed question
+      // therefore returns the question itself with no surrounding context —
+      // stated here rather than silently returning less, so the difference is
+      // legible to whoever next asks why the shapes differ.
+      const adr = containerAdr(resolved.container)
+      if (adr) body.push(...buildContextLines(adr, findSectionForQuestion(adr, resolved.question), contextLines))
       return body.join('\n')
     }
     case 'section': {
@@ -275,7 +291,7 @@ export function getSections(ctx: RepositoryContext, refs: string[], tokenBudget?
     if (resolved.kind === 'error') return { ref, text: formatRefError(resolved) }
     switch (resolved.kind) {
       case 'question':
-        return { ref, text: formatQuestion(resolved.adr, resolved.question) }
+        return { ref, text: formatQuestion(resolved.container, resolved.question) }
       case 'section':
         return { ref, text: formatSection(resolved.adr, resolved.section) }
       case 'adr':

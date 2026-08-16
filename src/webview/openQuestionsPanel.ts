@@ -19,7 +19,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import type { CompositeIndex } from '../index/compositeIndex'
-import type { AdrFile, Recommendation, Question } from '../parser/types'
+import type { AdrFile, SeedFile, Recommendation, Question } from '../parser/types'
 import { parseAdr, isDocumentPausedStatus } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
 import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
@@ -521,27 +521,9 @@ export class OpenQuestionsPanel {
       // Document-level pause (2026-08-06 ruling): paused docs' questions never reach the walk.
       const adrRows: WebviewQuestion[] = node.adrs.allAdrs().flatMap(adr => isDocumentPausedStatus(adr.status) ? [] : this.buildRows(adr.questions, this.adrRowOpts(adr, captions)))
 
-      const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed => {
-        // Gleaner 5 / ledger row 25: the raw Date field carries whatever
-        // annotation the author wrote ("2026-07-29 (dictated overnight,
-        // ...)") — same title-site normalization as adrTreeProvider.ts's
-        // sidebar labels, needed here too since this groupLabel is the
-        // panel's own always-visible TOC header, not a tooltip.
-        const dateStr = seed.date ? ` (${normalizeDateForTitle(seed.date)})` : ''
-        return this.buildRows(seed.questions, {
-          // Already globally unique (an absolute path) — no root-qualification needed.
-          containerId: seed.path,
-          adrPath: seed.path,
-          checksum: seed.checksum,
-          sourceKind: 'seed',
-          adrNumber: 0,
-          adrContext: undefined,
-          groupSortKey: `${node.namespace}::1-${seed.path}`,
-          groupLabel: `SEED${dateStr}: ${seed.topic}`,
-          rootNamespace: node.namespace,
-          rootCaption,
-        })
-      })
+      const seedRows: WebviewQuestion[] = node.seeds.allSeeds().flatMap(seed =>
+        this.buildRows(seed.questions, this.seedRowOpts(seed, captions)),
+      )
 
       questions.push(...adrRows, ...seedRows)
     }
@@ -566,10 +548,19 @@ export class OpenQuestionsPanel {
     const captions = this.rootCaptions()
     for (const entry of resolved) {
       if (entry.resolution.kind !== 'question') continue
+      // ADR-0034 iter-12: a tour stop's question may live in an ADR or a seed.
+      // Both build rows through the same helpers the ordinary walk uses, so a
+      // seed-borne stop is walkable, draft-keyed, and rendered identically —
+      // doctrine 4's "homogeneous over both containers", finally true here.
+      const container = entry.resolution.container
+      const questions = container.kind === 'adr' ? container.adr.questions : container.seed.questions
+      const opts = container.kind === 'adr'
+        ? this.adrRowOpts(container.adr, captions)
+        : this.seedRowOpts(container.seed, captions)
       const row = this.buildRow(
         entry.resolution.question,
-        ...this.tourEntryOrdinal(entry.resolution.adr, entry.resolution.question),
-        this.adrRowOpts(entry.resolution.adr, captions),
+        ...this.tourEntryOrdinal(questions, entry.resolution.question),
+        opts,
       )
       row.tourEntry = { comment: entry.comment, disposition: entry.disposition, answerPath: entry.answerPath, mustRespond: entry.mustRespond }
       rows.push(row)
@@ -577,11 +568,42 @@ export class OpenQuestionsPanel {
     return rows
   }
 
-  /** Where `question` sits in its own ADR's full (unfiltered) question list — buildRow needs the SAME ordinal/total buildRows would have computed had it walked that ADR whole, so a tour-walked question's draftKey is identical to what the ordinary walk would use for the same question. */
-  private tourEntryOrdinal(adr: AdrFile, question: Question): [number, number] {
-    const idx = adr.questions.findIndex(q => q.id === question.id)
-    const ordinals = computeOccurrenceOrdinals(adr.questions.map(q => q.text))
-    const totals = computeOccurrenceCounts(adr.questions.map(q => q.text))
+  /**
+   * Row-building opts for one SEED — the peer of `adrRowOpts`, extracted from
+   * `buildAllQuestions` (ADR-0034 iter-12) so tour mode and the ordinary walk
+   * build seed rows from ONE definition. They previously could not disagree
+   * only because tour mode could not reach a seed question at all; now that it
+   * can, two copies would be a divergence waiting to happen.
+   */
+  private seedRowOpts(seed: SeedFile, captions: Map<string, string>): Parameters<typeof this.buildRows>[1] {
+    const node = this.composite.findRoot(seed.path)
+    const namespace = node?.namespace ?? ''
+    // Gleaner 5 / ledger row 25: the raw Date field carries whatever
+    // annotation the author wrote ("2026-07-29 (dictated overnight, ...)") —
+    // same title-site normalization as adrTreeProvider.ts's sidebar labels,
+    // needed here too since this groupLabel is the panel's own always-visible
+    // TOC header, not a tooltip.
+    const dateStr = seed.date ? ` (${normalizeDateForTitle(seed.date)})` : ''
+    return {
+      // Already globally unique (an absolute path) — no root-qualification needed.
+      containerId: seed.path,
+      adrPath: seed.path,
+      checksum: seed.checksum,
+      sourceKind: 'seed',
+      adrNumber: 0,
+      adrContext: undefined,
+      groupSortKey: `${namespace}::1-${seed.path}`,
+      groupLabel: `SEED${dateStr}: ${seed.topic}`,
+      rootNamespace: namespace,
+      rootCaption: captions.get(node?.path ?? '') ?? namespace,
+    }
+  }
+
+  /** Where `question` sits in its own document's full (unfiltered) question list — buildRow needs the SAME ordinal/total buildRows would have computed had it walked that document whole, so a tour-walked question's draftKey is identical to what the ordinary walk would use for the same question. Takes the question LIST rather than an AdrFile (ADR-0034 iter-12) so seed-borne tour entries get the identical treatment. */
+  private tourEntryOrdinal(questions: Question[], question: Question): [number, number] {
+    const idx = questions.findIndex(q => q.id === question.id)
+    const ordinals = computeOccurrenceOrdinals(questions.map(q => q.text))
+    const totals = computeOccurrenceCounts(questions.map(q => q.text))
     return idx === -1 ? [0, 1] : [ordinals[idx], totals[idx]]
   }
 
