@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.86] - 2026-08-16
+
+### Fixed
+- **A paused ADR no longer shows an expand arrow that opens onto nothing.** The sidebar's parent-item row wasn't checking document-pause the same way its children already did.
+
+### Added
+- **"Hide Completed Tours"** — the Tours category can now hide fully-done tours by default (`adrManager.tours.hideCompleted`, on by default). Toggle from the Tours category's own right-click menu.
+
 ## [0.7.85] - 2026-08-15
 
 ### Changed
