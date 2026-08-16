@@ -27,6 +27,11 @@ export default defineConfig({
       },
     },
     outDir: 'dist',
+    // Regression (2026-08-16): default emptyOutDir wiped dist/mcp-server.js on every
+    // extension-only build (build:watch, vsce prepublish), silently killing the MCP
+    // for every repo whose .mcp.json points at it (-32000 / MODULE_NOT_FOUND).
+    // Both bundles share dist/; neither may empty it. See src/test/buildConfig.test.ts.
+    emptyOutDir: false,
     sourcemap: true,
     minify: false, // Keep readable for debugging during development
     target: 'node18',
