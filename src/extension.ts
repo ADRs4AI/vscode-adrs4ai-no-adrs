@@ -385,6 +385,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (treeProvider && compositeIndex) await mintTourFromFilter(treeProvider, compositeIndex);
     }),
 
+    // "Hide completed tours" (Gleaner's brief, 2026-08-14 — unblocked by
+    // Facet, 2026-08-16): mechanism (a) from my own 2026-08-06 design
+    // brief — two toggle commands whose complementary `when` clauses read
+    // the setting directly (`config.adrManager.tours.hideCompleted`), no
+    // custom context key to keep in sync. Jérémie's own correction is the
+    // spec: a workspace setting, not a per-tour state.
+    //
+    // treeProvider.refresh() explicitly follows the config write: this
+    // codebase has no `onDidChangeConfiguration` listener anywhere (every
+    // other config-dependent render — category order, seed thresholds —
+    // only takes effect on the NEXT unrelated tree refresh), which is fine
+    // for a Settings-UI edit but would make a dedicated TOGGLE COMMAND read
+    // as silently broken: click it, nothing visibly happens until some
+    // other event happens to redraw the tree.
+    vscode.commands.registerCommand('adrManager.hideCompletedTours', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', true);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.showCompletedTours', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', false);
+      treeProvider?.refresh();
+    }),
+
     // seeds-as-issues minimum lovable slice (Lapidary's 2026-07-31
     // founder-escalation dispatch): one gesture appends a correctly-
     // scaffolded, attributed Thread turn — from the sidebar's right-click

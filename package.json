@@ -140,6 +140,18 @@
         "category": "ADR Manager"
       },
       {
+        "command": "adrManager.hideCompletedTours",
+        "title": "Hide Completed Tours",
+        "category": "ADR Manager",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adrManager.showCompletedTours",
+        "title": "Show Completed Tours",
+        "category": "ADR Manager",
+        "icon": "$(eye)"
+      },
+      {
         "command": "adrManager.addSeedThreadTurn",
         "title": "Add Thread Turn",
         "category": "ADR Manager",
@@ -250,6 +262,16 @@
         {
           "command": "adrManager.addSeedThreadTurn",
           "when": "view == adrExplorer && viewItem == seed",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.hideCompletedTours",
+          "when": "view == adrExplorer && viewItem == tour-group && !config.adrManager.tours.hideCompleted",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.showCompletedTours",
+          "when": "view == adrExplorer && viewItem == tour-group && config.adrManager.tours.hideCompleted",
           "group": "1_actions@1"
         },
         {
@@ -484,6 +506,11 @@
           "scope": "resource",
           "default": true,
           "description": "In a tour's treeview entries, prefix each question with its authored disposition — DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE — when the tour sets one. An entry with no disposition set gets no prefix."
+        },
+        "adrManager.tours.hideCompleted": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide fully-done tours from the sidebar's Tours category. Toggle from the Tours category's own right-click menu (Hide/Show Completed Tours) or here."
         },
         "adrManager.reportButton.enabled": {
           "type": "boolean",

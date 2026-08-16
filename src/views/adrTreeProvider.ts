@@ -809,7 +809,11 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
 
     const adrCount = node.adrs.allAdrs().filter(a => !a.isSeed).length
     const seedCount = node.seeds.size
-    const tourCount = node.tours.length
+    // Same visibleTours() filter the children list uses (Gleaner's brief,
+    // 2026-08-14) — the header count and what's actually listed underneath
+    // it must never disagree, so this counts what hideCompleted leaves
+    // visible, not every tour on disk.
+    const tourCount = this.visibleTours(node).length
 
     // Jérémie's ask (2026-07-29 feedback seed, item B): the ADRs/Seeds/Tours
     // category order is configurable, default Tours-ADRs-Seeds. ADRs group
@@ -854,7 +858,14 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   private getAdrGroupChildren(node: RootNode): AdrTreeItem[] {
     const adrs = node.adrs.allAdrs().filter(a => !a.isSeed)
     return adrs.map(adr => {
-      const visibleQuestions = this.filterQuestions(adr.questions)
+      // Document-level pause (2026-08-06 ruling), parent-item side (Gleaner's
+      // brief, 2026-08-14): getAdrChildren() already returns [] for a paused
+      // ADR, but this collapsibleState computation didn't check the same
+      // thing — visibleQuestions.length > 0 has zero concept of document-
+      // pause, so a paused ADR with real QST: headings in the raw file still
+      // rendered an expand arrow that opened onto nothing ("this ADR has an
+      // expander, but no questions?" — a real founder Report).
+      const visibleQuestions = isDocumentPausedStatus(adr.status) ? [] : this.filterQuestions(adr.questions)
       return new AdrTreeItem({
         kind: 'adr',
         adr,
@@ -920,20 +931,39 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   }
 
   /**
+   * Gleaner's brief 2026-08-14 (unblocked by Facet, 2026-08-16) — Jérémie's
+   * own words, his own correction as the operative spec: "not sure we
+   * should give each of these a state... this should be a setting of the
+   * workspace user etc." One workspace-level `adrManager.tours.hideCompleted`
+   * boolean, default true (his "on/checked" framing), not a per-tour
+   * property. Doneness is still computed fresh from the live substrate
+   * (doctrine 1, unchanged) — this only ADDS a filter on top, shared by
+   * both the group header's count and its children so the two can never
+   * disagree about how many tours are actually visible.
+   */
+  private visibleTours(node: RootNode): Array<{ tour: TourFile; resolved: ResolvedTourEntry[]; done: boolean }> {
+    const ctx = createRepositoryContextAdapter(this.composite)
+    const all = node.tours.map(tour => {
+      const resolved = resolveTourEntries(tour, ctx)
+      return { tour, resolved, done: isTourDone(resolved) }
+    })
+    const hideCompleted = vscode.workspace.getConfiguration('adrManager').get<boolean>('tours.hideCompleted', true)
+    return hideCompleted ? all.filter(t => !t.done) : all
+  }
+
+  /**
    * ADR-0034: "Tree: 'Tours' category — same structural algebra as ADRs/
    * Seeds... Pure inventory; no walk machinery in the tree." Doneness is
    * computed fresh from the live substrate (doctrine 1) on every listing —
    * never cached on the tour item itself.
    */
   private getTourGroupChildren(node: RootNode): AdrTreeItem[] {
-    const ctx = createRepositoryContextAdapter(this.composite)
-    return node.tours.map(tour => {
-      const resolved = resolveTourEntries(tour, ctx)
+    return this.visibleTours(node).map(({ tour, resolved, done }) => {
       const walkableCount = resolved.filter(e => e.resolution.kind === 'question').length
       return new AdrTreeItem({
         kind: 'tour',
         tour,
-        done: isTourDone(resolved),
+        done,
         collapsibleState: walkableCount > 0
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
