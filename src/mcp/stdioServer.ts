@@ -47,6 +47,7 @@ import {
   appendIteration,
   updateResolution,
   applyBatch,
+  blessQstHandle,
   reportObservation,
 } from './handlers'
 
@@ -261,6 +262,21 @@ async function main() {
       })
       return text(await applyBatch(ctx(), adr_ref, mapped, { clientMsgId: client_msg_id }))
     },
+  )
+
+  server.registerTool(
+    'bless_qst_handle',
+    {
+      description: 'Insert a missing <!-- @adr-anchor: slug --> for a question that has none yet, placed correctly (after the heading) by construction. question_match is a substring of the question\'s TEXT (how you\'d naturally identify it having read the ADR), not a slug or index — the whole point is the question doesn\'t have a stable handle yet. Idempotent on the exact same slug; refuses to overwrite a different existing anchor.',
+      inputSchema: {
+        adr_ref: z.string(),
+        question_match: z.string(),
+        slug: z.string(),
+        client_msg_id: z.string().optional(),
+      },
+    },
+    async ({ adr_ref, question_match, slug, client_msg_id }) =>
+      text(await blessQstHandle(ctx(), adr_ref, question_match, slug, { clientMsgId: client_msg_id })),
   )
 
   server.registerTool(

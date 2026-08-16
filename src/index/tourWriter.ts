@@ -5,24 +5,32 @@
  * command handler (extension.ts) owns gathering the currently-visible refs
  * and the actual file write.
  *
- * Every entry mints with `must_respond: true` — a bare mint-from-filter
- * curates WHICH questions and in WHAT order, not per-entry disposition/
- * answer_path (those are for a richer, model-authored mint; doctrine 5's
- * "staged" authoring interface names JSON-by-hand/model as the v1 form for
- * that half). `disposition`/`answer_path`/`comment` are simply absent —
- * "everything not listed is deliberately absent," same discipline the
- * schema's own COD block states for facts.
+ * `authorRole` (ADR-0037, 2026-08-16): the human mint-from-filter command
+ * passes `'human'`; the MCP `mint_tour` tool (ADR-0037's "richer,
+ * model-authored mint," doctrine 5's staged v1 form) passes `'model'` with
+ * per-entry `disposition`/`answerPath`/`comment`/explicit `mustRespond`.
+ * One builder, two callers — never a second JSON constructor for the model
+ * case. A field a caller doesn't supply is OMITTED from the entry object
+ * entirely (never an `undefined`-valued key) so a bare mint-from-filter
+ * still produces exactly `{ ref, must_respond: true }` with nothing else,
+ * preserving this module's original, already-tested contract byte-for-byte.
  */
 
 import * as path from 'path'
 
 export interface TourEntryRef {
   ref: string
+  /** Defaults to `true` when omitted — matches TourEntryRaw's own read-side default. */
+  mustRespond?: boolean
+  disposition?: 'decide' | 'ratify' | 'acknowledge' | 'delegate'
+  answerPath?: string
+  comment?: string
 }
 
 export interface MintTourInput {
   title: string
   authorName: string
+  authorRole?: 'human' | 'model'
   /** ISO 8601 — caller-supplied so this module stays deterministic and testable (same discipline as DraftStore's timestamps). */
   mintedAt: string
   mintedCommit?: string
@@ -36,18 +44,30 @@ export interface TourFileJson {
   minted_at: string
   minted_commit?: string
   retired: false
-  entries: Array<{ ref: string; must_respond: true }>
+  entries: Array<{
+    ref: string
+    must_respond: boolean
+    disposition?: 'decide' | 'ratify' | 'acknowledge' | 'delegate'
+    answer_path?: string
+    comment?: string
+  }>
 }
 
 export function buildTourJson(input: MintTourInput): TourFileJson {
   return {
     schema: 'question-tour/1',
     title: input.title,
-    author: { name: input.authorName, role: 'human' },
+    author: { name: input.authorName, role: input.authorRole ?? 'human' },
     minted_at: input.mintedAt,
     ...(input.mintedCommit ? { minted_commit: input.mintedCommit } : {}),
     retired: false,
-    entries: input.entries.map(e => ({ ref: e.ref, must_respond: true as const })),
+    entries: input.entries.map(e => ({
+      ref: e.ref,
+      must_respond: e.mustRespond ?? true,
+      ...(e.disposition ? { disposition: e.disposition } : {}),
+      ...(e.answerPath ? { answer_path: e.answerPath } : {}),
+      ...(e.comment ? { comment: e.comment } : {}),
+    })),
   }
 }
 

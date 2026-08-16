@@ -26,7 +26,7 @@ import {
   type RefError,
   type QuestionContainer,
 } from './reference'
-import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution, applyBatch as applyBatchOp, type BatchOperation } from './writeOps'
+import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution, applyBatch as applyBatchOp, applyBlessQstHandle, type BatchOperation } from './writeOps'
 import { getCached, recordSuccess } from './dedupe'
 import { withPathLock } from './pathLock'
 import { appendLedgerRecord, captureDocument } from '../drafts/errorLog'
@@ -626,6 +626,46 @@ export async function applyBatch(
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Applied ${operations.length} operation(s) to ${adrRefString(resolved.adr)}\n${result.diff}`
     recordSuccess('apply_batch', options.clientMsgId, confirmation)
+    return confirmation
+  })
+}
+
+export interface BlessQstHandleOptions {
+  clientMsgId?: string
+}
+
+/**
+ * bless_qst_handle — ADR-0037, implemented 2026-08-16. Inserts a missing
+ * `<!-- @adr-anchor: slug -->`, always placed AFTER the heading (the
+ * placement rule that cost two experienced agents a night, per ADR-0037's
+ * own incident chain — it now lives inside the tool, not inside anyone's
+ * memory). `questionMatch` is a substring of the target question's text,
+ * not a pre-existing slug — the whole point is the question doesn't have
+ * one yet.
+ */
+export async function blessQstHandle(
+  ctx: RepositoryContext,
+  adrRef: string,
+  questionMatch: string,
+  slug: string,
+  options: BlessQstHandleOptions = {},
+): Promise<string> {
+  const resolved = resolveAdrByRef(ctx, adrRef)
+  if (resolved.kind === 'error') return formatRefError(resolved)
+
+  return withPathLock(resolved.adr.path, async () => {
+    const cached = getCached('bless_qst_handle', options.clientMsgId)
+    if (cached !== undefined) return cached
+
+    const currentContent = await ctx.readFile(resolved.adr.path)
+    const result = applyBlessQstHandle(currentContent, resolved.adr.path, questionMatch, slug)
+    if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
+
+    if (!result.alreadyBlessed) await ctx.writeFile(resolved.adr.path, result.newContent)
+    const confirmation = result.alreadyBlessed
+      ? `Already blessed: ${adrRefString(resolved.adr)}#${result.slug} (no change)`
+      : `Blessed ${adrRefString(resolved.adr)}#${result.slug} — anchor inserted after line ${result.headingLine}\n${result.diff}`
+    recordSuccess('bless_qst_handle', options.clientMsgId, confirmation)
     return confirmation
   })
 }

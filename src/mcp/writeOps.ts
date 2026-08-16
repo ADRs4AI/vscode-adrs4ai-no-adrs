@@ -21,7 +21,7 @@
 // bold-form files (the D2 write-back class) even when the answer wrote fine.
 import { parseAdr, STATUS_LINE_RE, ANS_INLINE_RE, isPlaceholderAnswerText } from '../parser/extractor'
 import type { AdrIteration, AdrFile, Question } from '../parser/types'
-import { findSectionForQuestion } from './reference'
+import { findSectionForQuestion, documentOrderedSections } from './reference'
 
 export type WriteResult =
   | { ok: true; newContent: string; diff: string }
@@ -102,6 +102,59 @@ export function verifyNoCollateralQuestionChanges(
         ok: false,
         error: `error: write_fidelity_violation\nmessage: a new question "${id}" appeared in ${adrPath} as a side effect of this write (CATCH 11 class — QST/ANS-shaped text inside the payload can forge a real question) — rejected before touching disk. No current write tool is permitted to create new questions.`,
       }
+    }
+  }
+
+  return { ok: true, after }
+}
+
+/**
+ * `bless_qst_handle`-specific variant (ADR-0037, 2026-08-16): `Question.id`
+ * is derived from slug (`adr-${number}-${slug}`), and blessing an anchor is
+ * THE operation that intentionally changes a question's slug — so the
+ * standard `verifyNoCollateralQuestionChanges` above always misreads a
+ * successful bless as "the old id disappeared" + "a new id appeared"
+ * (CATCH 11's own guard, correctly firing on an id-forgery pattern it can't
+ * distinguish from a legitimate rename). This variant excludes exactly the
+ * one id-pair a bless is allowed to rename, verifies the renamed question's
+ * CONTENT (never its id/slug) is otherwise byte-identical via the same
+ * `questionFingerprint`, and still runs the full collateral/forgery check
+ * against every other question.
+ */
+function verifyBlessDidNotCollide(
+  before: AdrFile,
+  newContent: string,
+  adrPath: string,
+  renamedFromId: string,
+  renamedToId: string,
+): { ok: true; after: AdrFile } | { ok: false; error: string } {
+  const after = parseAdr(newContent, adrPath)
+  const beforeById = new Map(before.questions.map((q) => [q.id, q]))
+  const afterById = new Map(after.questions.map((q) => [q.id, q]))
+
+  const beforeRenamed = beforeById.get(renamedFromId)
+  const afterRenamed = afterById.get(renamedToId)
+  if (!beforeRenamed || !afterRenamed) {
+    return { ok: false, error: `error: internal\nmessage: bless_qst_handle could not re-locate the blessed question by id in ${adrPath} — this should not happen.` }
+  }
+  if (questionFingerprint(beforeRenamed) !== questionFingerprint(afterRenamed)) {
+    return { ok: false, error: `error: write_fidelity_violation\nmessage: the blessed question's own content changed as a side effect of adding its anchor in ${adrPath} — rejected before touching disk. Blessing should only add a slug, never alter text/status/answer.` }
+  }
+
+  for (const [id, beforeQ] of beforeById) {
+    if (id === renamedFromId) continue
+    const afterQ = afterById.get(id)
+    if (!afterQ) {
+      return { ok: false, error: `error: write_fidelity_violation\nmessage: question "${id}" disappeared from ${adrPath} as a side effect of blessing a different question's anchor — rejected before touching disk.` }
+    }
+    if (questionFingerprint(beforeQ) !== questionFingerprint(afterQ)) {
+      return { ok: false, error: `error: write_fidelity_violation\nmessage: question "${id}" changed unexpectedly as a collateral side effect of blessing a different question's anchor (DEBRIEF-006 class) — rejected before touching disk.` }
+    }
+  }
+  for (const id of afterById.keys()) {
+    if (id === renamedToId) continue
+    if (!beforeById.has(id)) {
+      return { ok: false, error: `error: write_fidelity_violation\nmessage: a new question "${id}" appeared in ${adrPath} as a side effect of this write (CATCH 11 class) — rejected before touching disk.` }
     }
   }
 
@@ -447,4 +500,124 @@ export function applyBatch(
   }
 
   return { ok: true, newContent: content, diff: diffs.join('\n'), diffs }
+}
+
+// ---------------------------------------------------------------------------
+// bless_qst_handle — ADR-0037 (MCP Tools for QuestionTours), Accepted
+// 2026-07-29, implemented 2026-08-16 per Docent 5's dispatch. Inserts a
+// missing `<!-- @adr-anchor: slug -->`, always AFTER the heading (Facet 5's
+// incident chain, ADR-0037 Human Context items 3-4: two experienced agents
+// placed it BEFORE the same night, because the convention had no home in
+// prose anywhere but a terse extractor.ts comment — the placement rule now
+// lives inside the tool, not inside anyone's memory).
+// ---------------------------------------------------------------------------
+
+export interface BlessQstHandleResult {
+  ok: true
+  newContent: string
+  diff: string
+  headingLine: number
+  anchorLine: number
+  slug: string
+  alreadyBlessed: boolean
+}
+
+const ANCHOR_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
+
+/**
+ * `questionMatch` is a case-insensitive substring of the target question's
+ * TEXT (the human-readable "### QST: <this part>", not the raw heading
+ * line) — how an agent that has read the ADR would naturally identify "this
+ * one, the promotion-trigger one" (ADR-0037's own phrasing), not a
+ * positional index or a pre-existing slug, since the whole failure mode is
+ * that no slug exists yet.
+ */
+export function applyBlessQstHandle(
+  currentContent: string,
+  adrPath: string,
+  questionMatch: string,
+  slug: string,
+): BlessQstHandleResult | { ok: false; error: string } {
+  if (!ANCHOR_SLUG_RE.test(slug)) {
+    return { ok: false, error: `error: invalid_slug\nmessage: "${slug}" is not a valid anchor slug — must match ${ANCHOR_SLUG_RE.source} (lowercase alphanumeric, interior hyphens only).` }
+  }
+  if (!questionMatch?.trim()) {
+    return { ok: false, error: 'error: missing_question_match\nmessage: bless_qst_handle requires a non-empty questionMatch (a substring of the target question\'s text).' }
+  }
+
+  const freshAdr = parseAdr(currentContent, adrPath)
+  const needle = questionMatch.trim().toLowerCase()
+  const matches = freshAdr.questions.filter((q) => q.text.toLowerCase().includes(needle))
+
+  if (matches.length === 0) {
+    return { ok: false, error: `error: not_found\nmessage: no question's text contains "${questionMatch}" in ${adrPath}.` }
+  }
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      error: `error: ambiguous\nmessage: "${questionMatch}" matches ${matches.length} questions in ${adrPath} — specify a more specific substring.\ncandidates: [${matches.map((q) => `"${q.text}"`).join(', ')}]`,
+    }
+  }
+
+  const question = matches[0]
+  const section = findSectionForQuestion(freshAdr, question)
+  if (!section) {
+    return { ok: false, error: `error: internal\nmessage: matched question "${question.text}" but could not locate its section in ${adrPath} — this should not happen.` }
+  }
+
+  // Already blessed: idempotent no-op on the SAME slug (a retry should not
+  // be an error); refuse to silently overwrite a DIFFERENT existing anchor
+  // — that's an intentional prior choice, not a gap this tool should paper over.
+  if (section.anchorOverride !== undefined) {
+    if (section.anchorOverride === slug) {
+      return {
+        ok: true,
+        newContent: currentContent,
+        diff: '(no change — already blessed with this exact slug)',
+        headingLine: section.lineStart,
+        anchorLine: section.lineStart + 2,
+        slug,
+        alreadyBlessed: true,
+      }
+    }
+    return {
+      ok: false,
+      error: `error: already_blessed\nmessage: question "${question.text}" already has anchor "${section.anchorOverride}" in ${adrPath} — refusing to overwrite with "${slug}". Bless with the existing slug to no-op, or edit the file directly if the anchor genuinely needs to change.`,
+    }
+  }
+
+  // Duplicate-anchor guard (the exact class fixed earlier this project:
+  // resolveAnchorInAdr's ambiguous-effective-anchor detection) — never
+  // create a SECOND section whose effective anchor collides with this slug.
+  const collision = documentOrderedSections(freshAdr).some((s) => (s.anchorOverride ?? s.slug) === slug) ||
+    freshAdr.questions.some((q) => q.slug === slug)
+  if (collision) {
+    return { ok: false, error: `error: slug_collision\nmessage: "${slug}" is already the effective anchor of another section/question in ${adrPath} — choose a distinct slug.` }
+  }
+
+  const lines = currentContent.split('\n')
+  const headingLineIdx = section.lineStart - 1 // 1-indexed -> 0-indexed
+  const insertion = ['', `<!-- @adr-anchor: ${slug} -->`]
+  const newLines = [...lines.slice(0, headingLineIdx + 1), ...insertion, ...lines.slice(headingLineIdx + 1)]
+  const newContent = newLines.join('\n')
+
+  // Blessing changes the question's SLUG on purpose — and Question.id is
+  // derived from slug — so the standard collateral check (which keys on id
+  // staying stable) would misread this exact, intended rename as "the old
+  // question disappeared" + "a new one appeared" (CATCH 11's own guard,
+  // correctly firing on a pattern it can't otherwise distinguish from
+  // forgery). verifyBlessDidNotCollide is the rename-aware variant.
+  const renamedToId = `adr-${String(freshAdr.number).padStart(4, '0')}-${slug}`
+  const fidelity = verifyBlessDidNotCollide(freshAdr, newContent, adrPath, question.id, renamedToId)
+  if (!fidelity.ok) return { ok: false, error: fidelity.error }
+
+  return {
+    ok: true,
+    newContent,
+    diff: `+ (after line ${section.lineStart})\\n<!-- @adr-anchor: ${slug} -->`,
+    headingLine: section.lineStart,
+    anchorLine: section.lineStart + 2,
+    slug,
+    alreadyBlessed: false,
+  }
 }

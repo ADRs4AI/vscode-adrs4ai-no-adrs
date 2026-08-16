@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createHash } from 'crypto'
 import type { RepositoryContext } from '../mcp/repositoryContext'
-import { answerQuestion, addRecommendation, appendIteration, updateResolution, applyBatch } from '../mcp/handlers'
+import { answerQuestion, addRecommendation, appendIteration, updateResolution, applyBatch, blessQstHandle } from '../mcp/handlers'
 import { verifyNoCollateralQuestionChanges, type BatchOperation } from '../mcp/writeOps'
 import { parseAdr } from '../parser/extractor'
 import { _resetDedupeCacheForTests } from '../mcp/dedupe'
@@ -434,6 +434,87 @@ describe('applyBatch', () => {
     const second = await applyBatch(ctx, '2', operations, { clientMsgId: 'batch-1' })
     expect(second).toBe(first)
     expect(writeCount()).toBe(1) // the retry did not re-apply
+  })
+})
+
+// ADR-0037 (MCP Tools for QuestionTours), implemented 2026-08-16 per
+// Docent 5's dispatch. applyBlessQstHandle (src/mcp/writeOps.ts) has its
+// own thorough behavioral coverage (mcpTourWriteOps.test.ts) — this block
+// only pins the handlers.ts orchestration layer: path resolution, locking,
+// dedup, and the already-blessed no-write-on-no-op path.
+describe('blessQstHandle', () => {
+  const BLESS_ADR_PATH = '/fake/docs/adr/0003-bless-target.md'
+  const BLESS_FIXTURE = `# ADR-0003: Bless target
+
+- **Status**: Draft
+
+---
+
+## Questions
+
+### QST: The stated promotion trigger has fired — design now, hold, or fold?
+- Status: unanswered
+
+**ANS:** (by nobody)
+[Fill this in]
+
+---
+
+## Links
+`
+
+  function makeBlessContext() {
+    const files = new Map<string, string>([[BLESS_ADR_PATH, BLESS_FIXTURE]])
+    let writes = 0
+    const ctx: RepositoryContext = {
+      listAdrs: () => [...files.entries()].map(([p, c]) => parseAdr(c, p)),
+      getAdr: (ref: string) => {
+        const num = parseInt(ref.replace(/^adr:/, ''), 10)
+        const entry = [...files.entries()].find(([p, c]) => parseAdr(c, p).number === num)
+        return entry ? parseAdr(entry[1], entry[0]) : undefined
+      },
+      listSeeds: () => [],
+      getSeed: () => undefined,
+      readFile: async (p: string) => {
+        const c = files.get(p)
+        if (c === undefined) throw new Error(`mock context: no such file ${p}`)
+        return c
+      },
+      writeFile: async (p: string, c: string) => { files.set(p, c); writes += 1 },
+      listFiles: async () => [...files.keys()],
+    }
+    return { ctx, files, writeCount: () => writes }
+  }
+
+  it('blesses the matched question and writes once', async () => {
+    const { ctx, files, writeCount } = makeBlessContext()
+    const result = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger')
+    expect(result).toContain('Blessed adr:0003#promotion-trigger')
+    expect(writeCount()).toBe(1)
+    expect(files.get(BLESS_ADR_PATH)).toContain('<!-- @adr-anchor: promotion-trigger -->')
+  })
+
+  it('an already-blessed no-op does NOT write to disk', async () => {
+    const { ctx, writeCount } = makeBlessContext()
+    await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger')
+    expect(writeCount()).toBe(1)
+    const second = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger')
+    expect(second).toContain('Already blessed')
+    expect(writeCount()).toBe(1) // still 1 -- the no-op did not write again
+  })
+
+  it('returns a structured error for an unresolvable adr_ref', async () => {
+    const { ctx } = makeBlessContext()
+    const result = await blessQstHandle(ctx, '999', 'promotion trigger', 'promotion-trigger')
+    expect(result).toContain('error: not_found')
+  })
+
+  it('supports client_msg_id dedup, same contract as every other write tool', async () => {
+    const { ctx, writeCount } = makeBlessContext()
+    const first = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger', { clientMsgId: 'bless-1' })
+    const second = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger', { clientMsgId: 'bless-1' })
+    expect(second).toBe(first)
+    expect(writeCount()).toBe(1)
   })
 })
 
