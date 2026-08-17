@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.87] - 2026-08-16
+
+### Fixed
+- **Annotated statuses get their real icons** (DEBRIEF-009): a document whose Status carries an annotation — `Implemented — see PR #123` — showed a generic file icon instead of its checkmark, because the icon table did its own exact matching instead of asking the parser. Status knowledge now lives in one place with layered resolution (exact first for legacy fidelity, the parser's normalized read second); the suspension states (`Deferred`/`Paused`/`Suspended`/`On Hold`) get pause icons for the first time.
+
 ## [0.7.86] - 2026-08-16
 
 ### Fixed
