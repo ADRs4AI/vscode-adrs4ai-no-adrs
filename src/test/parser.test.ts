@@ -13,6 +13,7 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { tokenize, extractRawSections } from '../parser/tokenizer'
 import { parseAdr, detectFormat, slugify , isDocumentPausedStatus, isRetiredStatusToken, normalizeDocumentStatus } from '../parser/extractor'
+import { statusCodicon, requiresScopeRemaining } from '../parser/statusInfo'
 import { parseSeed, isRetiredSeedStatus } from '../parser/seedExtractor'
 import { findReferencingAdrs, looksLikeSeedByContent, computeSeedRollup } from '../index/seedIndex'
 import { findSectionForQuestion } from '../mcp/reference'
@@ -5016,5 +5017,32 @@ describe('Regression tests: recommendation text preserves list-item boundaries (
     ].join('\n')
     const q = parseAdr(doc, '/fake/x.md').questions[0]
     expect(q.recommendations?.[0].text).toBe('This sentence wraps across two source lines with no list at all.')
+  })
+})
+
+describe('Regression tests: DEBRIEF-009 — the icon lane joins the one recognition (statusInfo layered resolution, 2026-08-16)', () => {
+  // Live founder Report (json-source-edit ADR-0015): "Status icon seems
+  // incorrect" — `Implemented — <annotation>` got the parser's verified
+  // read and the tree's generic file icon, because statusThemeIcon kept a
+  // PRIVATE exact-match table while normalizeDocumentStatus lived one file
+  // over. Second-recognition-path class, icon lane. The ledger said
+  // SHIPPED with one consumer of three migrated — DEBRIEF-009's lesson:
+  // exported-fix ledger rows must enumerate consumers.
+  it("the founder's exact specimen: annotated Implemented resolves to the verified icon, not file-text", () => {
+    expect(statusCodicon('Implemented — see the long trailing annotation that broke it')).toBe('verified')
+    expect(statusCodicon('Superseded — by ADR-0005')).toBe('history')
+    expect(statusCodicon('**Accepted** — with reservations')).toBe('check')
+  })
+  it('suspension states now have icons at all (they had none)', () => {
+    for (const st of ['Deferred — designed in full', 'Paused', 'Suspended (until v1)', 'on-hold — post-launch']) {
+      expect(statusCodicon(st), st).toBe('debug-pause')
+    }
+  })
+  it('legacy display fidelity: exact Proposed keeps its lightbulb (normalize says unknown, display layers exact-first)', () => {
+    expect(statusCodicon('Proposed')).toBe('lightbulb')
+    expect(statusCodicon('total garbage status')).toBe('file-text')
+  })
+  it('requiresScopeRemaining survives annotation too', () => {
+    expect(requiresScopeRemaining('Partially Implemented — auth done, sync pending')).toBe(true)
   })
 })

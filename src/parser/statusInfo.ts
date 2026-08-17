@@ -36,6 +36,11 @@ export const ADR_STATUSES: StatusInfo[] = [
   { value: 'Partially Implemented', emoji: '🔧', codicon: 'tools',    colorToken: 'charts.orange',           label: 'Partially Implemented', requiresScope: true  },
   { value: 'Implemented',          emoji: '🏗️', codicon: 'verified', colorToken: 'testing.iconPassed',      label: 'Implemented',          requiresScope: false },
   { value: 'Superseded',           emoji: '🔄', codicon: 'history',  colorToken: 'disabledForeground',      label: 'Superseded',           requiresScope: false },
+  // Suspension states (v0.7.68 document-pause family) — icons added with DEBRIEF-009's migration
+  { value: 'Deferred',             emoji: '⏸️',  codicon: 'debug-pause', colorToken: 'disabledForeground',   label: 'Deferred',             requiresScope: false },
+  { value: 'Paused',               emoji: '⏸️',  codicon: 'debug-pause', colorToken: 'disabledForeground',   label: 'Paused',               requiresScope: false },
+  { value: 'Suspended',            emoji: '⏸️',  codicon: 'debug-pause', colorToken: 'disabledForeground',   label: 'Suspended',            requiresScope: false },
+  { value: 'On Hold',              emoji: '⏸️',  codicon: 'debug-pause', colorToken: 'disabledForeground',   label: 'On Hold',              requiresScope: false },
 ]
 
 // ---------------------------------------------------------------------------
@@ -46,24 +51,76 @@ const BY_VALUE = new Map<string, StatusInfo>(
   ADR_STATUSES.map(s => [s.value, s])
 )
 
+
+// ---------------------------------------------------------------------------
+// Normalization (MOVED HOME from extractor.ts, DEBRIEF-009, 2026-08-16)
+// ---------------------------------------------------------------------------
+// DEBRIEF-009's root cause: this file kept a PRIVATE exact-match lookup
+// (BY_VALUE.get) while normalizeDocumentStatus lived in extractor.ts — a
+// second recognition path, the same disease as the write-scan drift, in
+// the icon lane. An annotated "Implemented — <note>" got the verified
+// checkmark from the parser and a generic file icon from the tree, and the
+// ledger said SHIPPED because one consumer of three had migrated. The fix
+// is structural: status knowledge lives HERE (this file's own header says
+// "single source of truth"), extractor re-exports for its consumers, and
+// every lookup below resolves exact-first (legacy display fidelity, incl.
+// 'Proposed') then normalized (annotation/emphasis/suspension tolerant).
+
+/** Strip *, _, ` emphasis from keyword-comparison sites — never at content sites. */
+export function stripInlineEmphasis(text: string): string {
+  return text.replace(/[*_`]/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+export type NormalizedDocumentStatus =
+  | 'Draft' | 'Accepted' | 'Implemented' | 'Partially Implemented' | 'Superseded'
+  | 'Deferred' | 'Paused' | 'Suspended' | 'On Hold'
+  | 'unknown';
+
+const NORMALIZED_DOCUMENT_STATUS_PATTERNS: ReadonlyArray<{ re: RegExp; token: NormalizedDocumentStatus }> = [
+  { re: /^Partially Implemented\b/i, token: 'Partially Implemented' },
+  { re: /^Draft\b/i, token: 'Draft' },
+  { re: /^Accepted\b/i, token: 'Accepted' },
+  { re: /^Implemented\b/i, token: 'Implemented' },
+  { re: /^Superseded\b/i, token: 'Superseded' },
+  { re: /^Deferred\b/i, token: 'Deferred' },
+  { re: /^Paused\b/i, token: 'Paused' },
+  { re: /^Suspended\b/i, token: 'Suspended' },
+  { re: /^On[ -]Hold\b/i, token: 'On Hold' },
+];
+
+/** One exported function, N consumers (ADR-0021 It.16) — the single tolerant read of a declared document Status. */
+export function normalizeDocumentStatus(status: string | undefined): NormalizedDocumentStatus {
+  if (!status) return 'unknown';
+  const cleaned = stripInlineEmphasis(status).trim();
+  for (const { re, token } of NORMALIZED_DOCUMENT_STATUS_PATTERNS) {
+    if (re.test(cleaned)) return token;
+  }
+  return 'unknown';
+}
+
+/** Layered lookup: exact match first (legacy fidelity — 'Proposed' keeps its lightbulb), then the parser's normalized read. This is the DEBRIEF-009 fix: no consumer of this file can miss an annotated status again. */
+function resolveStatusInfo(status: string): StatusInfo | undefined {
+  return BY_VALUE.get(status) ?? BY_VALUE.get(normalizeDocumentStatus(status))
+}
+
 export function getStatusInfo(status: string): StatusInfo | undefined {
-  return BY_VALUE.get(status)
+  return resolveStatusInfo(status)
 }
 
 export function statusEmoji(status: string): string {
-  return BY_VALUE.get(status)?.emoji ?? '📄'
+  return resolveStatusInfo(status)?.emoji ?? '📄'
 }
 
 export function statusCodicon(status: string): string {
-  return BY_VALUE.get(status)?.codicon ?? 'file-text'
+  return resolveStatusInfo(status)?.codicon ?? 'file-text'
 }
 
 export function statusColorToken(status: string): string {
-  return BY_VALUE.get(status)?.colorToken ?? 'foreground'
+  return resolveStatusInfo(status)?.colorToken ?? 'foreground'
 }
 
 export function requiresScopeRemaining(status: string): boolean {
-  return BY_VALUE.get(status)?.requiresScope ?? false
+  return resolveStatusInfo(status)?.requiresScope ?? false
 }
 
 /** The ordered list of canonical status strings (for parser validation) */
@@ -75,7 +132,7 @@ export function statusThemeIcon(
   ThemeIcon: typeof import('vscode').ThemeIcon,
   ThemeColor: typeof import('vscode').ThemeColor,
 ): import('vscode').ThemeIcon {
-  const info = BY_VALUE.get(status)
+  const info = resolveStatusInfo(status)
   if (!info) return new ThemeIcon('file-text')
   return new ThemeIcon(info.codicon, new ThemeColor(info.colorToken))
 }
