@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.89] - 2026-08-18
+
+### Fixed
+- **A question's real `- Status: answered` line could be silently overridden by an illustrative example inside a fenced code block further down the same question.** If a question's body included a ` ```markdown ` example showing what a header field looks like (e.g. `- **Status**: Accepted` inside a sample block), the parser had no concept of code fences and treated that example line as the question's own status — same doctrine gap `<details>` folding already closed, applied to a second real specimen.
+
 ## [0.7.87] - 2026-08-16
 
 ### Fixed

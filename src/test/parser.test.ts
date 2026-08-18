@@ -4687,6 +4687,60 @@ describe('Regression tests: folded is archival — <details> blocks are inert to
   })
 })
 
+describe('Regression tests: fenced code blocks are inert to field structure, same doctrine as <details> (founder Report on ADR-0009, 2026-08-18)', () => {
+  // Real specimen shape: docs/adr/0009-decision-resolution-taxonomy.md's
+  // QST-WHERE-RESOLUTION-LIVES has its own real "- Status: answered" line,
+  // followed a few lines later by an illustrative ```markdown fenced
+  // "Proposed header format" EXAMPLE that itself contains a line shaped
+  // exactly like a real Status field ("- **Status**: Accepted") — an
+  // example status for a hypothetical ADR, not this question's own. The
+  // scanner had no fence concept, matched STATUS_LINE_RE on both lines,
+  // and the later (example) match silently won, reading isAnswered: false
+  // on a question that was, in fact, fully answered — reported live:
+  // "why does this still show as unanswered in the extension?"
+  const SPECIMEN = [
+    '## Questions', '',
+    '### QST: Where in the ADR header does the Resolution field live?',
+    '- Status: answered',
+    '- Why asking: placement matters for the parser.', '',
+    '**Proposed header format:**',
+    '```markdown',
+    '- **Date**: 2026-03-05',
+    '- **Status**: Accepted',
+    '- **Resolution**: fiat',
+    '```', '',
+    '**ANS:** (by Jérémie Lumbroso)',
+    'Confirming and closing.', '',
+  ].join('\n')
+
+  it('the real Status line wins: the fenced example\'s "Accepted" never overrides "answered"', () => {
+    const q = parseAdr(SPECIMEN, '/fake/docs/adr/0009-x.md').questions[0]
+    expect(q.statusText).toBe('answered')
+    expect(q.isAnswered).toBe(true)
+    expect(q.answer?.text).toBe('Confirming and closing.')
+  })
+
+  it('a Recommendation-shaped line inside the fence mints no live recommendation', () => {
+    const doc = SPECIMEN.replace('- **Resolution**: fiat', '- **Resolution**: fiat\n**Recommendation**: (by Old Seat) Stale, must not mint.')
+    const q = parseAdr(doc, '/fake/docs/adr/0009-x.md').questions[0]
+    expect((q.recommendations ?? []).some((r: any) => (r.text ?? '').includes('Stale, must not mint'))).toBe(false)
+  })
+
+  it('the real ADR-0009 file itself parses this question as answered (verified against the actual specimen, not a reconstruction)', () => {
+    const content = readFileSync(resolve(__dirname, '../../docs/adr/0009-decision-resolution-taxonomy.md'), 'utf8')
+    const adr = parseAdr(content, 'docs/adr/0009-decision-resolution-taxonomy.md')
+    const q = adr.questions.find(q => q.id === 'adr-0009-qst-where-in-the-adr-header-does-the-resolution-field-live')
+    expect(q?.isAnswered).toBe(true)
+    expect(q?.statusText).toBe('answered')
+  })
+
+  it('~~~ fences are tolerated the same way as ``` (CommonMark allows either delimiter)', () => {
+    const doc = SPECIMEN.replace(/```/g, '~~~')
+    const q = parseAdr(doc, '/fake/docs/adr/0009-x.md').questions[0]
+    expect(q.statusText).toBe('answered')
+  })
+})
+
 describe('Regression tests: document-level pause — isDocumentPausedStatus (founder Report on HQ ADR-0009, 2026-08-06)', () => {
   it('leading pause tokens pause, with emphasis and annotations tolerated', () => {
     for (const st of ['Deferred', 'deferred — designed in full', '**Deferred** — why', 'Paused', 'Suspended (until v1)', 'On Hold', 'on-hold — post-launch']) {

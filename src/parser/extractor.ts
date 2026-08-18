@@ -1411,16 +1411,32 @@ export function extractQuestion(
   // (Heading-level splitting — a "### QST:" inside <details> — happens
   // upstream in buildSection and is a separate, ledger-noted boundary.)
   let detailsDepth = 0;
+  // A fenced code block (```/~~~) is illustrative example content, never
+  // live field data — same doctrine as <details> above, applied to a
+  // second real specimen (HQ ADR-0009, founder Report 2026-08-18): a
+  // QST's own "- Status: answered" line was overridden by a LATER
+  // "- **Status**: Accepted" line sitting inside a ```markdown fenced
+  // "Proposed header format" example a few lines further down the same
+  // block — STATUS_LINE_RE has no fence awareness, so the example's
+  // illustrative status silently won over the question's real one.
+  // Toggled on any fence-delimiter line (```/~~~, common-mark tolerant of
+  // either), open or close; routed exactly like insideDetails below so a
+  // fenced example can never flip a field, mint a recommendation, or open
+  // an answer round — it belongs byte-faithfully to whatever container
+  // surrounds it.
+  let inFence = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     const absLine = section.lineStart + i + 1;
 
+    if (/^(```|~~~)/.test(line)) inFence = !inFence;
+
     const opens = (line.match(/<details\b/gi) || []).length;
     const closes = (line.match(/<\/details>/gi) || []).length;
     const insideDetails = detailsDepth > 0 || opens > 0;
     detailsDepth = Math.max(0, detailsDepth + opens - closes);
-    if (insideDetails) {
+    if (inFence || insideDetails) {
       if (warnings && (isAnsMarkerLine(line) || RECOMMENDATION_RE.test(line) || RECOMMENDATION_BULLET_RE.test(line))) {
         warnings.push({
           code: 'STRUCTURAL_MARKER_INSIDE_DETAILS',
