@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "adrs-for-ai": {
+      "command": "node",
+      "args": [
+        "/Users/jlumbroso/Programming/vscode-adrs-for-ai/dist/mcp-server.js",
+        "/Users/jlumbroso/Programming/vscode-adrs-for-ai/fixture-workspace"
+      ]
+    }
+  }
+}
