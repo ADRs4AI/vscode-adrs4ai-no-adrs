@@ -57,3 +57,5 @@ docs/research/*/
 # docs/adr/.settings/ folder — roots.json (allow/block config) is meant to
 # be committed and shared with the team; metrics.log is a local audit trail.
 docs/adr/.settings/metrics.log
+# pneumatic local state (events, delivery bookkeeping) — machine-local, never substrate
+.pneumatic/
