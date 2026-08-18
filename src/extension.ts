@@ -20,6 +20,7 @@
  */
 
 import * as vscode from 'vscode'
+import { coerceTourSlug } from './webview/commandArgs'
 import * as path from 'path'
 import * as fs from 'fs'
 import { execSync } from 'child_process'
@@ -423,8 +424,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ADR-0034: tour tree items pass their slug as the first argument
     // ("Walk Tour" command) — the plain sidebar/toolbar invocation passes
     // none, opening the ordinary full walk.
-    vscode.commands.registerCommand('adrManager.openQuestionsPanel', (tourSlug?: string) => {
-      if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex, tourSlug);
+    vscode.commands.registerCommand('adrManager.openQuestionsPanel', (tourSlugArg?: unknown) => {
+      // Fix (Jérémie's GIF-rerecording catch, 2026-08-18): the view/title
+      // button's invocation lets VS Code inject a non-string first argument;
+      // trusting it as a slug rendered "All caught up" over open questions.
+      if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex, coerceTourSlug(tourSlugArg));
     }),
 
     vscode.commands.registerCommand('adrManager.filterQuestions', () => {
