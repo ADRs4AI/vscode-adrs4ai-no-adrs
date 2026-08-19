@@ -211,6 +211,8 @@ const PLAIN_BULLET_RE = /^\*\s+([^:]+):\s+(.+)$/;
 interface ExtractedMetadata {
   date?: string;
   iteration: number;
+  /** 1-indexed line of the header's own "- **Iteration**: N" field — ADR-0043 H1 (counter drift) points diagnostics here. */
+  iterationLine?: number;
   status?: AdrStatus;
   scopeRemaining?: string;
   awaiting?: string;
@@ -280,7 +282,7 @@ function extractMetadata(tokens: Token[], lineOffset = 0): ExtractedMetadata {
       case 'date': result.date = value; break;
       case 'iteration': {
         const n = parseInt(value, 10);
-        if (!isNaN(n)) result.iteration = n;
+        if (!isNaN(n)) { result.iteration = n; result.iterationLine = token.line; }
         break;
       }
       case 'status': {
@@ -1990,8 +1992,33 @@ function extractInlineCodes(sections: AdrSection[]): InlineNavCode[] {
 // Iteration extraction
 // ---------------------------------------------------------------------------
 
-// Matches: ### Iteration 2 (2026-03-02) or ### Iteration 1
-const ITERATION_HEADING_RE = /^Iteration\s+(\d+)(?:\s+\(([^)]+)\))?$/i;
+// Matches: ### Iteration 2 (2026-03-02), ### Iteration 1, or ### Iteration 2
+// (2026-07-05) — Treeview as visual question dashboard *(chunked from...)*
+// — a trailing em-dash/hyphen title suffix, real and common in this repo's
+// own corpus (found investigating ADR-0043 H1: the un-anchored `$` here
+// silently dropped every titled Iteration heading from AdrFile.iterations,
+// undercounting H1's "count of Iteration N headings" input on exactly the
+// files that needed it — a recall bug, not an H1 bug, caught verifying H1
+// against Touchstone's real sweep corpus rather than trusting a synthetic
+// fixture).
+const ITERATION_HEADING_RE = /^Iteration\s+(\d+)(?:\s+\(([^)]+)\))?(?:\s+[—-].*)?$/i;
+
+/**
+ * Exported so ADR-0043's H1 heuristic (driftHeuristics.ts) can count
+ * "### Iteration N" headings ANYWHERE in the document — not just those
+ * nested under "## Iterations" — without hand-copying this regex ("sibling
+ * parsers are banned," one recognition pass, this is the one definition).
+ * Real specimen (ADR-0004's pre-sweep state): an "### Iteration 3" entry
+ * physically landed after "## Questions" started (a content-placement
+ * anomaly, not a formatting one) — extractIterations()'s scoped children-
+ * of-"## Iterations" walk correctly excludes it for append-point purposes,
+ * but H1's COUNT still needs to see it; Touchstone's real correction did.
+ */
+export function parseIterationHeading(heading: string): { number: number; date?: string } | undefined {
+  const m = heading.match(ITERATION_HEADING_RE);
+  if (!m) return undefined;
+  return { number: parseInt(m[1], 10), date: m[2] };
+}
 // Matches: - Human: ...  or  - AI (Sonnet 4.6):  ...
 const ITERATION_FIELD_RE = /^-\s+(Human|AI[^:]*|Outcome):\s+(.+)$/;
 
@@ -2027,12 +2054,12 @@ function extractIterations(sections: AdrSection[]): AdrIteration[] {
   let current: Partial<AdrIteration> | null = null;
 
   for (const child of iterationsSection.children) {
-    const iterMatch = child.heading.match(ITERATION_HEADING_RE);
+    const iterMatch = parseIterationHeading(child.heading);
     if (iterMatch) {
       if (current?.number !== undefined) iterations.push(current as AdrIteration);
       current = {
-        number: parseInt(iterMatch[1], 10),
-        date: iterMatch[2],
+        number: iterMatch.number,
+        date: iterMatch.date,
         lineStart: child.lineStart,
       };
       // Parse the body for Human/AI/Outcome fields
@@ -2211,6 +2238,7 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
     isSeed,
     date: metadata.date,
     iteration: metadata.iteration,
+    iterationLine: metadata.iterationLine,
     status: metadata.status ?? 'Draft',
     scopeRemaining: metadata.scopeRemaining,
     awaiting: metadata.awaiting,

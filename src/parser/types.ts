@@ -56,6 +56,8 @@ export interface AdrFile {
   date?: string;
   /** Latest iteration number from the header */
   iteration: number;
+  /** 1-indexed line of the header's "- **Iteration**: N" field — ADR-0043 H1's diagnostic anchor. Undefined on hand-built fixtures that bypass parseAdr(). */
+  iterationLine?: number;
   status: AdrStatus;
   /**
    * When status is 'Partially Implemented', this field is required.
