@@ -71,7 +71,7 @@ describe('Webview script block syntax', () => {
 
   it('renderRecommendations() function is defined and wired into render()', () => {
     const match = PANEL_SRC.match(/<script>([\s\S]*?)<\/script>/)
-    expect(match![1]).toContain('function renderRecommendations(list)')
+    expect(match![1]).toContain('function renderRecommendations(list, q)')
     expect(match![1]).toContain('renderRecommendations(q.recommendations')
   })
 
@@ -1037,6 +1037,73 @@ describe('Tour-mode skin (ADR-0034)', () => {
     mintedAt: '2026-07-24T13:18:05Z', theme: { background: '#556B2F', foreground: '#F5F5F0' },
     retired: false, done: false, brokenRefs: [],
   }
+
+  // ADR-0034 item 2 — Gleaner's SEVERE, and the founder's own words: "is this
+  // citing the question from Parallax's seed, or creating a new question?
+  // There's a lot of content, recommendations missing... The QuestionTour have
+  // never been usable." Root cause was two-part and BOTH parts are covered
+  // here: the Recommendation area rendered literally nothing when a document
+  // had no recommendation (so a relocated one read as "nothing here"), and the
+  // authored claim was middot-joined onto one 11px line beside that emptiness.
+  describe('Hollow stops: a stated absence, and a claim that looks like a claim', () => {
+    const HOLLOW = { ...Q1, tourEntry: { comment: 'full ORJC lives in the first-contact audit seed', answerPath: 'one of A/B/C', disposition: 'decide', mustRespond: true } }
+
+    it('names the absent recommendation instead of rendering nothing at all', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [HOLLOW], tour: TOUR })
+      const wrap = h.element('rec-wrap')
+      expect(wrap.innerHTML).toContain('No recommendation in this document')
+      // and it points at the claim, which is where the real guidance sits
+      expect(wrap.innerHTML).toContain('top of this stop')
+    })
+
+    it('says only that it is absent when there is no authored guidance to point at', () => {
+      const h = createWebviewHarness()
+      const bare = { ...Q1, tourEntry: { mustRespond: true } }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [bare], tour: TOUR })
+      expect(h.element('rec-wrap').innerHTML).toContain('No recommendation in this document')
+      expect(h.element('rec-wrap').innerHTML).not.toContain('top of this stop')
+    })
+
+    // The ordinary walk must not gain a line on every unanswered question in a
+    // corpus — the claim/substrate gap is what makes it worth saying, and there
+    // is no claim outside a tour.
+    it('stays silent outside tour mode, where an absent recommendation is unremarkable', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: null })
+      expect(h.element('rec-wrap').innerHTML).toBe('')
+    })
+
+    // Doctrine 1: the Recommendation slot is a substrate FACT; comment and
+    // answer_path are authored CLAIMS. The originally-proposed fix put the
+    // claim into this slot; that would style a tour author's opinion as the
+    // document's own recommendation. The absence is named; the claim stays put.
+    it('does NOT move the authored claim into the recommendation slot', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [HOLLOW], tour: TOUR })
+      expect(h.element('rec-wrap').innerHTML).not.toContain('full ORJC')
+      expect(h.element('tour-entry-info').innerHTML).toContain('full ORJC')
+    })
+
+    it('gives the claim three separate elements rather than one middot-joined line', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [HOLLOW], tour: TOUR })
+      const html = h.element('tour-entry-info').innerHTML
+      expect(html).toContain('claim-meta')
+      expect(html).toContain('claim-shape')
+      expect(html).toContain('claim-comment')
+      expect(html).toContain('one of A/B/C')
+    })
+
+    // A review stop is already answered — nothing is being asked for, so the
+    // absence of a recommendation is not a gap worth flagging there.
+    it('stays silent on a review stop', () => {
+      const h = createWebviewHarness()
+      const answered = { ...HOLLOW, isReviewStop: true, finalAnswerText: 'settled' }
+      h.postToWebview({ type: 'questions', generation: 0, questions: [answered], tour: TOUR })
+      expect(h.element('rec-wrap').innerHTML).toBe('')
+    })
+  })
 
   it('the tour header is hidden outside tour mode (tour: null)', () => {
     const h = createWebviewHarness()

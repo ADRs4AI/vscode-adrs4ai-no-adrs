@@ -1649,6 +1649,24 @@ textarea.expanded{min-height:70vh;height:70vh}
   text-transform:uppercase;font-weight:600;letter-spacing:.03em;
   color:var(--vscode-descriptionForeground);
 }
+/* ADR-0034 item 2: the claim's three kinds, separated. The comment is the
+   author's ARGUMENT for this stop — it reads at body size, not footnote
+   size, because a claim on a human's attention should look like one. */
+.tour-entry-info .claim-meta{ font-size:11px; margin-bottom:6px; }
+.tour-entry-info .claim-shape{ font-size:12px; margin-bottom:6px; }
+.tour-entry-info .claim-label{
+  text-transform:uppercase;font-weight:600;letter-spacing:.03em;font-size:10px;
+  color:var(--vscode-descriptionForeground);margin-right:4px;
+}
+.tour-entry-info .claim-comment{ font-size:13px; }
+.tour-entry-info .claim-comment p{ margin:0 0 6px; }
+.tour-entry-info .claim-comment p:last-child{ margin-bottom:0; }
+/* A stated absence, where there used to be nothing at all. Deliberately quiet
+   — it is a fact about the document, not an alarm. */
+.rec-absent{
+  font-size:12px;font-style:italic;margin:8px 0;
+  color:var(--vscode-descriptionForeground);
+}
 /* ADR-0034 doctrine 9: the read-only review-stop answer — an already-
    resolved tour entry's live answer, shown instead of an input box. */
 .review-stop-block{margin-bottom:16px}
@@ -2421,9 +2439,36 @@ function renderRecommendationBlock(rec, isMostRecent) {
     '</div>';
 }
 
-function renderRecommendations(list) {
+function renderRecommendations(list, q) {
   const wrap = $id('rec-wrap');
-  if (!list || list.length === 0) { wrap.innerHTML = ''; return; }
+  if (!list || list.length === 0) {
+    // ADR-0034 item 2 (Gleaner's SEVERE, Jérémie: "There's a lot of content,
+    // recommendations missing... is this citing the question or creating a
+    // new one?"). This used to render LITERALLY NOTHING, and a blank where a
+    // recommendation belongs reads as "there is nothing here" — which is what
+    // made a stop with a real, relocated recommendation look empty.
+    //
+    // A stated absence is information; silence answers nothing. Shown in TOUR
+    // MODE ONLY: on the ordinary walk an absent recommendation is unremarkable
+    // and this would add a line to every one of a corpus's open questions, but
+    // inside a tour an AUTHOR has claimed this stop deserves your attention,
+    // so the gap between claim and substrate is exactly what needs saying.
+    //
+    // NOT the claim itself (deliberately, Docent 5 2026-08-19): doctrine 1
+    // keeps facts and claims structurally separate. The Recommendation slot is
+    // a substrate FACT; comment/answer_path are authored CLAIMS. Rendering
+    // the claim here — the originally-proposed fix — would style a tour
+    // author's opinion as the document's own recommendation, blurring the one
+    // boundary this doctrine exists to hold. We point at the claim instead.
+    if (q && q.tourEntry && !q.isReviewStop) {
+      const hasClaim = !!(q.tourEntry.comment || q.tourEntry.answerPath);
+      wrap.innerHTML = '<div class="rec-absent">No recommendation in this document' +
+        (hasClaim ? ' — see the tour author&rsquo;s note at the top of this stop.' : '.') + '</div>';
+    } else {
+      wrap.innerHTML = '';
+    }
+    return;
+  }
 
   const threshold = recCollapseThreshold > 0 ? recCollapseThreshold : list.length;
   const splitAt = Math.max(0, list.length - threshold);
@@ -2887,12 +2932,31 @@ function render() {
   // present only while walking a tour, never in the ordinary full walk.
   if (q.tourEntry) {
     const parts = [];
-    if (q.tourEntry.disposition) parts.push('<span class="disposition">' + q.tourEntry.disposition + '</span>');
-    if (!q.tourEntry.mustRespond) parts.push('optional for this walk');
-    if (q.tourEntry.answerPath) parts.push('Answer shape: ' + q.tourEntry.answerPath);
-    if (q.tourEntry.comment) parts.push(q.tourEntry.comment);
-    $id('tour-entry-info').innerHTML = parts.join(' · ');
-    $id('tour-entry-info').style.display = parts.length > 0 ? 'block' : 'none';
+    // ADR-0034 item 2 (Docent 5, 2026-08-19): these four were middot-joined
+    // onto ONE 11px line, so the author's actual argument for why this stop
+    // deserves you sat in a footnote beside an empty Recommendation area —
+    // "technically on screen and styled as the least important thing there."
+    // Same block, same position (Jérémie's own 2026-07-28 placement fix
+    // stands); the change is that the three KINDS get their own lines:
+    // metadata chrome, the answer contract, and the prose argument.
+    // Field ORDER is unchanged on purpose - tourReadiness.composeClaimLine
+    // mirrors it for tour-walk, guarded by a test that fails if the two
+    // drift, so a transformer walking a tour sees what the human will.
+    const meta = [];
+    if (q.tourEntry.disposition) meta.push('<span class="disposition">' + q.tourEntry.disposition + '</span>');
+    if (!q.tourEntry.mustRespond) meta.push('optional for this walk');
+    let claimHtml = meta.length ? '<div class="claim-meta">' + meta.join(' · ') + '</div>' : '';
+    if (q.tourEntry.answerPath) {
+      claimHtml += '<div class="claim-shape"><span class="claim-label">Answer shape</span> ' + q.tourEntry.answerPath + '</div>';
+    }
+    // renderMarkdown, matching every other prose surface in this dialog —
+    // the same correction Facet made for review-stop answers (2026-07-28
+    // inbox 2230), where plain text collapsed a multi-line body into a blob.
+    if (q.tourEntry.comment) {
+      claimHtml += '<div class="claim-comment">' + renderMarkdown(q.tourEntry.comment) + '</div>';
+    }
+    $id('tour-entry-info').innerHTML = claimHtml;
+    $id('tour-entry-info').style.display = claimHtml ? 'block' : 'none';
   } else {
     $id('tour-entry-info').style.display = 'none';
   }
@@ -2919,7 +2983,7 @@ function render() {
   if (q.body) { $id('body').style.display = 'block'; $id('body').innerHTML = renderMarkdown(q.body); }
   else { $id('body').style.display = 'none'; $id('body').innerHTML = ''; }
 
-  renderRecommendations(q.recommendations && q.recommendations.length ? q.recommendations : (q.recommendation ? [{ text: q.recommendation }] : []));
+  renderRecommendations(q.recommendations && q.recommendations.length ? q.recommendations : (q.recommendation ? [{ text: q.recommendation }] : []), q);
 
   if (q.bodyPost) { $id('body-post').style.display = 'block'; $id('body-post').innerHTML = renderMarkdown(q.bodyPost); }
   else { $id('body-post').style.display = 'none'; $id('body-post').innerHTML = ''; }

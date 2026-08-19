@@ -47,7 +47,7 @@ import { CompositeIndex } from '../src/index/compositeIndex'
 import { createRepositoryContextAdapter } from '../src/index/repositoryContextAdapter'
 import { discoverTourFiles, resolveTourEntries, type ResolvedTourEntry } from '../src/index/tourIndex'
 import type { TourFile } from '../src/index/tourIndex'
-import { assessTour, composeClaimLine } from '../src/index/tourReadiness'
+import { assessTour, composeClaimParts } from '../src/index/tourReadiness'
 
 const BAR = '='.repeat(78)
 const RULE = '-'.repeat(78)
@@ -91,8 +91,15 @@ function walkTour(tour: TourFile, resolved: ResolvedTourEntry[]) {
     console.log(`Stop ${i + 1} of ${a.stops.length} · ${a.awaiting} awaiting you`)
     console.log(RULE)
 
-    const claim = composeClaimLine(e)
-    if (claim) console.log(`  [authored claim] ${claim}\n`)
+    // Rendered as the panel renders it (ADR-0034 item 2): three separate
+    // kinds, not one middot-joined line. The comment is the author's argument
+    // for this stop and gets to look like one here too — otherwise a walker
+    // judging "is this thin?" is reading a different artifact than the human.
+    const claim = composeClaimParts(e)
+    if (claim.meta) console.log(`  [${claim.meta}]`)
+    if (claim.answerShape) console.log(`  ANSWER SHAPE  ${claim.answerShape}`)
+    if (claim.comment) console.log(`  author's note: ${claim.comment}`)
+    if (claim.meta || claim.answerShape || claim.comment) console.log()
     console.log(`  ${q.text}\n`)
     // Provenance, shown per stop (ADR-0034 iter-11 item 7, Jérémie's ask):
     // "some discrete UI/UX affordance to know which ADR a QST in a tour is

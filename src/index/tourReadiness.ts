@@ -35,13 +35,34 @@ const len = (s?: string): number => (s ?? '').trim().length
  * walk tool starts showing a human something the human will never see, which is
  * worse than showing nothing.
  */
+export interface ClaimParts {
+  /** Chrome: disposition + the optional marker. Middot-joined, as the panel joins them. */
+  meta: string
+  /** The answer contract — the literal tokens that satisfy the ask. */
+  answerShape?: string
+  /** The author's prose argument for why this stop deserves the walker. */
+  comment?: string
+}
+
+/**
+ * The authored claim, split into the same three KINDS the panel renders as
+ * separate lines (ADR-0034 item 2, 2026-08-19). Field order matches the panel
+ * exactly and is guarded by a test that reads the panel's own source: if the
+ * two drift, `tour-walk` starts showing a walker something no human will see,
+ * which is a false witness and worse than no witness.
+ */
+export function composeClaimParts(entry: ResolvedTourEntry): ClaimParts {
+  const meta: string[] = []
+  if (entry.disposition) meta.push(entry.disposition)
+  if (!entry.mustRespond) meta.push('optional for this walk')
+  return { meta: meta.join(' · '), answerShape: entry.answerPath, comment: entry.comment }
+}
+
+/** One-line form, for surfaces that genuinely have one line (log records, summaries). */
 export function composeClaimLine(entry: ResolvedTourEntry): string {
-  const parts: string[] = []
-  if (entry.disposition) parts.push(entry.disposition)
-  if (!entry.mustRespond) parts.push('optional for this walk')
-  if (entry.answerPath) parts.push('Answer shape: ' + entry.answerPath)
-  if (entry.comment) parts.push(entry.comment)
-  return parts.join(' · ')
+  const p = composeClaimParts(entry)
+  return [p.meta, p.answerShape ? 'Answer shape: ' + p.answerShape : '', p.comment ?? '']
+    .filter(Boolean).join(' · ')
 }
 
 export interface StopAssessment {

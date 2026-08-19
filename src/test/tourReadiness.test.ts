@@ -280,20 +280,26 @@ describe('composeClaimLine — fidelity to the panel', () => {
     const start = panel.indexOf('if (q.tourEntry) {')
     expect(start).toBeGreaterThan(-1)
     const rest = panel.slice(start)
-    const end = rest.indexOf("$id('tour-entry-info').innerHTML")
+    const end = rest.indexOf("$id('tour-entry-info').style.display")
     expect(end).toBeGreaterThan(-1)
     const block = rest.slice(0, end)
     // Self-defense: if either marker ever stops matching, `block` must not
     // quietly widen to the whole file and let the ordering assertion pass on
     // unrelated text. The real block is ~380 chars — four push lines.
-    expect(block.length).toBeLessThan(1000)
+    expect(block.length).toBeLessThan(2500)
 
-    // The four fields, in the order the panel pushes them.
+    // The four fields, in the order the panel emits them. ORDER is the real
+    // invariant — it is what makes a walker's reading match the human's.
     const order = ['disposition', 'optional for this walk', 'answerPath', 'comment']
     const positions = order.map(f => block.indexOf(f))
     expect(positions.every(p => p >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
-    // And the separator this module joins on.
-    expect(panel).toContain("parts.join(' · ')")
+    // The panel renders the three KINDS as separate elements (ADR-0034 item 2),
+    // and composeClaimParts mirrors that split. The old assertion here pinned a
+    // single middot join across all four — which was the defect itself, so the
+    // guard has to track the fix rather than the bug it was written beside.
+    expect(block).toContain("meta.join(' · ')")
+    expect(block).toContain('claim-shape')
+    expect(block).toContain('claim-comment')
   })
 })

@@ -2,7 +2,7 @@
   "name": "adrs-for-ai",
   "displayName": "ADRs for AI",
   "description": "Turn AI design conversations into durable, answerable decision records — open questions live in your sidebar, answers can't be lost.",
-  "version": "0.7.89",
+  "version": "0.7.90",
   "publisher": "jlumbroso",
   "license": "MIT",
   "icon": "media/adr-icon-scale-256.png",
@@ -318,7 +318,11 @@
         },
         "adrManager.roots.captionMode": {
           "type": "string",
-          "enum": ["git-slugs", "git-repo-names", "git-auto"],
+          "enum": [
+            "git-slugs",
+            "git-repo-names",
+            "git-auto"
+          ],
           "enumDescriptions": [
             "Always \"owner/repo\", from each root's git origin remote.",
             "Always just the repo name, from each root's git origin remote.",
@@ -460,7 +464,11 @@
         },
         "adrManager.panel.showProjectInHeader": {
           "type": "string",
-          "enum": ["off", "auto", "always"],
+          "enum": [
+            "off",
+            "auto",
+            "always"
+          ],
           "enumDescriptions": [
             "Never show which root a question belongs to.",
             "Show it only when the current question set spans more than one root.",
@@ -473,14 +481,25 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["tours", "adrs", "seeds"]
+            "enum": [
+              "tours",
+              "adrs",
+              "seeds"
+            ]
           },
-          "default": ["tours", "adrs", "seeds"],
+          "default": [
+            "tours",
+            "adrs",
+            "seeds"
+          ],
           "description": "Order of the Tours/ADRs/Seeds categories in the sidebar tree. A category with nothing in it (e.g. no tours minted yet) is still omitted entirely, same as before — this only controls the order of whichever categories are actually showing."
         },
         "adrManager.seeds.agingMode": {
           "type": "string",
-          "enum": ["adaptive", "fixed"],
+          "enum": [
+            "adaptive",
+            "fixed"
+          ],
           "default": "adaptive",
           "description": "How the sidebar decides a seed's staleness dimming threshold (ADR-0041). 'adaptive' (default): the threshold scales with this repo's own rhythm (adrManager.seeds.adaptiveMultiplier × the repo's median days-since-last-activity among actively-iterating seeds) — a 25-day idle seed in a house whose normal pulse is a 27-day median isn't unusual. 'fixed': always adrManager.seeds.fixedThresholdDays, regardless of repo rhythm."
         },
