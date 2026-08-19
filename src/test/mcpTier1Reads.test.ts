@@ -315,6 +315,20 @@ describe('get_outline', () => {
     expect(result).toContain('Usage: call get_sections(')
   })
 
+  // Found dogfooding GIF-SCRIPTS.md Script 5 (2026-08-19): a live Claude Code
+  // session answered "what's the recommendation on the table?" with "none"
+  // for a question that genuinely has one — because list_open_questions and
+  // get_outline's row format carried status but never whether a
+  // recommendation existed, so a caller triaging via those cheap tools alone
+  // (rather than drilling into get_sections per question) had no signal to
+  // go on. This one line is the fix: explicit over absent, same discipline
+  // as the `inconsistent` marker.
+  it('flags whether each question has a recommendation on the table, explicit over absent', () => {
+    const result = getOutline(makeContext([makeAdr()]), '1')
+    expect(result).toContain('qst-what-is-the-scope | QST: What is the scope? | level 3 | lines 16-25 | words 9 | status: unanswered | recommendation: [none]')
+    expect(result).toContain('stable-format | QST: Is the format stable? | level 3 | lines 27-39 | words 3 | status: answered | recommendation: yes')
+  })
+
   it('returns a structured error for an unknown ADR rather than throwing', () => {
     const result = getOutline(makeContext([]), '1')
     expect(result).toContain('error: not_found')
@@ -328,7 +342,7 @@ describe('get_outline', () => {
       answer: { text: 'Settled long ago.', author: 'Jérémie', line: 20 },
     }
     const result = getOutline(makeContext([makeAdr({ questions: [staleUnanswered, FORMAT_QUESTION] })]), '1')
-    expect(result).toContain('qst-what-is-the-scope | QST: What is the scope? | level 3 | lines 16-25 | words 9 | status: unanswered | inconsistent: unanswered label but has a real answer')
+    expect(result).toContain('qst-what-is-the-scope | QST: What is the scope? | level 3 | lines 16-25 | words 9 | status: unanswered | recommendation: [none] | inconsistent: unanswered label but has a real answer')
     // The genuinely-answered question must not be tagged.
     expect(result).not.toContain('stable-format | QST: Is the format stable? | level 3 | lines 27-39 | words 3 | status: answered | inconsistent')
   })
@@ -363,6 +377,18 @@ describe('list_open_questions', () => {
     expect(result).toContain('1 open across 1 ADRs')
     expect(result).toContain('[adr:0001#qst-what-is-the-scope] What is the scope? — status: unanswered | priority: [none]')
     expect(result).not.toContain('qst-is-the-format-stable') // answered — must not appear
+  })
+
+  // Found dogfooding GIF-SCRIPTS.md Script 5 (2026-08-19): a live Claude
+  // Code session, triaging via list_open_questions/get_outline alone,
+  // reported "no recommendation on the table" for a question that had one —
+  // the row format carried status but never recommendation-presence. Real
+  // scenario: an open question with a recommendation already stated,
+  // exactly the case a caller most needs the signal for.
+  it('marks an open question that already has a recommendation, not just answered ones', () => {
+    const withRec = makeAdr({ questions: [{ ...SCOPE_QUESTION, recommendation: 'Ship it now, revisit later.' }] })
+    const result = listOpenQuestions(makeContext([withRec]))
+    expect(result).toContain('[adr:0001#qst-what-is-the-scope] What is the scope? — status: unanswered | priority: [none] | recommendation: yes')
   })
 
   it('scopes to a single ADR when adr_ref is given', () => {
@@ -468,7 +494,7 @@ describe('list_open_questions', () => {
       const adr = makeAdr({ questions: [SCOPE_QUESTION, staleUnanswered] })
       const result = listOpenQuestions(makeContext([adr]))
       expect(result).toContain('2 open across 1 ADRs (1 inconsistent: unanswered label, real answer present)')
-      expect(result).toContain('[adr:0001#qst-stale] Was this ever really open? — status: unanswered | priority: [none] | inconsistent: unanswered label but has a real answer')
+      expect(result).toContain('[adr:0001#qst-stale] Was this ever really open? — status: unanswered | priority: [none] | recommendation: [none] | inconsistent: unanswered label but has a real answer')
       // A genuinely open question (no answer at all) must not be tagged.
       expect(result).not.toContain('qst-what-is-the-scope] What is the scope? — status: unanswered | priority: [none] | inconsistent')
     })

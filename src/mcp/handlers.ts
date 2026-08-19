@@ -275,6 +275,7 @@ export function getOutline(ctx: RepositoryContext, adrRef: string): string {
       const question = adr.questions.find((q) => q.slug === section.slug)
       if (question) {
         row += ` | status: ${question.isAnswered ? 'answered' : question.statusText}`
+        row += ` | recommendation: ${question.recommendation ? 'yes' : '[none]'}`
         if (isStatusAnswerInconsistent(question)) row += ' | inconsistent: unanswered label but has a real answer'
       }
     }
@@ -391,7 +392,7 @@ export function listOpenQuestions(ctx: RepositoryContext, options: ListOpenQuest
   for (const { adr, question } of rows) {
     const inconsistentTag = isStatusAnswerInconsistent(question) ? ' | inconsistent: unanswered label but has a real answer' : ''
     lines.push(
-      `${bracket(`${adrRefString(adr)}#${question.slug}`)} ${question.text} — status: ${question.statusText} | priority: ${question.priority ?? '[none]'}${inconsistentTag}`,
+      `${bracket(`${adrRefString(adr)}#${question.slug}`)} ${question.text} — status: ${question.statusText} | priority: ${question.priority ?? '[none]'} | recommendation: ${question.recommendation ? 'yes' : '[none]'}${inconsistentTag}`,
     )
   }
   return lines.join('\n')
