@@ -32,6 +32,7 @@ import { createRepositoryContextAdapter } from '../index/repositoryContextAdapte
 import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 import { computeRootCaptions, type RootCaptionMode } from '../views/rootCaption'
+import { OPEN_DEEP_LINK_COMMAND } from '../views/documentLinkProvider'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -181,6 +182,23 @@ type WebviewMessage =
    * the source half of the comparison is already in `documents`.
    */
   | { type: 'reportObservation'; adrPath: string; questionId?: string; draftKey?: string; renderedHtml?: string }
+  /**
+   * Gleaner's escalation (2026-08-21, docs/inbox/2026-08-21-gleaner-to-
+   * fitter-link-support-escalation-15-days-3-specimens.md): a rendered
+   * external link, clicked. `href` is untrusted content-derived text —
+   * the host-side handler re-validates the scheme before ever calling
+   * vscode.env.openExternal (her own 08-06 flag: "a real security
+   * consideration, not optional polish").
+   */
+  | { type: 'openExternalUrl'; href: string }
+  /**
+   * Same escalation, the internal-cross-reference half: a rendered
+   * `adr:NNNN#slug` / `seed:...#slug` reference, clicked. Resolved via
+   * the SAME `adrManager.openDeepLink` command the editor's own
+   * DocumentLinkProvider already uses — no new resolution logic, just a
+   * new caller.
+   */
+  | { type: 'openDeepLinkRef'; ref: string }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -759,7 +777,29 @@ export class OpenQuestionsPanel {
       case 'showDraftDiff': await this.showDraftDiff(msg.mine, msg.theirs, msg.questionText); break
       case 'exitTour': this.setTour(undefined); break
       case 'reportObservation': await this.reportObservation(msg); break
+      case 'openExternalUrl': await this.openExternalUrl(msg.href); break
+      case 'openDeepLinkRef': await vscode.commands.executeCommand(OPEN_DEEP_LINK_COMMAND, msg.ref); break
     }
+  }
+
+  /**
+   * Gleaner's escalation (2026-08-21): content-derived hrefs reaching
+   * `openExternal` unscoped means anything a rendered ADR/seed body
+   * contains could trigger arbitrary URI-scheme handling — restricted to
+   * `http`/`https` only, silently ignored otherwise. The renderer only
+   * ever builds these links for recognized `http(s)://` destinations
+   * today, so this re-check is defense in depth against a future
+   * renderer change or a hand-crafted message, not a live gap.
+   */
+  private async openExternalUrl(href: string): Promise<void> {
+    let uri: vscode.Uri
+    try {
+      uri = vscode.Uri.parse(href, true)
+    } catch {
+      return
+    }
+    if (uri.scheme !== 'http' && uri.scheme !== 'https') return
+    await vscode.env.openExternal(uri)
   }
 
   // ---------------------------------------------------------------------------
@@ -1321,6 +1361,14 @@ body{
   background:var(--vscode-progressBar-background);
   border-radius:2px;
   transition:width .4s ease;
+}
+.panel-link{
+  color:var(--vscode-textLink-foreground);
+  cursor:pointer;
+}
+.panel-link:hover{
+  color:var(--vscode-textLink-activeForeground);
+  text-decoration:underline;
 }
 .adr-link{
   display:inline-flex;align-items:center;gap:6px;
@@ -2224,6 +2272,74 @@ function renderMarkdown(md) {
     // Protect backtick spans FIRST — their content must not be processed by bold/italic
     const codes = [];
     s = s.replace(/\`([^\`]+)\`/g, (_, c) => { codes.push(c); return '\\x02' + (codes.length-1) + '\\x02'; });
+
+    // Links (Gleaner's escalation, 2026-08-21, docs/inbox/2026-08-21-
+    // gleaner-to-fitter-link-support-escalation-15-days-3-specimens.md —
+    // 15 days open, 3rd live specimen: renderInline had ZERO link handling
+    // of any kind). Protected via placeholders BEFORE bold/italic, same
+    // reasoning as code spans above — an href/ref must never be corrupted
+    // by '*'/'_' matching inside it. Two destination kinds, each in both
+    // markdown-link and bare-autolink form: external http(s) URLs (the
+    // original 08-06 ask) and internal adr:/seed: local references
+    // (08-21's new scope — his own ANS text used exactly the bare form,
+    // no [] wrapping). Anything wrapped in [text](...) whose destination
+    // is neither is left as literal text — never invent a clickable
+    // target for an unrecognized scheme (mailto:, javascript:, etc.).
+    // Labels are NOT run back through bold/italic — same "no nested
+    // formatting inside a protected span" simplification code spans
+    // already make, and it keeps every link a single plain-text DOM node
+    // (no child element that could steal e.target away from the <a> the
+    // delegated click handler below reads dataset off of).
+    const links = [];
+    function escAttr(t) { return t.replace(/"/g, '&quot;'); }
+    function pushLink(html) { links.push(html); return '\\x03' + (links.length - 1) + '\\x03'; }
+    // A literal '/' inside a slash-delimited regex LITERAL needs '\\/' —
+    // which, in THIS file, is written doubled ('\\\\/') to survive
+    // getHtml()'s own outer template literal, and that doubled form
+    // breaks the raw (uncollapsed) syntax check in webview.test.ts: '\\'
+    // + '/' parses as "escaped backslash, then an UNESCAPED slash" and
+    // closes the regex literal early. Sidestepped by constructing these
+    // two from a plain STRING instead — a string's '/' never needs
+    // escaping at all, at
+    // any collapse depth, so there's nothing here for that raw check to
+    // trip on. (A '/' inside a character class, used further below in
+    // the bare adr:/seed: ref pattern, does NOT have this hazard — the
+    // regex-literal grammar already permits an unescaped '/' there.)
+    const EXTERNAL_DEST_RE = new RegExp('^https?://');
+    const INTERNAL_DEST_RE = /^(?:adr|seed):[^\\s)]+$/;
+    // Same raw-parse hazard as EXTERNAL_DEST_RE above, one level worse:
+    // a doubled-escaped '[', ']', '(' or ')' reads (in RAW/uncollapsed
+    // form) as an escaped-backslash atom followed by an UNESCAPED
+    // structural character — which opens/closes a class or group at the
+    // wrong point instead of matching a literal bracket/paren. RegExp-
+    // from-string sidesteps this the same way, for the same reason.
+    // [label](dest) — either destination kind
+    s = s.replace(new RegExp('\\\\[([^\\\\]]+)\\\\]\\\\(([^)\\\\s]+)\\\\)', 'g'), (whole, label, dest) => {
+      if (EXTERNAL_DEST_RE.test(dest)) {
+        return pushLink('<a class="panel-link" href="#" data-kind="ext" data-href="' + escAttr(dest) + '">' + label + '</a>');
+      }
+      if (INTERNAL_DEST_RE.test(dest)) {
+        return pushLink('<a class="panel-link" href="#" data-kind="ref" data-ref="' + escAttr(dest) + '">' + label + '</a>');
+      }
+      return whole;
+    });
+    // Bare https?://... autolink. Trims common trailing sentence
+    // punctuation (a real specimen: "see https://example.com." must not
+    // swallow the period into the link).
+    s = s.replace(new RegExp('https?://[^\\\\s<]+', 'g'), url => {
+      const m = url.match(new RegExp('^(.*[^.,;:!?)\\\\]])([.,;:!?)\\\\]]*)$'));
+      const clean = m ? m[1] : url;
+      const trail = m ? m[2] : '';
+      return pushLink('<a class="panel-link" href="#" data-kind="ext" data-href="' + escAttr(clean) + '">' + clean + '</a>') + trail;
+    });
+    // Bare adr:/seed: autolink — word-boundary guarded so this never
+    // matches mid-token (e.g. inside a longer identifier). The '/' here
+    // sits inside a character class, where it's always safe (see comment
+    // above) — no RegExp-from-string needed for this one.
+    s = s.replace(/\\b(?:adr|seed):[a-zA-Z0-9._/-]+(?:#[a-z0-9][a-z0-9-]*)?/g, ref => {
+      return pushLink('<a class="panel-link" href="#" data-kind="ref" data-ref="' + escAttr(ref) + '">' + ref + '</a>');
+    });
+
     // Bold pass uses a NON-GREEDY [\\s\\S]*? body, not [^*]+ (Gleaner's
     // root-cause, 2026-08-05: a **bold** span containing a nested *italic*
     // word never matched bold at all — [^*]+ excludes ANY asterisk from
@@ -2239,7 +2355,8 @@ function renderMarkdown(md) {
     s = s.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
     s = s.replace(/__([\\s\\S]*?)__/g, '<strong>$1</strong>');
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
-    // Restore backtick spans as <code> elements
+    // Restore links, then backtick spans as <code> elements
+    s = s.replace(/\\x03(\\d+)\\x03/g, (_, i) => links[+i]);
     s = s.replace(/\\x02(\\d+)\\x02/g, (_, i) => '<code>' + codes[+i] + '</code>');
     return s;
   }
@@ -2516,6 +2633,23 @@ function toggleExpandField() {
   ta.focus();
 }
 $id('expand-field').addEventListener('click', e => { e.preventDefault(); toggleExpandField(); });
+
+// Links inside rendered markdown (Gleaner's escalation, 2026-08-21):
+// delegated on #card, which wraps every field renderInline's output can
+// land in (why/body/body-post/recommendations/review-stop answer) — links
+// are re-created per render, same reasoning as #draft-restored below.
+// Routes on data-kind rather than e.target.id, since arbitrarily many
+// links can appear per render and don't get individually-meaningful ids.
+$id('card').addEventListener('click', e => {
+  const kind = e.target && e.target.dataset && e.target.dataset.kind;
+  if (kind === 'ext') {
+    e.preventDefault();
+    vscode.postMessage({ type: 'openExternalUrl', href: e.target.dataset.href });
+  } else if (kind === 'ref') {
+    e.preventDefault();
+    vscode.postMessage({ type: 'openDeepLinkRef', ref: e.target.dataset.ref });
+  }
+});
 
 // Draft-vs-file swap + vault-staleness resolution (delegated: the links are
 // re-created per render). q is re-read fresh at click time, never closed
