@@ -25,6 +25,8 @@ The practice has a name: **deliberative programming** — specifying software by
 - **Nobody has to remember the format.** The sidebar tree shows status at a glance (draft, accepted, superseded); the panel handles the QST/ANS bookkeeping; plain Markdown files without any of the extra structure still show up and work, just with fewer bells.
 - **It's yours, not a walled garden.** Everything lives in Markdown files in your repo (`docs/adr/` by default). Delete the extension tomorrow and you still have readable documents — no lock-in, no proprietary database.
 - **It scales the way AI-driven projects actually grow.** The faster you can spin up a subproject with an AI collaborator, the faster you accumulate separate ADR trees that need to reference each other — a meta-repo of meta-repos, not a hypothetical. This extension is built for that pattern natively: a single project is the simplest case of the same structure it uses for ten nested ones, not a special mode bolted on after the fact. This isn't aspirational — the team's own coordination repo nests this extension's own repo as a subproject, and the extension navigates that structure without a special mode.
+- **A tour curates attention, not just storage.** On a real project, "every open question" is a wall of text — the honest answer to "what actually matters right now" isn't the whole list. Save a chosen order over a subset of your open questions, with a note on each stop, as a shareable `docs/adr/tours/*.tour.json` file (**Mint Tour from Current Filter**). Anyone who opens it sees your judgment, not just your backlog — same answering surface as the regular panel, just walked in the order and with the commentary you picked.
+- **A question can be paused or retired without lying about being answered.** Mark a whole ADR `Deferred` / `Paused` / `Suspended` / `On Hold` and its questions drop out of your open-question count everywhere — sidebar, badge, panel — while staying fully readable, never invisible. Retire a single question that will never get answered with `withdrawn` / `superseded` / `moot`. Neither one pretends a decision got made that didn't.
 
 ## What you install
 
@@ -64,10 +66,16 @@ That's the whole loop. Everything else — deep links between ADRs, creating new
 | Deep links | Stable links to a specific ADR section (`adr:0012#some-heading`), for referencing decisions from code or other ADRs |
 | ADR Commit | Stage and commit only your ADR changes, stash everything else, restore it after |
 | Format tolerance | Works with `collab-adr-lean` (QST/ANS/NOT navigation codes) and plain MADR files side by side |
+| Sidebar badge | The Activity Bar icon shows your live open-question count, with a tooltip disclosing parse-health so the number is never trusted blind |
+| Multi-root workspaces | Discovers and aggregates every ADR-bearing project root — submodules, a forest workspace — sidebar, panel, and diagnostics span all of them, not just the first folder |
+| Tours | Curated, ordered, shareable walks over a chosen subset of open questions, with a comment on each stop — a view over your questions, never a second queue |
+| Seed lifecycle | Seeds show their real state at a glance — iterating, quiet, parked, superseded, terminated, or chunked-with-a-rollup-badge — instead of one wrench for everything pending |
+| Pause & retire | Pause a whole ADR's questions (`Deferred`/`Paused`/`Suspended`/`On Hold`) or retire one specifically (`withdrawn`/`superseded`/`moot`) — both stay fully readable, neither counts as answered |
+| Report button | Flag a problem from inside the panel, in one gesture, without losing your in-progress answer — off by default |
 
 ### Key settings
 
-A curated few — there are about two dozen in total by now, all browsable via the Command Palette (`ADR Manager: ...`) or the Settings UI (search "ADR").
+A curated few — there are just over thirty in total by now, all browsable via the Command Palette (`ADR Manager: ...`) or the Settings UI (search "ADR").
 
 | Setting | Default | What it's for |
 |---|---|---|
@@ -77,6 +85,12 @@ A curated few — there are about two dozen in total by now, all browsable via t
 | `adrManager.badge.include.adr` / `.seed` | `true` / `true` | Whether ADR and seed questions each count toward the sidebar icon's open-question badge |
 | `adrManager.missingAnsBehavior` | `confirm` | What happens when the panel has to append a brand-new answer block to a question that has no `**ANS:**` marker at all — shows exactly where it will write and asks first |
 | `adrManager.aiModel` | `Sonnet 4.6 (1M)` | AI model name used in new ADR templates |
+| `adrManager.sidebar.categoryOrder` | `[tours, adrs, seeds]` | Reorder the sidebar's top-level categories |
+| `adrManager.seeds.agingMode` | `adaptive` | How a seed gets flagged as going quiet — relative to your project's own rhythm, or a fixed day count (`adrManager.seeds.fixedThresholdDays`) |
+| `adrManager.tours.showLeanVerbPrefix` | `true` | Show a tour entry's intended response shape (DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE) as a sidebar prefix |
+| `adrManager.reportButton.enabled` | `false` | Adds a Report button to the panel for flagging a problem without losing your place |
+| `adrManager.unresolved.hideFromPanel` / `.deferred.hideFromPanel` | `false` / `false` | Hide "unresolved" (contributed, but the next move is the model's) or "deferred" (blocked, nobody's ball right now) questions from the answering walk |
+| `adrManager.roots.captionMode` | `git-auto` | How each root is labeled in a multi-root workspace — repo name, `owner/repo`, or auto |
 
 ## Related
 
