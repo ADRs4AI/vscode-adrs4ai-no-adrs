@@ -1597,7 +1597,7 @@ function resolveReportOpenQuestions(filePath: string): Question[] | undefined {
  * become one.
  */
 async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeItem): Promise<void> {
-  if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.observations', true)) {
+  if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.observations', false)) {
     vscode.window.setStatusBarMessage('ADR Manager: Observation logging is turned off (adrManager.logging.observations).', 4000);
     return;
   }

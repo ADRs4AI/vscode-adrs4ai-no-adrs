@@ -642,7 +642,7 @@ export class OpenQuestionsPanel {
     try {
       const unresolved = unresolvedTourRefs(resolved)
       if (unresolved.length === 0) return
-      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.tourUnresolvedRefs', true)) return
+      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.tourUnresolvedRefs', false)) return
 
       const tourDoc = captureDocument(tour.path)
       const refDocs = referencedDocumentPaths(resolved)
@@ -693,7 +693,7 @@ export class OpenQuestionsPanel {
     // Its own sublog key (2026-07-30 addendum: granular per-writer toggles,
     // not one shared switch) — checked BEFORE prompting, so a disabled
     // writer never invites a note it's about to discard.
-    if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.observations', true)) {
+    if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.observations', false)) {
       vscode.window.setStatusBarMessage('ADR Manager: Observation logging is turned off (adrManager.logging.observations).', 4000)
       return
     }
@@ -787,7 +787,7 @@ export class OpenQuestionsPanel {
     msg?: { adrPath?: string; questionId?: string; draftKey?: string; answerText?: string } & Record<string, unknown>,
   ): void {
     try {
-      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.panelErrors', true)) return
+      if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('logging.panelErrors', false)) return
       if (!msg?.adrPath) return
       // Retry-storm dedupe: a retry loop hitting the same failure over and
       // over should write one ledger record, not one per retry cycle.

@@ -3,9 +3,9 @@
  * (Lapidary's 2026-07-30 addendum to the report-button seed: "logging.
  * <sublog> settings, individually toggleable, because logging costs
  * speed" — replacing the single shared `adrManager.logErrors` switch with
- * one key per ledger writer). Ship-flip discipline: all three default
- * true now (collection era), all flip to false before the first public
- * release — see docs/RELEASE-CHECKLIST.md.
+ * one key per ledger writer). Ship-flip discipline: all three defaulted
+ * true during the collection era; flipped to false 2026-08-21 for the
+ * first public release — see docs/RELEASE-CHECKLIST.md.
  */
 
 import { readFileSync } from 'node:fs'
@@ -23,17 +23,17 @@ describe('Each ledger writer gates on its own sublog key, not a shared switch', 
 
   it('harvestError (panel v1 errors) gates on logging.panelErrors', () => {
     const method = PANEL_SRC.match(/private harvestError\([\s\S]*?\n  \}/)![0]
-    expect(method).toContain("get<boolean>('logging.panelErrors', true)")
+    expect(method).toContain("get<boolean>('logging.panelErrors', false)")
   })
 
   it('logTourUnresolvedIfNeeded gates on logging.tourUnresolvedRefs', () => {
     const method = PANEL_SRC.match(/private logTourUnresolvedIfNeeded\([\s\S]*?\n  \}/)![0]
-    expect(method).toContain("get<boolean>('logging.tourUnresolvedRefs', true)")
+    expect(method).toContain("get<boolean>('logging.tourUnresolvedRefs', false)")
   })
 
   it('reportObservation gates on logging.observations, checked BEFORE the input box prompts', () => {
     const method = PANEL_SRC.match(/private async reportObservation\([\s\S]*?\n  \}/)![0]
-    const gateIdx = method.indexOf("get<boolean>('logging.observations', true)")
+    const gateIdx = method.indexOf("get<boolean>('logging.observations', false)")
     const promptIdx = method.indexOf('showInputBox')
     expect(gateIdx).toBeGreaterThan(-1)
     expect(promptIdx).toBeGreaterThan(-1)
@@ -41,16 +41,16 @@ describe('Each ledger writer gates on its own sublog key, not a shared switch', 
   })
 })
 
-describe('package.json declares all three sublog settings, default true, old key removed', () => {
+describe('package.json declares all three sublog settings, default false (post-ship-flip), old key removed', () => {
   it('adrManager.logErrors is no longer declared', () => {
     expect(PKG).not.toContain('"adrManager.logErrors"')
   })
 
   for (const key of ['adrManager.logging.panelErrors', 'adrManager.logging.tourUnresolvedRefs', 'adrManager.logging.observations']) {
-    it(`${key} exists, default true`, () => {
+    it(`${key} exists, default false`, () => {
       const match = PKG.match(new RegExp(`"${key.replace(/\./g, '\\.')}":\\s*\\{[^}]*\\}`))
       expect(match, `${key} missing from package.json`).toBeTruthy()
-      expect(match![0]).toContain('"default": true')
+      expect(match![0]).toContain('"default": false')
     })
   }
 })

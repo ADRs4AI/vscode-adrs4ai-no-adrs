@@ -117,7 +117,7 @@ describe('extension.ts: reportTreeItem — same UX discipline as the panel Repor
   const fn = EXT_SRC.match(/async function reportTreeItem\([\s\S]*?\n\}/)![0]
 
   it('gates on logging.observations BEFORE prompting, same as the panel\'s reportObservation', () => {
-    const gateIdx = fn.indexOf("get<boolean>('logging.observations', true)")
+    const gateIdx = fn.indexOf("get<boolean>('logging.observations', false)")
     const promptIdx = fn.indexOf('showInputBox')
     expect(gateIdx).toBeGreaterThan(-1)
     expect(promptIdx).toBeGreaterThan(-1)

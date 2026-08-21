@@ -26,7 +26,7 @@ describe('openQuestionsPanel.ts: tour-unresolved-refs ledger writer', () => {
   it('gated by its own sublog key, adrManager.logging.tourUnresolvedRefs', () => {
     const method = PANEL_SRC.match(/private logTourUnresolvedIfNeeded\([\s\S]*?\n  \}/)
     expect(method).toBeTruthy()
-    expect(method![0]).toContain("get<boolean>('logging.tourUnresolvedRefs', true)")
+    expect(method![0]).toContain("get<boolean>('logging.tourUnresolvedRefs', false)")
   })
 
   it('writes error-record/2, source tour-resolver, kind tour-unresolved-refs', () => {
