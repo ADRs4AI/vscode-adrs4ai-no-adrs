@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.91] - 2026-08-21
+
+### Added
+- **Links now work in the Open Questions panel.** External `https://` URLs (both `[text](url)` and bare) open in your browser; internal `adr:NNNN#slug` / `seed:...#slug` references (both wrapped and bare, e.g. typed straight into an answer) jump to the right spot in your workspace — previously neither form did anything at all.
+
 ## [0.7.89] - 2026-08-18
 
 ### Fixed
