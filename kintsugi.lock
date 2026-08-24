@@ -1,22 +1,37 @@
 # kintsugi.lock — tool-written state; do not hand-edit.
 # What this repo HAS, per artifact (base version + exact canonical blob).
 kintsugi_schema: 1
-canonical_version: 3.9.2
-synced: '2026-08-17T01:02:54Z'
+canonical_version: 3.10.0
+synced: '2026-08-24T18:20:34Z'
 artifacts:
   .claude/skills/adr-authoring/SKILL.md:
-    base_version: 3.9.2
-    base_blob: 919a98e710893f5414b985a02723c3013d902d14
+    base_version: 3.10.0
+    base_blob: 40d11cf3f00226b9ba362b2757a05764f92691d2
   .claude/skills/adr-authoring/references/depth.md:
     base_version: 3.9.2
     base_blob: d190fe81b8ba194350e94addee02bee4417dbbde
+  .claude/skills/adr-authoring/references/questions-reference.md:
+    base_version: 3.10.0
+    base_blob: a8b05ae082c0de3016b5c9adecf4211bf301de2b
+  .vscode/vscode-optimization-guide.md:
+    base_version: 3.10.0
+    base_blob: c530ec32ed082c3649c967556ba7ac541e3f39bb
   CLAUDE.md:
     state_at_adopt: unknown-base
+  QUICK-START.md:
+    base_version: 3.10.0
+    base_blob: 0996d551ca5ac3c77e71463dc01f22e38560a547
   docs/METHODOLOGY.md:
     state_at_adopt: unknown-base
+  docs/adr/AGENTS.md:
+    base_version: 3.10.0
+    base_blob: df8c39920e78f66d9ca29a663b6ef56600bdb2b0
+  docs/adr/templates/AGENTS.md:
+    base_version: 3.10.0
+    base_blob: 3ad56716a2a0fbd13b706b9031e61db35c4f219f
   docs/adr/templates/adr-madr.md:
-    base_version: 3.9.2
-    base_blob: 057270a395a710ca2eff6567c667f5da19f28197
+    base_version: 3.10.0
+    base_blob: 6801bd39e142abde8a2ff55f848fcf5dc152cd88
   docs/adr/templates/adr.md:
     state_at_adopt: unknown-base
   docs/adr/templates/debrief.md:
