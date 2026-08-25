@@ -488,6 +488,42 @@ describe('Webview script block syntax', () => {
       expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true, insertLineOffset: 0 })
     })
 
+    // Regression test (fixes real bug, Jérémie live, 2026-08-25): "when the
+    // answer must be inserted, I do see the [preview], but the subsequent
+    // Cmd+Enter doesn't submit the answer. I currently have to manually
+    // click on 'Insert here'." Root cause: submit() (what the Cmd+Enter
+    // keydown handler calls) unconditionally cleared pendingInsertionConfirm
+    // and posted a FRESH, non-confirmed 'answer' message — Cmd+Enter just
+    // re-ran the same no-marker-found path and redrew the same preview,
+    // reading as "does nothing." Fixed by having submit() check for a
+    // pending preview FIRST and resend the stored confirmation, same as the
+    // button already did.
+    it('a subsequent Cmd+Enter, while the preview is showing, confirms it exactly like clicking "Insert here" — does not start a fresh submit', () => {
+      const h = createWebviewHarness()
+      h.postToWebview(previewMsg)
+      const ans = h.element('ans')
+      for (const handler of ans.listeners['keydown'] ?? []) {
+        handler({ metaKey: true, ctrlKey: false, shiftKey: false, key: 'Enter', preventDefault: () => {} })
+      }
+      expect(h.element('insertion-preview-bar').style.display).toBe('none')
+      expect(h.sentMessages).toContainEqual({ ...originalAnswer, confirmedInsertion: true, insertLineOffset: 0 })
+      // Exactly one message sent — not the confirm PLUS a second, fresh
+      // (non-confirmed) 'answer' message from submit() falling through.
+      expect(h.sentMessages).toHaveLength(1)
+    })
+
+    it('Cmd+Shift+Enter ("Respond unresolved"), while the preview is showing, ALSO just confirms the pending preview — the stored message already carries the original targetStatus', () => {
+      const unresolvedAnswer = { ...originalAnswer, targetStatus: 'unresolved' }
+      const h = createWebviewHarness()
+      h.postToWebview({ ...previewMsg, message: unresolvedAnswer })
+      const ans = h.element('ans')
+      for (const handler of ans.listeners['keydown'] ?? []) {
+        handler({ metaKey: true, ctrlKey: false, shiftKey: true, key: 'Enter', preventDefault: () => {} })
+      }
+      expect(h.sentMessages).toContainEqual({ ...unresolvedAnswer, confirmedInsertion: true, insertLineOffset: 0 })
+      expect(h.sentMessages).toHaveLength(1)
+    })
+
     it('Cancel dismisses the preview without sending anything, and re-enables the answer button', () => {
       const h = createWebviewHarness()
       h.postToWebview(previewMsg)

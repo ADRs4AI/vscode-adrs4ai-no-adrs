@@ -2875,7 +2875,34 @@ $id('adr-link').addEventListener('click', () => {
   vscode.postMessage({ type: 'jumpTo', adrPath: questions[idx].adrPath, lineNumber: questions[idx].lineStart });
 });
 
+// Insertion-preview protocol (DEBRIEF-006), the confirm step shared by
+// BOTH the "Insert here" button and a subsequent Cmd+Enter (regression,
+// Jérémie live 2026-08-25: "the subsequent Cmd+Enter doesn't submit the
+// answer... I currently have to manually click 'Insert here'"). Root
+// cause: submit() below unconditionally cleared pendingInsertionConfirm
+// and posted a FRESH, non-confirmed 'answer' message — Cmd+Enter re-ran
+// the exact same no-marker-found path and just redrew the same preview,
+// reading as "does nothing." Resending the ALREADY-STORED message
+// (built from whichever submit gesture got us here — plain Answer or
+// Respond-unresolved — so its own targetStatus is already correct) is
+// exactly what the button already did; this only gives Cmd+Enter the
+// same path.
+function confirmPendingInsertion() {
+  if (!pendingInsertionConfirm) return false;
+  $id('insertion-preview-bar').style.display = 'none';
+  $id('offscreen-toast').style.display = 'none';
+  $id('btn-ans').disabled = true;
+  vscode.postMessage(Object.assign({}, pendingInsertionConfirm, { confirmedInsertion: true, insertLineOffset: insertionAdjustment }));
+  pendingInsertionConfirm = null;
+  pendingInsertionContext = null;
+  insertionAdjustment = 0;
+  return true;
+}
+
 function submit(force, targetStatus) {
+  // A pending preview always wins over a fresh submit attempt — see
+  // confirmPendingInsertion's own comment for the regression this fixes.
+  if (confirmPendingInsertion()) return;
   const text = $id('ans').value.trim();
   const author = $id('author').value.trim() || 'Human';
   if (!text || !questions[idx]) return;
@@ -2967,14 +2994,7 @@ $id('btn-insertion-down').addEventListener('click', () => {
   renderInsertionPreview();
 });
 $id('btn-insertion-confirm').addEventListener('click', () => {
-  if (!pendingInsertionConfirm) return;
-  $id('insertion-preview-bar').style.display = 'none';
-  $id('offscreen-toast').style.display = 'none';
-  $id('btn-ans').disabled = true;
-  vscode.postMessage(Object.assign({}, pendingInsertionConfirm, { confirmedInsertion: true, insertLineOffset: insertionAdjustment }));
-  pendingInsertionConfirm = null;
-  pendingInsertionContext = null;
-  insertionAdjustment = 0;
+  confirmPendingInsertion();
 });
 $id('btn-insertion-cancel').addEventListener('click', () => {
   // Nothing was written — the draft is untouched, just dismiss and let the
