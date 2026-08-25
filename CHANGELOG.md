@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.95] - 2026-08-25
+
+### Added
+- **"Copy Deep Link" is now multi-root aware.** In a workspace with more than one project, the copied reference is now qualified (e.g. `elenchus-app.0025`) instead of a bare `adr:0025` — a bare reference pasted into a different project could silently resolve to the wrong document, since ADR numbers aren't unique across projects.
+
 ## [0.7.94] - 2026-08-25
 
 ### Fixed
