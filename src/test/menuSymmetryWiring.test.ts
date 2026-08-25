@@ -44,6 +44,37 @@ describe('extension.ts: copyDeepLink no longer produces adr:0000 for seed-source
   })
 })
 
+// ADR-0025 Decision 7 (context-aware deep-link copy format): a bare
+// adr:NNNN copied from a multi-root workspace resolves against whichever
+// root the paste lands in, not necessarily the root it was copied from.
+// The actual xproject-alias builder has its own behavioral tests in
+// deeplinkProtocol.test.ts; this file only pins that copyDeepLink's glue
+// branches on owningRootNamespace correctly for every item kind.
+describe('extension.ts: copyDeepLink is multi-root aware (ADR-0025 Decision 7)', () => {
+  const fn = EXT_SRC.match(/function copyDeepLink\([\s\S]*?\n\}/)![0]
+
+  it('isMultiRootWorkspace / owningRootNamespace fold to undefined in the N=1 case — composability, same as Decision 6', () => {
+    const helperFn = EXT_SRC.match(/function isMultiRootWorkspace\(\): boolean \{[\s\S]*?\n\}/)![0]
+    expect(helperFn).toContain('compositeIndex.walk()).length : 1) > 1')
+    const nsFn = EXT_SRC.match(/function owningRootNamespace\(filePath: string\): string \| undefined \{[\s\S]*?\n\}/)![0]
+    expect(nsFn).toContain('if (!isMultiRootWorkspace()) return undefined')
+  })
+
+  it('an ADR item uses the xproject-alias form when multi-root, the bare local form otherwise', () => {
+    expect(fn).toContain('buildXProjectAdrRef({ namespace, number: item.adr.number })')
+    expect(fn).toContain('buildLocalAdrRef({ number: item.adr.number })')
+  })
+
+  it('an ADR-sourced question uses the xproject-alias form with its anchor when multi-root', () => {
+    expect(fn).toContain('buildXProjectAdrRef({ namespace, number: item.question.adrNumber, anchor: item.question.slug })')
+  })
+
+  it('a seed (whole item or seed-sourced question) has no xproject alias available — falls to the canonical project-scope form when multi-root, never an invented alias syntax', () => {
+    expect(fn).toContain("buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.seed.path) })")
+    expect(fn).toContain("buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.question.adrPath), anchor: item.question.slug })")
+  })
+})
+
 describe('extension.ts: copyItemPath / copyItemRelativePath — new commands for menu symmetry', () => {
   it('copyItemPath copies resourceUri.fsPath verbatim', () => {
     const fn = EXT_SRC.match(/function copyItemPath\([\s\S]*?\n\}/)![0]

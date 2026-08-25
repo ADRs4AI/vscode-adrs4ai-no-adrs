@@ -89,6 +89,34 @@ export function buildLocalSeedRef(seedSlug: string, anchor?: string): string {
   return appendAnchor(`seed:${seedSlug}`, anchor)
 }
 
+export interface BuildXProjectAdrRefOptions {
+  namespace: string
+  number: number
+  anchor?: string
+  subpath?: string
+}
+
+/**
+ * Cross-project alias ref (ADR-0008's own XPROJECT_RE grammar,
+ * `{namespace}.{locator}#{anchor}` — parseXProjectAlias above already
+ * reads this shape; this is its missing write-side counterpart). ADR-
+ * 0025 Decision 7's "shortest form that will disambiguate at the
+ * destination": a bare `adr:NNNN` copied from a multi-root workspace
+ * would resolve against WHICHEVER root the paste lands in, not
+ * necessarily the root it was copied from — silently wrong, not just
+ * ambiguous, if pasted into a different root's document. No such alias
+ * exists for seeds in this grammar (XPROJECT_RE only ever resolves an
+ * ADR locator) — buildCanonicalRef (scope 'project', artifact 'seed')
+ * is the correct, already-ratified fallback there, not an invented
+ * extension to this one.
+ */
+export function buildXProjectAdrRef(opts: BuildXProjectAdrRefOptions): string {
+  const locator = [normalizeSlashPath(opts.subpath), formatAdrNumber(opts.number)]
+    .filter(Boolean)
+    .join('/')
+  return appendAnchor(`${opts.namespace}.${locator}`, opts.anchor)
+}
+
 export function buildCanonicalRef(opts: BuildCanonicalRefOptions): string {
   const scopePath = buildScopePath(opts)
   const locator = buildLocator(opts)

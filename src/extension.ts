@@ -33,7 +33,7 @@ import { AdrTreeProvider, captureFullTree, type AdrTreeItem } from './views/adrT
 import { appendLedgerRecord, captureDocument } from './drafts/errorLog'
 import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
 import { addBlockEntry, removeBlockEntry, relativeRootPath } from './index/rootsConfigWriter'
-import { buildLocalAdrRef, buildLocalSeedRef, seedSlugFromPath } from './deeplink/protocol'
+import { buildLocalAdrRef, buildLocalSeedRef, buildXProjectAdrRef, buildCanonicalRef, seedSlugFromPath } from './deeplink/protocol'
 import { buildTourJson, serializeTourJson, tourFilename, tourFilePath } from './index/tourWriter'
 import type { RootNode } from './index/compositeIndex'
 import type { Question } from './parser/types'
@@ -1682,16 +1682,65 @@ function updateTourDiagnostics(collection: vscode.DiagnosticCollection, composit
  * decision this project reserves for Riddle/council (same precedent as
  * roots.json's `names` field) — flagged back, not guessed.
  */
+/**
+ * ADR-0025 Decision 7 ("context-aware deep-link copy format"): a bare
+ * `adr:NNNN` copied from a multi-root workspace resolves against
+ * WHICHEVER root the paste lands in, not necessarily the root it was
+ * copied from — silently wrong (not just ambiguous) if pasted into a
+ * different root's document, since ADR numbers aren't unique across
+ * roots. undefined in the N=1 case, where there's only ever one root to
+ * mean anyway (same composability property Decision 6's root-resolution
+ * already established) — `owningRootNamespace` below folds straight
+ * back to undefined there without a second check.
+ */
+function isMultiRootWorkspace(): boolean {
+  return (compositeIndex ? Array.from(compositeIndex.walk()).length : 1) > 1
+}
+
+function owningRootNamespace(filePath: string): string | undefined {
+  if (!isMultiRootWorkspace()) return undefined
+  return compositeIndex?.findRoot(filePath)?.namespace
+}
+
+/**
+ * Tooltip-preview note (Decision 7's other half): VS Code's
+ * `view/item/context` menu items have no live hover-preview mechanism —
+ * titles are static, declared once in package.json, with no per-
+ * invocation callback to show "will copy: X" before the click (the same
+ * kind of real API ceiling this session already hit for a true per-item
+ * tree collapse). The closest achievable equivalent already exists:
+ * `showInformationMessage` below fires immediately on copy, naming the
+ * exact string that landed on the clipboard — read-before-acting-on-it,
+ * even though it can't be strictly read-before-COMMIT for an action
+ * (clipboard copy) that's already trivially reversible by copying again.
+ */
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {
   let ref: string | undefined;
   if (item.kind === 'adr' && item.adr) {
-    ref = buildLocalAdrRef({ number: item.adr.number });
+    const namespace = owningRootNamespace(item.adr.path);
+    ref = namespace
+      ? buildXProjectAdrRef({ namespace, number: item.adr.number })
+      : buildLocalAdrRef({ number: item.adr.number });
   } else if (item.kind === 'question' && item.question) {
-    ref = item.question.sourceKind === 'seed'
-      ? buildLocalSeedRef(seedSlugFromPath(item.question.adrPath), item.question.slug)
-      : buildLocalAdrRef({ number: item.question.adrNumber, anchor: item.question.slug });
+    const namespace = owningRootNamespace(item.question.adrPath);
+    if (item.question.sourceKind === 'seed') {
+      // No cross-project alias exists for seeds in ADR-0008's grammar
+      // (XPROJECT_RE only ever resolves an ADR locator) — the canonical
+      // form is the correct, already-ratified fallback, not an invented
+      // extension to the alias grammar.
+      ref = namespace
+        ? buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.question.adrPath), anchor: item.question.slug })
+        : buildLocalSeedRef(seedSlugFromPath(item.question.adrPath), item.question.slug);
+    } else {
+      ref = namespace
+        ? buildXProjectAdrRef({ namespace, number: item.question.adrNumber, anchor: item.question.slug })
+        : buildLocalAdrRef({ number: item.question.adrNumber, anchor: item.question.slug });
+    }
   } else if (item.kind === 'seed' && item.seed) {
-    ref = buildLocalSeedRef(seedSlugFromPath(item.seed.path));
+    const namespace = owningRootNamespace(item.seed.path);
+    ref = namespace
+      ? buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.seed.path) })
+      : buildLocalSeedRef(seedSlugFromPath(item.seed.path));
   }
   if (!ref) return;
   vscode.env.clipboard.writeText(ref);

@@ -20,6 +20,7 @@ import {
   buildLocalAdrRef,
   buildLocalSeedRef,
   buildCanonicalRef,
+  buildXProjectAdrRef,
   formatAdrNumber,
   seedSlugFromPath,
 } from '../deeplink/protocol'
@@ -140,6 +141,28 @@ describe('builders round-trip what the parser accepts', () => {
   it('buildCanonicalRef throws a clear error rather than emitting a malformed reference when required fields are missing', () => {
     expect(() => buildCanonicalRef({ scope: 'project', artifact: 'adr' })).toThrow(/namespace/)
     expect(() => buildCanonicalRef({ scope: 'project', artifact: 'adr', namespace: 'x' })).toThrow(/number/)
+  })
+
+  // ADR-0025 Decision 7 (context-aware deep-link copy format): the missing
+  // write-side counterpart to parseXProjectAlias above — a bare `adr:NNNN`
+  // copied from a multi-root workspace would resolve against whichever
+  // root the paste lands in, not necessarily the root it was copied from.
+  it('buildXProjectAdrRef produces a string parseDeepLinkRef re-parses as the SAME xproject-alias format already covered above', () => {
+    const ref = buildXProjectAdrRef({ namespace: 'adrs4ai-vscode-adrs-for-ai', number: 25, anchor: 'decision-7' })
+    expect(ref).toBe('adrs4ai-vscode-adrs-for-ai.0025#decision-7')
+    expect(parseDeepLinkRef(ref)).toMatchObject({ format: 'xproject-alias', namespace: 'adrs4ai-vscode-adrs-for-ai', number: 25, anchor: 'decision-7' })
+  })
+
+  it('buildXProjectAdrRef with no anchor round-trips too', () => {
+    const ref = buildXProjectAdrRef({ namespace: 'elenchus-app', number: 1 })
+    expect(ref).toBe('elenchus-app.0001')
+    expect(parseDeepLinkRef(ref)).toMatchObject({ format: 'xproject-alias', namespace: 'elenchus-app', number: 1 })
+  })
+
+  it('buildXProjectAdrRef supports a subpath, matching buildLocalAdrRef\'s own shape', () => {
+    const ref = buildXProjectAdrRef({ namespace: 'elenchus-app', number: 3, subpath: 'archive' })
+    expect(ref).toBe('elenchus-app.archive/0003')
+    expect(parseDeepLinkRef(ref)).toMatchObject({ format: 'xproject-alias', namespace: 'elenchus-app', number: 3, subpath: 'archive' })
   })
 })
 

@@ -12,6 +12,7 @@
     "adrManager.logging.panelErrors": true,
     "adrManager.logging.tourUnresolvedRefs": true,
     "adrManager.reportButton.enabled": true,
+    "adrManager.humanName": "Jérémie Lumbroso",
     "workbench.colorCustomizations": {
         "activityBar.activeBackground": "#e5690b",
         "activityBar.background": "#e5690b",
