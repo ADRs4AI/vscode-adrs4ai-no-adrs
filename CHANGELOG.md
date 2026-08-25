@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.92] - 2026-08-25
+
+### Fixed
+- **"Create New ADR" now asks which project in a multi-root workspace**, instead of silently guessing the first workspace folder (and numbering off the wrong project's ADRs). Follows your active editor's project by default; `adrManager.newAdrTargetRoot` pins one project regardless of which file is open, `adrManager.alwaysPromptOnMultiRoot` always asks.
+
+### Added
+- **Right-click a project → Create New ADR** opens the same ADR/Seed picker, scoped to that project directly — no prompt needed.
+- **Right-click the ADRs or Seeds category header → Create New ADR/Seed** creates that kind directly in that project.
+
 ## [0.7.91] - 2026-08-21
 
 ### Added
