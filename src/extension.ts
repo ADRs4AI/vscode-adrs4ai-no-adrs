@@ -896,7 +896,7 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
 
   const cfg = vscode.workspace.getConfiguration('adrManager');
   const humanName = cfg.get<string>('humanName', '') || 'Human';
-  const aiModel = cfg.get<string>('aiModel', 'Sonnet 4.6 (1M)');
+  const aiModel = cfg.get<string>('aiModel', '(your AI model)');
   const template = kind.value === 'seed'
     ? generateSeedTemplate(title, today, humanName)
     : generateAdrTemplate(title, today, humanName, aiModel);

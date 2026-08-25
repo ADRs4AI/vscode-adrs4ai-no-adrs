@@ -345,8 +345,8 @@
         },
         "adrManager.aiModel": {
           "type": "string",
-          "default": "Sonnet 4.6 (1M)",
-          "description": "The AI model name used in new ADR templates (e.g., 'Sonnet 4.6 (1M)', 'Claude Opus 4.6')."
+          "default": "(your AI model)",
+          "description": "The AI model name used in new ADR templates — set this once to whatever you're actually using (e.g., 'Sonnet 5', 'Claude Opus 5'). Left as an obvious placeholder by default rather than a specific model name, since that name is guaranteed to go stale."
         },
         "adrManager.logging.panelErrors": {
           "type": "boolean",

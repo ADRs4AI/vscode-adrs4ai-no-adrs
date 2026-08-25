@@ -84,7 +84,7 @@ A curated few — there are just over thirty in total by now, all browsable via 
 | `adrManager.clickOpensIn` | `panel` | Clicking a question in the sidebar opens the Open Questions panel, focused on it, by default — set to `file` to jump straight to the raw file instead |
 | `adrManager.badge.include.adr` / `.seed` | `true` / `true` | Whether ADR and seed questions each count toward the sidebar icon's open-question badge |
 | `adrManager.missingAnsBehavior` | `confirm` | What happens when the panel has to append a brand-new answer block to a question that has no `**ANS:**` marker at all — shows exactly where it will write and asks first |
-| `adrManager.aiModel` | `Sonnet 4.6 (1M)` | AI model name used in new ADR templates |
+| `adrManager.aiModel` | *(placeholder)* | AI model name used in new ADR templates — set it once to whatever you're actually using |
 | `adrManager.sidebar.categoryOrder` | `[tours, adrs, seeds]` | Reorder the sidebar's top-level categories |
 | `adrManager.seeds.agingMode` | `adaptive` | How a seed gets flagged as going quiet — relative to your project's own rhythm, or a fixed day count (`adrManager.seeds.fixedThresholdDays`) |
 | `adrManager.tours.showLeanVerbPrefix` | `true` | Show a tour entry's intended response shape (DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE) as a sidebar prefix |
