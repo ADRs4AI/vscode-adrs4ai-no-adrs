@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.94] - 2026-08-25
+
+### Fixed
+- **Cmd+Enter now works when an insertion preview is showing** — it used to do nothing, silently re-showing the same preview, forcing you to click "Insert here" by hand.
+
 ## [0.7.93] - 2026-08-25
 
 ### Added
