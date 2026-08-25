@@ -189,8 +189,18 @@ describe('package.json: reportTreeItem menu entry — every kind, last position,
   it('the view/item/context entry has NO viewItem restriction — applies to every kind, per the spec', () => {
     const menuEntry = PKG.match(/\{\s*"command": "adrManager\.reportTreeItem",\s*"when":[^}]*\}/)
     expect(menuEntry, 'menu entry missing').toBeTruthy()
-    expect(menuEntry![0]).toContain('"when": "view == adrExplorer"')
     expect(menuEntry![0]).not.toContain('viewItem')
+  })
+
+  // Regression test (fixes real bug, Jérémie live, 2026-08-25): "the
+  // Report button is still there, but doesn't work with a warning when
+  // reporting is turned off — that's not logical." Extends the same fix
+  // applied to the panel's own Report button to this tree-wide entry
+  // point, for coherence — an affordance that can't work has no reason
+  // to be shown.
+  it('is hidden entirely when adrManager.logging.observations is off, not just gated at click time', () => {
+    const menuEntry = PKG.match(/\{\s*"command": "adrManager\.reportTreeItem",\s*"when":[^}]*\}/)![0]
+    expect(menuEntry).toContain('config.adrManager.logging.observations')
   })
 
   it('sorts into its own last group ("9_..." — after every other group, VS Code auto-inserts the separator)', () => {

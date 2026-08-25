@@ -515,7 +515,16 @@ export class OpenQuestionsPanel {
       // Priority: settings > git config > top name from ADR index
       gitAuthor: settingsName || getGitUserName() || extractHumanNames(this.composite.allAdrs())[0],
       recommendationCollapseThreshold: cfg.get<number>('panel.recommendationCollapseThreshold', 0),
-      reportButtonEnabled: cfg.get<boolean>('reportButton.enabled', false),
+      // Jérémie, live (2026-08-25): the button showed even with
+      // logging.observations off, and clicking it just surfaced a
+      // "turned off" warning — "that's not logical." The setting's own
+      // description already promised this ("turning this on keeps the
+      // button visible and enables the write"); the code just never
+      // enforced it. Visibility now requires BOTH: reportButton.enabled
+      // is the button's own on/off switch, logging.observations is
+      // whether a click would actually write anything — a button that
+      // can't work has no reason to be shown.
+      reportButtonEnabled: cfg.get<boolean>('reportButton.enabled', false) && cfg.get<boolean>('logging.observations', false),
       // Layout surgery (2026-07-30 inbox 2020): chrome gone by default, capability kept.
       showAuthorshipField: cfg.get<boolean>('showAuthorshipField', false),
       projectNameInHeader: cfg.get<'off' | 'auto' | 'always'>('panel.showProjectInHeader', 'auto'),

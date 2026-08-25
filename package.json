@@ -322,7 +322,7 @@
         },
         {
           "command": "adrManager.reportTreeItem",
-          "when": "view == adrExplorer",
+          "when": "view == adrExplorer && config.adrManager.logging.observations",
           "group": "9_report@1"
         }
       ]
