@@ -10,7 +10,7 @@ You ask an AI model to help design something — auth, a schema, an API shape. I
 
 This extension makes the *decision* — not just the code — a durable, browseable thing inside your editor. Open questions live in a sidebar you can answer without hunting through chat history. Answers are captured the moment you type them, so a file refresh or an agent editing nearby never costs you a half-written thought. Every decision keeps its own history of how it changed and why.
 
-It's built for a specific document format ([`collab-adr-lean`](https://github.com/jlumbroso/human-ai-collaboration-template-A)) — Architectural Decision Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
+It's built for a specific document format ([`adr` v1](docs/SPEC-adr-v1.md)) — Architectural Deliberation Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
 
 ## What this is called
 
@@ -65,7 +65,7 @@ That's the whole loop. Everything else — deep links between ADRs, creating new
 | Seeds | Brain-dump files that get chunked into ADRs — first-class in the tree, not just plain files |
 | Deep links | Stable links to a specific ADR section (`adr:0012#some-heading`), for referencing decisions from code or other ADRs |
 | ADR Commit | Stage and commit only your ADR changes, stash everything else, restore it after |
-| Format tolerance | Works with `collab-adr-lean` (QST/ANS/NOT navigation codes) and plain MADR files side by side |
+| Format tolerance | Works with the `adr` format (QST/ANS/NOT navigation codes) and plain MADR files side by side |
 | Sidebar badge | The Activity Bar icon shows your live open-question count, with a tooltip disclosing parse-health so the number is never trusted blind |
 | Multi-root workspaces | Discovers and aggregates every ADR-bearing project root — submodules, a forest workspace — sidebar, panel, and diagnostics span all of them, not just the first folder |
 | Tours | Curated, ordered, shareable walks over a chosen subset of open questions, with a comment on each stop — a view over your questions, never a second queue |
