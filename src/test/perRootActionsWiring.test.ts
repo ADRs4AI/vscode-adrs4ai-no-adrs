@@ -42,9 +42,14 @@ describe('extension.ts: adrManager.focusRoot', () => {
 describe('extension.ts: commitAdrChanges accepts an optional targetRootPath', () => {
   const fn = EXT_SRC.match(/async function commitAdrChanges\([\s\S]*?\n\}/)![0]
 
-  it('the command registration threads item.rootNode.path through, unchanged for tree-wide invocations (no item)', () => {
+  it('the command registration threads a resolved targetRootPath through, unchanged for tree-wide invocations (no item)', () => {
+    // Superseded by menu-coherence (Jérémie, 2026-08-25): the handler now
+    // also resolves adr/seed items' owning root, not just item.rootNode —
+    // see commitMenuCoherenceWiring.test.ts for that full behavior. This
+    // test only pins that a tree-wide invocation (no item at all) still
+    // ends up passing undefined through, unchanged.
     expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {")
-    expect(EXT_SRC).toContain('commitAdrChanges(adrDir, item?.rootNode?.path);')
+    expect(EXT_SRC).toContain('commitAdrChanges(adrDir, targetRootPath);')
   })
 
   it('when targeted, commits that one root directly — no cross-root QuickPick, matching Jérémie\'s own ask to "circumvent the palette"', () => {

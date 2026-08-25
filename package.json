@@ -256,6 +256,16 @@
           "group": "0_create@1"
         },
         {
+          "command": "adrManager.commitAdrs",
+          "when": "view == adrExplorer && viewItem == adr-group",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.commitAdrs",
+          "when": "view == adrExplorer && viewItem == seed-group",
+          "group": "1_actions@1"
+        },
+        {
           "command": "adrManager.excludeRoot",
           "when": "view == adrExplorer && viewItem == root",
           "group": "1_actions@1"
@@ -279,6 +289,11 @@
           "command": "adrManager.addSeedThreadTurn",
           "when": "view == adrExplorer && viewItem == seed",
           "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.commitAdrs",
+          "when": "view == adrExplorer && viewItem == seed",
+          "group": "1_actions@2"
         },
         {
           "command": "adrManager.hideCompletedTours",

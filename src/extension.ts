@@ -372,8 +372,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       createNewAdr(adrDir, { targetRoot, forceKind });
     }),
 
+    // Menu coherence (Jérémie, 2026-08-25 live ask): "Commit" now appears
+    // on every tree node it can meaningfully apply to — root, category
+    // headers, and individual ADR/seed items. An 'adr'/'seed' leaf item
+    // never carries `rootNode` (only root/category-header items do), so
+    // its owning root is resolved the same way copyDeepLink and friends
+    // already resolve container context: via compositeIndex.findRoot()
+    // on the item's own file path. Every invocation scopes to the WHOLE
+    // owning root (same as right-clicking the root directly) — coherence
+    // means one mental model everywhere, not per-file partial commits.
     vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {
-      commitAdrChanges(adrDir, item?.rootNode?.path);
+      const targetRootPath = item?.rootNode?.path
+        ?? (item?.kind === 'adr' && item.adr ? compositeIndex?.findRoot(item.adr.path)?.path : undefined)
+        ?? (item?.kind === 'seed' && item.seed ? compositeIndex?.findRoot(item.seed.path)?.path : undefined);
+      commitAdrChanges(adrDir, targetRootPath);
     }),
 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
