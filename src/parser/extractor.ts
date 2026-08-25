@@ -636,13 +636,22 @@ export function buildSection(
   let slug = sectionSlug(heading);
   let anchorOverride: string | undefined;
 
-  // Check if the first non-blank token after the heading is an @adr-anchor comment
-  const firstNonBlank = raw.body.find(t => t.kind !== 'blank');
-  if (firstNonBlank?.kind === 'html_comment') {
-    const anchorMatch = firstNonBlank.content.match(ANCHOR_COMMENT_RE);
+  // Scan the LEADING COMMENT RUN after the heading for an @adr-anchor —
+  // not just the single first token. Hardened 2026-08-25 (Herald's AORP
+  // circulation): the reserved channel now grows sibling markers
+  // (@adr-fingerprint sits in the same after-heading slot), and the old
+  // first-token-only check silently LOST the anchor whenever another
+  // family member happened to precede it. Order-independent by design:
+  // any @adr-* comment in the run may come in any order; the reader finds
+  // the anchor wherever it sits in the run. (SPEC-adr-v1 §6 registry.)
+  for (const tok of raw.body) {
+    if (tok.kind === 'blank') continue;
+    if (tok.kind !== 'html_comment') break;
+    const anchorMatch = tok.content.match(ANCHOR_COMMENT_RE);
     if (anchorMatch) {
       anchorOverride = anchorMatch[1].trim();
       slug = anchorOverride; // override slug with explicit anchor
+      break;
     }
   }
 

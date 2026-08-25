@@ -5100,3 +5100,26 @@ describe('Regression tests: DEBRIEF-009 — the icon lane joins the one recognit
     expect(requiresScopeRemaining('Partially Implemented — auth done, sync pending')).toBe(true)
   })
 })
+
+describe("Regression tests: @adr-* markers share the after-heading comment run (Herald's AORP circulation, 2026-08-25)", () => {
+  it('the anchor is found even when a sibling marker (@adr-fingerprint) precedes it', () => {
+    const doc = [
+      '## Open Questions', '',
+      '### QST: Which store?', '',
+      '<!-- @adr-fingerprint: abc123def -->',
+      '<!-- @adr-anchor: qst-which-store -->', '',
+      '- Status: unanswered', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.slug).toBe('qst-which-store')
+  })
+  it('order-independent: anchor first, fingerprint second, still found; run ends at first non-comment', () => {
+    const doc = [
+      '## Open Questions', '', '### QST: Q?', '',
+      '<!-- @adr-anchor: qst-explicit -->', '<!-- @adr-fingerprint: 999 -->', '',
+      '- Status: unanswered', '', '<!-- @adr-anchor: qst-too-late -->', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.slug).toBe('qst-explicit')
+  })
+})
