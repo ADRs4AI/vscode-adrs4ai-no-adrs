@@ -134,6 +134,15 @@ function walkTour(tour: TourFile, resolved: ResolvedTourEntry[]) {
     if (assessment.thin) {
       console.log('  ^ THIN. Read this stop as the human will. Is it answerable as it stands?')
     }
+    if (assessment.staleAnswered) {
+      console.log('  !! STALE-ANSWERED — this question declares unanswered but already carries an')
+      console.log('     ANS block. If that answer stands, this stop should not be in the walk;')
+      console.log('     flip the Status line. This is the class that walks a human to settled work.')
+    }
+    if (assessment.unprepared) {
+      console.log('  ! UNPREPARED — no recommendation in the source document. Doctrine 8: a mint')
+      console.log('    must say this out loud. Are the authored claims above enough to answer on?')
+    }
     if (assessment.policyViolation) {
       console.log(`  ✗ POLICY: ${assessment.policyReason}`)
     }
@@ -159,10 +168,14 @@ async function main() {
 
   const failures: string[] = []
   const thin: string[] = []
+  const unprepared: string[] = []
+  const stale: string[] = []
   for (const tour of tours) {
     const a = walkTour(tour, resolveTourEntries(tour, ctx))
     failures.push(...a.hardFailures.map(f => `${tour.slug}: ${f}`))
     thin.push(...a.thin.map(t => `${tour.slug}: ${t}`))
+    unprepared.push(...a.unprepared.map(u => `${tour.slug}: ${u}`))
+    stale.push(...a.staleAnswered.map(u => `${tour.slug}: ${u}`))
   }
 
   console.log(BAR)
@@ -170,6 +183,16 @@ async function main() {
   if (thin.length) {
     console.log(`\n${thin.length} thin stop(s) — not failures, but read them as the human will:`)
     thin.forEach(t => console.log(`  · ${t}`))
+  }
+  if (stale.length) {
+    console.log(`\n${stale.length} STALE-ANSWERED stop(s) — declared open, already answered.`)
+    console.log('This is the class that costs a booked slot. Verify before you put this in front of anyone:')
+    stale.forEach(u => console.log(`  !! ${u}`))
+  }
+  if (unprepared.length) {
+    console.log(`\n${unprepared.length} unprepared stop(s) — no native recommendation. Not failures;`)
+    console.log('doctrine 8 branch (b) says a mint must state these out loud before creating the tour:')
+    unprepared.forEach(u => console.log(`  ! ${u}`))
   }
   if (failures.length) {
     console.log(`\n${failures.length} hard failure(s):`)

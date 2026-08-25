@@ -47,7 +47,7 @@ function bracket(ref: string): string {
  * opening the file. This doesn't change isAnswered/Status-authority at all;
  * it just surfaces the disagreement Gadfly/Hypomnema both asked for.
  */
-function isStatusAnswerInconsistent(question: Question): boolean {
+export function isStatusAnswerInconsistent(question: Question): boolean {
   return !question.isAnswered && !!question.answer
 }
 

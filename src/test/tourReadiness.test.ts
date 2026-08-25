@@ -38,6 +38,12 @@ AWS.
 
 ### QST: Which region?
 - Status: unanswered
+
+### QST: Which CDN?
+- Status: unanswered
+
+**ANS:** (by Jérémie)
+Cloudflare — settled 08-08.
 `
 
 const SEED = `# SEED: deployment questions
@@ -176,7 +182,71 @@ describe('assessTour — the answerability policy', () => {
     expect(a.stops).toHaveLength(1)
     expect(a.stops[0].assessment.policyViolation).toBe(true)
     expect(a.ready).toBe(false)
-    expect(a.hardFailures.join(' ')).toContain('NO recommendation')
+    expect(a.hardFailures.join(' ')).toContain('no recommendation AND no authored comment')
+  })
+
+  // FACET'S CATCH (2026-08-25). The predicate used to look only at native
+  // Recommendation content and ignore comment/answer_path entirely — so it
+  // would have failed the Cartographer specimen's six relocated stops, whose
+  // tour-side compensation Gleaner confirmed was real. A gate that cries wolf
+  // is one people learn to bypass; that is literally how tour-lint became
+  // advisory in practice.
+  it('does NOT fail a decide-stop whose basis and contract are carried tour-side', () => {
+    const resolved = resolveTourEntries(
+      tour([{
+        ref: 'adr:0001#qst-which-region', must_respond: true, disposition: 'decide',
+        comment: 'full ORJC lives in the first-contact audit seed', answer_path: 'one of A/B/C',
+      }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops[0].assessment.policyViolation).toBe(false)
+    expect(a.ready).toBe(true)
+    // But it IS unprepared — doctrine 8 branch (b), the thing a mint must say
+    // out loud. Deliberately not a failure: whether those claims are
+    // "answerable grade" is exactly what a machine cannot decide.
+    expect(a.stops[0].assessment.unprepared).toBe(true)
+    expect(a.unprepared).toHaveLength(1)
+  })
+
+  // The contract half. answer_path is "the literal tokens that satisfy the ask"
+  // — without it a human is told to decide with no idea what output closes the
+  // stop, which is the gap one-tap Accept cannot bridge either.
+  it('fails a tour-side decide-stop that gives a basis but no answer_path', () => {
+    const resolved = resolveTourEntries(
+      tour([{
+        ref: 'adr:0001#qst-which-region', must_respond: true, disposition: 'decide',
+        comment: 'the crew lean is B, for the reasons in the seed',
+      }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops[0].assessment.policyViolation).toBe(true)
+    expect(a.hardFailures.join(' ')).toContain('no answer_path')
+  })
+
+  // A native recommendation carries its own shape, so no separate contract is
+  // required — and such a stop is not unprepared at all.
+  it('treats a stop with a native recommendation as prepared and contract-complete', () => {
+    const resolved = resolveTourEntries(
+      tour([{ ref: 'adr:0001#qst-which-database', must_respond: true, disposition: 'decide' }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops[0].assessment.policyViolation).toBe(false)
+    expect(a.stops[0].assessment.unprepared).toBe(false)
+    expect(a.unprepared).toHaveLength(0)
+  })
+
+  // Nothing is being asked at a review stop, so there is nothing to prepare.
+  it('never marks a review stop unprepared', () => {
+    const resolved = resolveTourEntries(
+      tour([{ ref: 'adr:0001#qst-which-host', must_respond: true, disposition: 'decide' }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops[0].assessment.isReviewStop).toBe(true)
+    expect(a.stops[0].assessment.unprepared).toBe(false)
   })
 
   it('passes a decide-stop that does offer a recommendation', () => {
@@ -215,6 +285,64 @@ describe('assessTour — the answerability policy', () => {
     const a = assessTour(resolved)
     expect(a.stops).toHaveLength(2)
     expect(a.awaiting).toBe(1)
+  })
+})
+
+describe('Regression tests', () => {
+  // INCIDENT, 2026-08-25: Jérémie's 08-24 launch tour walked him to two stops
+  // he had ANSWERED on 08-08 — their `Status:` lines were stale, so settled
+  // work was presented as awaiting him. He books deep-focus time for a tour;
+  // that slot was spent on questions he had already closed.
+  //
+  // Neither existing instrument could see it. tour-lint passed (every ref
+  // resolved); tour-walk passed (every stop had substantial content). The
+  // defect lived in the substrate's own status lines — register item 3's
+  // "fact-rot", which a live-read tour renders truthfully by design.
+  //
+  // Cartographer's fix commit (b3439b1) named the lesson: "check ANS presence,
+  // never trust the status line alone." That check is mechanically decidable
+  // and the codebase already ran it for MCP reads; it just was not wired here.
+  it('flags a stop that declares unanswered while already carrying an ANS block', () => {
+    const resolved = resolveTourEntries(
+      tour([{ ref: 'adr:0001#qst-which-cdn', must_respond: true, disposition: 'decide' }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops).toHaveLength(1)
+    expect(a.stops[0].assessment.staleAnswered).toBe(true)
+    expect(a.staleAnswered).toHaveLength(1)
+    expect(a.staleAnswered[0]).toContain('already carries an ANS block')
+  })
+
+  // ADR-0031: declared status stays sovereign. An author may legitimately
+  // re-open an answered question, so this must never block a mint — it warns.
+  // A gate that overrode Status-authority would be a different bug.
+  it('does not make stale-answered a hard failure — Status-authority stays sovereign', () => {
+    const resolved = resolveTourEntries(
+      tour([{
+        ref: 'adr:0001#qst-which-cdn', must_respond: true, disposition: 'decide',
+        comment: 'reopening this deliberately', answer_path: 'confirm or revise',
+      }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops[0].assessment.staleAnswered).toBe(true)
+    expect(a.ready).toBe(true)
+    expect(a.hardFailures).toHaveLength(0)
+  })
+
+  // Doctrine 9 already handles the truthful case: a genuinely answered entry
+  // becomes a read-only review stop. This flag is only for the case where the
+  // substrate is lying about which of the two it is.
+  it('does not flag a truthfully-answered question — that is a review stop', () => {
+    const resolved = resolveTourEntries(
+      tour([{ ref: 'adr:0001#qst-which-host', must_respond: true }]),
+      ctx(),
+    )
+    const a = assessTour(resolved)
+    expect(a.stops[0].assessment.isReviewStop).toBe(true)
+    expect(a.stops[0].assessment.staleAnswered).toBe(false)
+    expect(a.staleAnswered).toHaveLength(0)
   })
 })
 
