@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="512" height="512" viewBox="122 124 780 780"
+     color="#D97706"
+     role="img" aria-labelledby="title desc"
+     shape-rendering="geometricPrecision">
+  <title id="title">Pinion pictogram — dark side down — amber default, tintable</title>
+  <desc id="desc">Document grown for breathing room around the untouched scale; stroke at ~87% of bold; default color is the project amber (#D97706) via the root color attribute — any external CSS color overrides it (Peacock-tintable), and it can never render invisible-black.</desc>
+
+  <!-- Document grown 1.045x about center: interior gains ~16 units of air
+       around the scale; pre-transform stroke 40 renders ~41.8 (≈87% of 48) -->
+  <g transform="translate(512 512) scale(1.045) translate(-512 -512)"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 282 163 H 679 L 796 280 V 806
+             C 796 837 772 861 742 861 H 282
+             C 252 861 228 837 228 806 V 218
+             C 228 187 252 163 282 163 Z"
+          stroke-width="40"/>
+    <path d="M 679 164 V 242 C 679 265 697 283 721 283 H 793"
+          stroke-width="40"/>
+  </g>
+
+  <!-- Scale glyph: byte-identical to the bold version ("the scale is perfect") -->
+  <g transform="translate(512 547) scale(1.14) translate(-512 -547)">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 360.83 443.38 L 465.86 422.97
+               M 558.14 405.03 L 663.17 384.62" stroke-width="26"/>
+      <path d="M 360.83 443.38 L 296.83 589.38
+               M 360.83 443.38 L 424.83 589.38"
+            stroke-width="20"/>
+      <path d="M 663.17 384.62 L 599.17 530.62
+               M 663.17 384.62 L 727.17 530.62"
+            stroke-width="20"/>
+    </g>
+    <path d="M 286.83 588.38 H 434.83 C 432.83 630.38, 401.83 663.38, 360.83 663.38 C 319.83 663.38, 288.83 630.38, 286.83 588.38 Z" fill="currentColor"/>
+    <path d="M 589.17 529.62 H 737.17 C 735.17 571.62, 704.17 604.62, 663.17 604.62 C 622.17 604.62, 591.17 571.62, 589.17 529.62 Z M 608.17 549.62 H 718.17 C 712.17 571.62, 690.17 588.62, 663.17 588.62 C 636.17 588.62, 614.17 571.62, 608.17 549.62 Z" fill="currentColor" fill-rule="evenodd"/>
+    <path d="M 498 462 H 526 V 694 H 498 Z" fill="currentColor"/>
+    <path d="M 452 682 H 572 C 580 682 586 688 586 696 V 706 H 596
+             C 604 706 610 712 610 720 V 734 H 414 V 720
+             C 414 712 420 706 428 706 H 438 V 696
+             C 438 688 444 682 452 682 Z" fill="currentColor"/>
+    <path d="M 496.88 377.51 L 501 372.95 L 501.51 360.01 L 522.49 360.01 L 523 372.95 L 527.12 377.51 L 527.12 377.51 L 533.25 377.19 L 542.76 368.4 L 557.6 383.24 L 548.81 392.75 L 548.49 398.88 L 548.49 398.88 L 553.05 403 L 565.99 403.51 L 565.99 424.49 L 553.05 425 L 548.49 429.12 L 548.49 429.12 L 548.81 435.25 L 557.6 444.76 L 542.76 459.6 L 533.25 450.81 L 527.12 450.49 L 527.12 450.49 L 523 455.05 L 522.49 467.99 L 501.51 467.99 L 501 455.05 L 496.88 450.49 L 496.88 450.49 L 490.75 450.81 L 481.24 459.6 L 466.4 444.76 L 475.19 435.25 L 475.51 429.12 L 475.51 429.12 L 470.95 425 L 458.01 424.49 L 458.01 403.51 L 470.95 403 L 475.51 398.88 L 475.51 398.88 L 475.19 392.75 L 466.4 383.24 L 481.24 368.4 L 490.75 377.19 L 496.88 377.51 Z M 538 414 A 26 26 0 1 0 486 414 A 26 26 0 1 0 538 414 Z"
+          fill="currentColor" fill-rule="evenodd"
+          stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+    <circle cx="512" cy="414" r="14" fill="currentColor"/>
+  </g>
+</svg>
