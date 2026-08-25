@@ -1,4 +1,17 @@
 {
+    // ADR Manager: in-repo (committed) override turning diagnostic
+    // logging on for this workspace. The public-release DEFAULT for all
+    // of these is off (docs/RELEASE-CHECKLIST.md ship-flip — a
+    // stranger's working directory shouldn't quietly fill with our
+    // telemetry), but this is Jérémie's own working repo for this
+    // extension, actively used by the crew for live testing — turning
+    // it on here, in-repo, means it's on for everyone who opens this
+    // workspace, without needing a separate per-machine user-settings
+    // step. Same pattern intended for his other project repos.
+    "adrManager.logging.observations": true,
+    "adrManager.logging.panelErrors": true,
+    "adrManager.logging.tourUnresolvedRefs": true,
+    "adrManager.reportButton.enabled": true,
     "workbench.colorCustomizations": {
         "activityBar.activeBackground": "#e5690b",
         "activityBar.background": "#e5690b",
