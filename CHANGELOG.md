@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.93] - 2026-08-25
+
+### Added
+- **"Commit" is now on every tree node it can apply to** — individual ADR and seed items, and the ADRs/Seeds category headers, not just the root. Always commits that item's whole owning project, one consistent mental model everywhere.
+- **Hide/Show Settled ADRs, Hide/Show ADRs Without Open Questions, Hide/Show Closed Seeds** — new right-click toggles on the ADRs and Seeds category headers, same shape as the existing Hide/Show Completed Tours.
+
+### Fixed
+- **The Report button no longer shows when it can't actually do anything.** It used to stay visible even with reporting turned off, then show a "turned off" warning on click — now it's hidden in that state, on both the panel button and the tree-wide Report menu entry.
+
 ## [0.7.92] - 2026-08-25
 
 ### Fixed
