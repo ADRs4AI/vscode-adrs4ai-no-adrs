@@ -39,7 +39,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { CompositeIndex, RootNode } from '../index/compositeIndex'
-import { statusEmoji, statusThemeIcon } from '../parser/statusInfo'
+import { statusEmoji, statusThemeIcon, isSettledAdrStatus } from '../parser/statusInfo'
 import { isDocumentPausedStatus } from '../parser/extractor'
 import { classifySeedAxis1, closedFamilyToken, type SeedAxis1State } from './seedLifecycle'
 import { daysSince, computeDisplayThresholdDays, type SeedAgingConfig } from './seedAging'
@@ -807,12 +807,13 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
       items.push(new AdrTreeItem({ kind: 'open-questions-header', count: openCount, rootNode: rootNodeArg }))
     }
 
-    const adrCount = node.adrs.allAdrs().filter(a => !a.isSeed).length
-    const seedCount = node.seeds.size
-    // Same visibleTours() filter the children list uses (Gleaner's brief,
-    // 2026-08-14) — the header count and what's actually listed underneath
-    // it must never disagree, so this counts what hideCompleted leaves
-    // visible, not every tour on disk.
+    // Same visibleAdrs()/visibleSeeds()/visibleTours() filters the children
+    // lists use — the header count and what's actually listed underneath
+    // it must never disagree, so these count what the active filters leave
+    // visible, not every item on disk (Gleaner's brief, 2026-08-14, for
+    // Tours; extended to ADRs/Seeds, 2026-08-25, for coherence).
+    const adrCount = this.visibleAdrs(node).length
+    const seedCount = this.visibleSeeds(node).length
     const tourCount = this.visibleTours(node).length
 
     // Jérémie's ask (2026-07-29 feedback seed, item B): the ADRs/Seeds/Tours
@@ -855,8 +856,34 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     return inclusion
   }
 
+  /**
+   * Category-header filter checkboxes (Facet's go-ahead, 2026-08-16;
+   * Jérémie's own coherence ask, 2026-08-25). Two independent dimensions,
+   * both default off (nothing hidden until asked for): `adrs.hideSettled`
+   * (Implemented/Superseded/paused-family — see isSettledAdrStatus's own
+   * doc comment for why this differs from "implementation progress"),
+   * and `adrs.hideWithoutOpenQuestions` (nothing left to actually do
+   * here). Shared by getAdrGroupChildren (the list) and
+   * getContainerChildren (the header count) — same "these two must never
+   * disagree" discipline visibleTours() already established for Tours.
+   */
+  private visibleAdrs(node: RootNode): AdrFile[] {
+    const cfg = vscode.workspace.getConfiguration('adrManager')
+    const hideSettled = cfg.get<boolean>('adrs.hideSettled', false)
+    const hideWithoutOpenQuestions = cfg.get<boolean>('adrs.hideWithoutOpenQuestions', false)
+    if (!hideSettled && !hideWithoutOpenQuestions) return node.adrs.allAdrs().filter(a => !a.isSeed)
+    return node.adrs.allAdrs().filter(a => !a.isSeed).filter(adr => {
+      if (hideSettled && isSettledAdrStatus(adr.status)) return false
+      if (hideWithoutOpenQuestions) {
+        const visible = isDocumentPausedStatus(adr.status) ? [] : this.filterQuestions(adr.questions)
+        if (visible.length === 0) return false
+      }
+      return true
+    })
+  }
+
   private getAdrGroupChildren(node: RootNode): AdrTreeItem[] {
-    const adrs = node.adrs.allAdrs().filter(a => !a.isSeed)
+    const adrs = this.visibleAdrs(node)
     return adrs.map(adr => {
       // Document-level pause (2026-08-06 ruling), parent-item side (Gleaner's
       // brief, 2026-08-14): getAdrChildren() already returns [] for a paused
@@ -886,8 +913,26 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
    * wide — a single seed's own constructor has no way to see its
    * siblings.
    */
+  /**
+   * Category-header filter checkbox for Seeds (Facet's go-ahead,
+   * 2026-08-16; Jérémie's coherence ask, 2026-08-25): `seeds.hideClosed`
+   * hides the closed-family seeds (parked/superseded/terminated —
+   * closedFamilyToken, ADR-0041's own vocabulary), default off. Kept
+   * separate from getSeedGroupChildren's own aging-median computation
+   * below on purpose — the median is a statistical property of the
+   * whole repo's activity, not of what's currently being displayed, so
+   * it's always computed from the FULL seed list regardless of this
+   * filter.
+   */
+  private visibleSeeds(node: RootNode): SeedFile[] {
+    const hideClosed = vscode.workspace.getConfiguration('adrManager').get<boolean>('seeds.hideClosed', false)
+    if (!hideClosed) return node.seeds.allSeeds()
+    return node.seeds.allSeeds().filter(s => !closedFamilyToken(s.status))
+  }
+
   private getSeedGroupChildren(node: RootNode): AdrTreeItem[] {
-    const seeds = node.seeds.allSeeds()
+    const allSeeds = node.seeds.allSeeds()
+    const seeds = this.visibleSeeds(node)
     const now = new Date()
 
     const config = vscode.workspace.getConfiguration('adrManager')
@@ -897,7 +942,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
       fixedThresholdDays: config.get<number>('seeds.fixedThresholdDays', 14),
     }
 
-    const eligibleAges = seeds
+    const eligibleAges = allSeeds
       .filter(s => !closedFamilyToken(s.status) && !s.isProcessed)
       .map(s => s.lastActivityDate ? daysSince(s.lastActivityDate, now) : undefined)
       .filter((d): d is number => d !== undefined)

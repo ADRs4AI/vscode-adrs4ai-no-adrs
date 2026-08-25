@@ -153,6 +153,42 @@
         "icon": "$(eye)"
       },
       {
+        "command": "adrManager.hideSettledAdrs",
+        "title": "Hide Settled ADRs",
+        "category": "ADR Manager",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adrManager.showSettledAdrs",
+        "title": "Show Settled ADRs",
+        "category": "ADR Manager",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adrManager.hideAdrsWithoutOpenQuestions",
+        "title": "Hide ADRs Without Open Questions",
+        "category": "ADR Manager",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adrManager.showAdrsWithoutOpenQuestions",
+        "title": "Show ADRs Without Open Questions",
+        "category": "ADR Manager",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adrManager.hideClosedSeeds",
+        "title": "Hide Closed Seeds",
+        "category": "ADR Manager",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adrManager.showClosedSeeds",
+        "title": "Show Closed Seeds",
+        "category": "ADR Manager",
+        "icon": "$(eye)"
+      },
+      {
         "command": "adrManager.addSeedThreadTurn",
         "title": "Add Thread Turn",
         "category": "ADR Manager",
@@ -264,6 +300,36 @@
           "command": "adrManager.commitAdrs",
           "when": "view == adrExplorer && viewItem == seed-group",
           "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.hideSettledAdrs",
+          "when": "view == adrExplorer && viewItem == adr-group && !config.adrManager.adrs.hideSettled",
+          "group": "2_filter@1"
+        },
+        {
+          "command": "adrManager.showSettledAdrs",
+          "when": "view == adrExplorer && viewItem == adr-group && config.adrManager.adrs.hideSettled",
+          "group": "2_filter@1"
+        },
+        {
+          "command": "adrManager.hideAdrsWithoutOpenQuestions",
+          "when": "view == adrExplorer && viewItem == adr-group && !config.adrManager.adrs.hideWithoutOpenQuestions",
+          "group": "2_filter@2"
+        },
+        {
+          "command": "adrManager.showAdrsWithoutOpenQuestions",
+          "when": "view == adrExplorer && viewItem == adr-group && config.adrManager.adrs.hideWithoutOpenQuestions",
+          "group": "2_filter@2"
+        },
+        {
+          "command": "adrManager.hideClosedSeeds",
+          "when": "view == adrExplorer && viewItem == seed-group && !config.adrManager.seeds.hideClosed",
+          "group": "2_filter@1"
+        },
+        {
+          "command": "adrManager.showClosedSeeds",
+          "when": "view == adrExplorer && viewItem == seed-group && config.adrManager.seeds.hideClosed",
+          "group": "2_filter@1"
         },
         {
           "command": "adrManager.excludeRoot",
@@ -571,6 +637,21 @@
           "type": "boolean",
           "default": true,
           "description": "Hide fully-done tours from the sidebar's Tours category. Toggle from the Tours category's own right-click menu (Hide/Show Completed Tours) or here."
+        },
+        "adrManager.adrs.hideSettled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide ADRs whose status is Implemented, Superseded, or paused (Deferred/Paused/Suspended/On Hold) from the sidebar's ADRs category — the decisions that aren't actively being worked. Toggle from the ADRs category's own right-click menu (Hide/Show Settled ADRs) or here."
+        },
+        "adrManager.adrs.hideWithoutOpenQuestions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide ADRs with no open questions from the sidebar's ADRs category. Toggle from the ADRs category's own right-click menu (Hide/Show ADRs Without Open Questions) or here."
+        },
+        "adrManager.seeds.hideClosed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide closed-family seeds (parked/superseded/terminated) from the sidebar's Seeds category. Toggle from the Seeds category's own right-click menu (Hide/Show Closed Seeds) or here."
         },
         "adrManager.reportButton.enabled": {
           "type": "boolean",

@@ -20,6 +20,7 @@ import {
   statusColorToken,
   requiresScopeRemaining,
   statusThemeIcon,
+  isSettledAdrStatus,
 } from '../parser/statusInfo'
 
 describe('unknown-status fallback', () => {
@@ -97,5 +98,38 @@ describe('statusThemeIcon', () => {
     const icon = statusThemeIcon('Nonstandard', FakeThemeIcon as never, FakeThemeColor as never) as unknown as FakeThemeIcon
     expect(icon.codicon).toBe('file-text')
     expect(icon.color).toBeUndefined()
+  })
+})
+
+// Category-header filter checkboxes (Facet's go-ahead, 2026-08-16; built
+// per Jérémie's live "clear your queue" ask, 2026-08-25).
+describe('isSettledAdrStatus', () => {
+  it('Implemented and Superseded are settled — the decision itself is closed', () => {
+    expect(isSettledAdrStatus('Implemented')).toBe(true)
+    expect(isSettledAdrStatus('Superseded')).toBe(true)
+  })
+
+  it('the pause family is settled — the document itself is closed', () => {
+    expect(isSettledAdrStatus('Deferred')).toBe(true)
+    expect(isSettledAdrStatus('Paused')).toBe(true)
+    expect(isSettledAdrStatus('Suspended')).toBe(true)
+    expect(isSettledAdrStatus('On Hold')).toBe(true)
+  })
+
+  it('Draft/Proposed/Accepted/Partially Implemented are NOT settled — exactly where a human is still the bottleneck', () => {
+    expect(isSettledAdrStatus('Draft')).toBe(false)
+    expect(isSettledAdrStatus('Proposed')).toBe(false)
+    expect(isSettledAdrStatus('Accepted')).toBe(false)
+    expect(isSettledAdrStatus('Partially Implemented')).toBe(false)
+  })
+
+  it('tolerates a real annotated status line, same as the rest of this file\'s normalized reads', () => {
+    expect(isSettledAdrStatus('Implemented — see PR #123')).toBe(true)
+    expect(isSettledAdrStatus('Deferred — designed in full, not pursued now')).toBe(true)
+  })
+
+  it('an unrecognized or missing status is NOT settled — recall-first, never hide something we can\'t classify', () => {
+    expect(isSettledAdrStatus('Nonstandard')).toBe(false)
+    expect(isSettledAdrStatus(undefined)).toBe(false)
   })
 })

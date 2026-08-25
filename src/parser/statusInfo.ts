@@ -98,6 +98,27 @@ export function normalizeDocumentStatus(status: string | undefined): NormalizedD
   return 'unknown';
 }
 
+/**
+ * Category-header filter checkboxes (Facet's go-ahead, 2026-08-16, docs/
+ * inbox/2026-08-16-facet-to-fitter-category-header-filters-unblocked-
+ * plus-two-stuck-items.md — mechanism (a) from my own 2026-08-06 design
+ * brief): "settled" means the decision isn't actively being worked —
+ * Implemented/Superseded (the decision's own lifecycle closed) plus the
+ * pause family (the DOCUMENT itself is closed, ADR-0021's document-pause
+ * ruling). Draft/Proposed/Accepted/Partially Implemented stay visible —
+ * those are exactly the statuses where a human's attention is still the
+ * bottleneck. Deliberately not reusing seedIndex.ts's classifyAdrProgress
+ * here — that classifier answers "how far along is implementation," a
+ * different question from "should this stay visible by default," and
+ * conflating them would have called Superseded 'not-done' (technically
+ * true, practically irrelevant to decluttering).
+ */
+export function isSettledAdrStatus(status: string | undefined): boolean {
+  const normalized = normalizeDocumentStatus(status)
+  return normalized === 'Implemented' || normalized === 'Superseded'
+    || normalized === 'Deferred' || normalized === 'Paused' || normalized === 'Suspended' || normalized === 'On Hold'
+}
+
 /** Layered lookup: exact match first (legacy fidelity — 'Proposed' keeps its lightbulb), then the parser's normalized read. This is the DEBRIEF-009 fix: no consumer of this file can miss an annotated status again. */
 function resolveStatusInfo(status: string): StatusInfo | undefined {
   return BY_VALUE.get(status) ?? BY_VALUE.get(normalizeDocumentStatus(status))

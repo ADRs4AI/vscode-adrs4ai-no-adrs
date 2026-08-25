@@ -435,6 +435,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       treeProvider?.refresh();
     }),
 
+    // Category-header filter checkboxes for ADRs/Seeds (Facet's go-ahead,
+    // 2026-08-16, unblocking my own 2026-08-06 design brief; built now
+    // per Jérémie's live "clear your queue" ask, 2026-08-25) — same
+    // mechanism (a) shape as the tours toggle pair just above: two
+    // commands per dimension, `when`-clause-driven, `treeProvider.refresh()`
+    // explicit for the same "no onDidChangeConfiguration listener" reason.
+    vscode.commands.registerCommand('adrManager.hideSettledAdrs', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('adrs.hideSettled', true);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.showSettledAdrs', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('adrs.hideSettled', false);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.hideAdrsWithoutOpenQuestions', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('adrs.hideWithoutOpenQuestions', true);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.showAdrsWithoutOpenQuestions', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('adrs.hideWithoutOpenQuestions', false);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.hideClosedSeeds', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('seeds.hideClosed', true);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.showClosedSeeds', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('seeds.hideClosed', false);
+      treeProvider?.refresh();
+    }),
+
     // seeds-as-issues minimum lovable slice (Lapidary's 2026-07-31
     // founder-escalation dispatch): one gesture appends a correctly-
     // scaffolded, attributed Thread turn — from the sidebar's right-click
