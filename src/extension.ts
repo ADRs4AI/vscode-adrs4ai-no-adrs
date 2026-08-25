@@ -43,6 +43,8 @@ import { resolveTourEntries, unresolvedTourRefs } from './index/tourIndex'
 import { resolveReference } from './mcp/reference'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
+import { computeRootCaptions, type RootCaptionMode } from './views/rootCaption'
+import { resolveTargetRootPolicy, computeNextNumber } from './views/creationTarget'
 import { Coordinator } from './normalizer/coordinator'
 import { D1OpenQuestionsSectionHandler } from './normalizer/handlers/d1-open-questions-section'
 import { D2BoldStatusFieldHandler } from './normalizer/handlers/d2-bold-status-field'
@@ -354,8 +356,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       openAdrFile(filePath, lineNumber);
     }),
 
-    vscode.commands.registerCommand('adrManager.createAdr', () => {
-      createNewAdr(adrDir);
+    // Decision 6's explicit override, plus Jérémie's own extension of it
+    // (2026-08-25 live report): right-click a root gets the full ADR/Seed
+    // picker scoped to that root (no resolution/prompt — the click already
+    // said which project); right-click the ADR or Seed category header
+    // skips the kind-picker too, since that's already implied by which
+    // header was clicked. Command-palette / nav-button invocations pass no
+    // item, so both fall back to undefined and resolveCreationTargetRoot()
+    // + the ordinary kind-picker run exactly as before.
+    vscode.commands.registerCommand('adrManager.createAdr', (item) => {
+      const targetRoot = item?.kind === 'root' ? item.rootNode
+        : item?.kind === 'adr-group' || item?.kind === 'seed-group' ? (item.rootNode ?? compositeIndex?.root)
+        : undefined;
+      const forceKind = item?.kind === 'adr-group' ? 'adr' : item?.kind === 'seed-group' ? 'seed' : undefined;
+      createNewAdr(adrDir, { targetRoot, forceKind });
     }),
 
     vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {
@@ -856,18 +870,149 @@ async function openAdrFile(filePath: string, lineNumber?: number): Promise<void>
   }
 }
 
-async function createNewAdr(adrDirRel: string): Promise<void> {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder) {
-    vscode.window.showErrorMessage('ADR Manager: No workspace folder open.');
+/**
+ * ADR-0025 Decision 6 ("active-editor default + read-before-write
+ * visibility + per-workspace override"), the follow-up pass flagged in
+ * this file's own "Extension state" doc comment. Silent in the N=1 case
+ * (composability, unchanged from before this pass). In multi-root:
+ * `adrManager.newAdrTargetRoot` pins a namespace regardless of the active
+ * file; otherwise the active editor's own root wins via `findRoot`;
+ * `adrManager.alwaysPromptOnMultiRoot` forces the QuickPick even when one
+ * of those would have resolved silently. Returns undefined only on
+ * Escape/cancel from the QuickPick (or no workspace at all) — never a
+ * silent wrong-root guess.
+ */
+async function resolveCreationTargetRoot(): Promise<RootNode | undefined> {
+  if (!compositeIndex) return undefined;
+  const nodes = Array.from(compositeIndex.walk());
+
+  const cfg = vscode.workspace.getConfiguration('adrManager');
+  const activeUri = vscode.window.activeTextEditor?.document.uri;
+  const activeEditorRootNamespace = activeUri?.scheme === 'file'
+    ? compositeIndex.findRoot(activeUri.fsPath)?.namespace
+    : undefined;
+
+  const decision = resolveTargetRootPolicy(nodes, {
+    alwaysPrompt: cfg.get<boolean>('alwaysPromptOnMultiRoot', false),
+    pinnedNamespace: cfg.get<string>('newAdrTargetRoot', 'active-editor'),
+    activeEditorRootNamespace,
+  });
+  if (decision.kind === 'silent') return nodes.find(n => n.namespace === decision.namespace);
+
+  const mode = cfg.get<RootCaptionMode>('roots.captionMode', 'git-auto');
+  const captions = computeRootCaptions(nodes, mode);
+  const picked = await vscode.window.showQuickPick(
+    nodes.map((n, i) => ({ label: captions[i], description: n.path, node: n })),
+    { title: 'Create in which project?', placeHolder: 'Select a root' },
+  );
+  return picked?.node;
+}
+
+/**
+ * Cache-then-verify-then-scan (ADR-0025 Decision 6's own pseudocode,
+ * verbatim shape): the cache is a hypothesis about disk state, not a
+ * substitute for it — always re-verified against a fresh directory
+ * listing before being trusted, so a file created by another surface
+ * (MCP write tier, a concurrent window) between calls is never silently
+ * re-suggested. Keyed by root path, in-memory only — reset naturally
+ * each activation, which is fine: a stale cache just costs one extra
+ * scan, it never causes a WRONG number (the verify loop below always
+ * re-checks disk regardless of what the cache says).
+ */
+const nextAdrNumberCache = new Map<string, number>();
+
+function nextAdrNumberFor(root: RootNode, adrDirRel: string): number {
+  const adrDir = path.join(root.path, adrDirRel);
+  const seed = nextAdrNumberCache.get(root.path) ?? (() => {
+    const nums = root.adrs.allAdrs().map(a => a.number);
+    return (nums.length ? Math.max(...nums) : 0) + 1;
+  })();
+  let existing: string[] = [];
+  try {
+    existing = fs.readdirSync(adrDir);
+  } catch {
+    // ADR dir doesn't exist yet (first ADR in a fresh root) — nothing to collide with.
+  }
+  const candidate = computeNextNumber(seed, existing);
+  nextAdrNumberCache.set(root.path, candidate);
+  return candidate;
+}
+
+/**
+ * The file write is the final, authoritative collision guard (Decision
+ * 6: "if nextAdrNumber() returns and the file still races... the second
+ * writer's file-open with wx flag fails, is caught, and the accessor is
+ * retried — never a silent-overwrite"). `wx` (exclusive create) fails
+ * with EEXIST if the target already exists; on that, bump the cache past
+ * the collision and recompute, so a concurrent writer (a future MCP
+ * create_adr call, or another window) can never cause one of the two to
+ * silently clobber the other.
+ */
+async function writeAdrFileExclusive(root: RootNode, adrDirRel: string, slug: string, content: string): Promise<string> {
+  const adrDir = path.join(root.path, adrDirRel);
+  for (;;) {
+    const num = nextAdrNumberFor(root, adrDirRel);
+    const filePath = path.join(adrDir, `${String(num).padStart(4, '0')}-${slug}.md`);
+    try {
+      await fs.promises.mkdir(adrDir, { recursive: true });
+      await fs.promises.writeFile(filePath, content, { flag: 'wx' });
+      return filePath;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      nextAdrNumberCache.set(root.path, num + 1);
+    }
+  }
+}
+
+/**
+ * Seeds have no numbered-slot equivalent to nextAdrNumber (date+slug
+ * filenames, by design — see the comment at the call site below); the
+ * same "never silently clobber" instinct applies via a suffixed slug
+ * instead of an incrementing number. A same-day, same-title collision is
+ * rare enough that this is the honest, minimal fit rather than inventing
+ * a numbering scheme seeds don't otherwise have.
+ */
+async function writeSeedFileExclusive(root: RootNode, adrDirRel: string, baseSlug: string, today: string, content: string): Promise<string> {
+  const adrDir = path.join(root.path, adrDirRel);
+  await fs.promises.mkdir(adrDir, { recursive: true });
+  for (let suffix = 0; ; suffix++) {
+    const slug = suffix === 0 ? baseSlug : `${baseSlug}-${suffix + 1}`;
+    const filePath = path.join(adrDir, `seed-${today}-${slug}.md`);
+    try {
+      await fs.promises.writeFile(filePath, content, { flag: 'wx' });
+      return filePath;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
+  }
+}
+
+/**
+ * `opts.targetRoot`: the explicit override (Decision 6: right-click on a
+ * root/category header) — skips resolution entirely, no prompt, matching
+ * "Right-click on a RootNode... is the explicit override." `opts.forceKind`:
+ * right-click on the ADR or Seed category header already says which kind,
+ * so the kind-picker below is skipped too.
+ */
+async function createNewAdr(adrDirRel: string, opts?: { targetRoot?: RootNode; forceKind?: 'adr' | 'seed' }): Promise<void> {
+  const root = opts?.targetRoot ?? await resolveCreationTargetRoot();
+  if (!root) {
+    if (!compositeIndex) vscode.window.showErrorMessage('ADR Manager: No workspace folder open.');
     return;
   }
 
-  const kind = await vscode.window.showQuickPick([
-    { label: '$(file-text) New ADR', description: 'Full adr template with questions', value: 'adr' as const },
-    { label: '$(edit) New Seed', description: 'Brain dump — AI will chunk into ADRs', value: 'seed' as const },
-  ], { title: 'What would you like to create?', placeHolder: 'Select type' });
+  const kind = opts?.forceKind
+    ? { value: opts.forceKind }
+    : await vscode.window.showQuickPick([
+        { label: '$(file-text) New ADR', description: 'Full adr template with questions', value: 'adr' as const },
+        { label: '$(edit) New Seed', description: 'Brain dump — AI will chunk into ADRs', value: 'seed' as const },
+      ], { title: 'What would you like to create?', placeHolder: 'Select type' });
   if (!kind) return;
+
+  // Read-before-write visibility (Decision 6): the root choice is shown
+  // BEFORE the title prompt, whether it was resolved silently or picked —
+  // same tempo as ADR-0023's three-choice consent surface.
+  vscode.window.setStatusBarMessage(`New ${kind.value === 'seed' ? 'Seed' : 'ADR'} → ${root.namespace}`, 4000);
 
   const promptLabel = kind.value === 'adr'
     ? 'ADR title (e.g., "Use SQLite for local ADR index")'
@@ -880,7 +1025,6 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
 
   if (!title) return;
 
-  const adrDir = path.join(workspaceFolder.uri.fsPath, adrDirRel);
   const slug = title.toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
@@ -889,10 +1033,6 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
   // Seeds use date-prefixed filenames (seed-YYYY-MM-DD-slug.md), NOT sequential numbers.
   // ADR numbers are permanent slots for decisions; seeds are transient pre-decisional artifacts.
   const today = new Date().toISOString().split('T')[0];
-  const filename = kind.value === 'seed'
-    ? `seed-${today}-${slug}.md`
-    : `${String(determineNextNumber(adrDir)).padStart(4, '0')}-${slug}.md`;
-  const filePath = path.join(adrDir, filename);
 
   const cfg = vscode.workspace.getConfiguration('adrManager');
   const humanName = cfg.get<string>('humanName', '') || 'Human';
@@ -901,15 +1041,11 @@ async function createNewAdr(adrDirRel: string): Promise<void> {
     ? generateSeedTemplate(title, today, humanName)
     : generateAdrTemplate(title, today, humanName, aiModel);
 
-  const uri = vscode.Uri.file(filePath);
-  await vscode.workspace.fs.writeFile(uri, Buffer.from(template, 'utf-8'));
-  await openAdrFile(filePath);
-}
+  const filePath = kind.value === 'seed'
+    ? await writeSeedFileExclusive(root, adrDirRel, slug, today, template)
+    : await writeAdrFileExclusive(root, adrDirRel, slug, template);
 
-function determineNextNumber(adrDir: string): number {
-  if (!index || index.size === 0) return 1;
-  const max = Math.max(...index.allAdrs().map(a => a.number));
-  return max + 1;
+  await openAdrFile(filePath);
 }
 
 function generateAdrTemplate(title: string, date: string, humanName: string, aiModel: string): string {

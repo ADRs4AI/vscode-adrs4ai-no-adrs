@@ -241,6 +241,21 @@
           "group": "2_navigate@2"
         },
         {
+          "command": "adrManager.createAdr",
+          "when": "view == adrExplorer && viewItem == root",
+          "group": "0_create@1"
+        },
+        {
+          "command": "adrManager.createAdr",
+          "when": "view == adrExplorer && viewItem == adr-group",
+          "group": "0_create@1"
+        },
+        {
+          "command": "adrManager.createAdr",
+          "when": "view == adrExplorer && viewItem == seed-group",
+          "group": "0_create@1"
+        },
+        {
           "command": "adrManager.excludeRoot",
           "when": "view == adrExplorer && viewItem == root",
           "group": "1_actions@1"
@@ -316,6 +331,16 @@
           "type": "string",
           "default": "",
           "description": "Override the project namespace for cross-project ADR citations (e.g., 'my-project'). Auto-detected from git remote if empty."
+        },
+        "adrManager.newAdrTargetRoot": {
+          "type": "string",
+          "default": "active-editor",
+          "description": "Which root a new ADR/Seed is created in, in a multi-root workspace (ADR-0025 Decision 6). 'active-editor' (default) follows whichever root your current file lives in, prompting only when that can't be determined. Set to a specific root's namespace (hover a root in the sidebar to see it) to pin that root regardless of which file is active — useful when focused on one subproject for a sprint."
+        },
+        "adrManager.alwaysPromptOnMultiRoot": {
+          "type": "boolean",
+          "default": false,
+          "description": "Always show a picker for which root to create a new ADR/Seed in, even when adrManager.newAdrTargetRoot would otherwise resolve one silently."
         },
         "adrManager.roots.captionMode": {
           "type": "string",
