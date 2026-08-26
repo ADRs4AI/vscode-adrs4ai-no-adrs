@@ -4,7 +4,10 @@
  * "Commit" menu coherence (Jérémie, 2026-08-25 live ask): the action
  * should appear on every tree node it can meaningfully apply to — root,
  * the ADR/Seed category headers, and individual ADR/seed items — never
- * on questions, and always scoped to that item's own owning root.
+ * on questions. Root resolution only, covered here; WHICH FILES within
+ * that root actually get committed is a separate concern — see
+ * commitScopeFilterWiring.test.ts (Jérémie's 2026-08-26 correction: the
+ * original "every invocation commits the whole root" design was wrong).
  */
 
 import { readFileSync } from 'node:fs'

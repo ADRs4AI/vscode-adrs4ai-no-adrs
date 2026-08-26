@@ -378,14 +378,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // never carries `rootNode` (only root/category-header items do), so
     // its owning root is resolved the same way copyDeepLink and friends
     // already resolve container context: via compositeIndex.findRoot()
-    // on the item's own file path. Every invocation scopes to the WHOLE
-    // owning root (same as right-clicking the root directly) — coherence
-    // means one mental model everywhere, not per-file partial commits.
+    // on the item's own file path.
+    //
+    // Scope FILTER (Jérémie, live, 2026-08-26 — correcting the original
+    // "every invocation commits the whole root" call above): an
+    // individual ADR/seed item scopes to exactly that one file; a
+    // category header scopes to every changed file of that TYPE in the
+    // root (isAdrBasename/isSeedBasename — deliberately excludes the
+    // OTHER category's files, tours, and `.working/` bookkeeping); root
+    // itself stays whole-root, since "the root" IS the everything-scope.
     vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {
       const targetRootPath = item?.rootNode?.path
         ?? (item?.kind === 'adr' && item.adr ? compositeIndex?.findRoot(item.adr.path)?.path : undefined)
         ?? (item?.kind === 'seed' && item.seed ? compositeIndex?.findRoot(item.seed.path)?.path : undefined);
-      commitAdrChanges(adrDir, targetRootPath);
+      const scopeFilter = item?.kind === 'adr' && item.adr ? (p: string) => p === item.adr!.path
+        : item?.kind === 'seed' && item.seed ? (p: string) => p === item.seed!.path
+        : item?.kind === 'adr-group' ? (p: string) => isAdrBasename(path.basename(p))
+        : item?.kind === 'seed-group' ? (p: string) => isSeedBasename(path.basename(p))
+        : undefined;
+      commitAdrChanges(adrDir, targetRootPath, scopeFilter);
     }),
 
     vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
@@ -1254,8 +1265,19 @@ interface DirtyRoot {
  * changes. Undefined for the existing tree-wide entry points (the top
  * toolbar button, the Command Palette), which keep scanning every root
  * exactly as before.
+ *
+ * `scopeFilter` (Jérémie, live, 2026-08-26: "the commit menu item commits
+ * multiple things, not just the item or group items below"): the menu-
+ * coherence pass (v0.7.93) put Commit on every ADR/seed item and both
+ * category headers, but every one of them still committed the WHOLE
+ * root — an individual ADR's Commit swept in every other changed file
+ * under docs/adr/ too, including unrelated ADRs, seeds, and `.working/`
+ * bookkeeping. This narrows `targeted.changes` (and therefore the commit
+ * message, the staged paths, and the untracked-references scan, which
+ * all already just read `dr.changes`) down to exactly what the clicked
+ * item scope means — no changes anywhere else needed.
  */
-async function commitAdrChanges(adrDirRel: string, targetRootPath?: string): Promise<void> {
+async function commitAdrChanges(adrDirRel: string, targetRootPath?: string, scopeFilter?: (filePath: string) => boolean): Promise<void> {
   if (!compositeIndex) return;
 
   const gitExtension = vscode.extensions.getExtension('vscode.git');
@@ -1278,10 +1300,18 @@ async function commitAdrChanges(adrDirRel: string, targetRootPath?: string): Pro
     });
 
   if (targetRootPath) {
-    const targeted = dirtyRoots.find(dr => dr.node.path === targetRootPath);
+    let targeted = dirtyRoots.find(dr => dr.node.path === targetRootPath);
     if (!targeted) {
       vscode.window.showInformationMessage(`ADR Manager: No ADR changes to commit in "${path.basename(targetRootPath)}".`);
       return;
+    }
+    if (scopeFilter) {
+      const scopedChanges = targeted.changes.filter((c: any) => scopeFilter(c.uri.fsPath)); // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (scopedChanges.length === 0) {
+        vscode.window.showInformationMessage('ADR Manager: No changes to commit for this item.');
+        return;
+      }
+      targeted = { ...targeted, changes: scopedChanges };
     }
     await commitOneRoot(targeted, true);
     return;

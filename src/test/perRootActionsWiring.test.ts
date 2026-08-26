@@ -42,14 +42,17 @@ describe('extension.ts: adrManager.focusRoot', () => {
 describe('extension.ts: commitAdrChanges accepts an optional targetRootPath', () => {
   const fn = EXT_SRC.match(/async function commitAdrChanges\([\s\S]*?\n\}/)![0]
 
-  it('the command registration threads a resolved targetRootPath through, unchanged for tree-wide invocations (no item)', () => {
-    // Superseded by menu-coherence (Jérémie, 2026-08-25): the handler now
-    // also resolves adr/seed items' owning root, not just item.rootNode —
-    // see commitMenuCoherenceWiring.test.ts for that full behavior. This
-    // test only pins that a tree-wide invocation (no item at all) still
-    // ends up passing undefined through, unchanged.
+  it('the command registration threads a resolved targetRootPath (+ scopeFilter) through, unchanged for tree-wide invocations (no item)', () => {
+    // Superseded by menu-coherence (Jérémie, 2026-08-25) and the scope-
+    // filter correction (2026-08-26): the handler now also resolves
+    // adr/seed items' owning root AND a per-item scope filter, not just
+    // item.rootNode — see commitMenuCoherenceWiring.test.ts and
+    // commitScopeFilterWiring.test.ts for that full behavior. This test
+    // only pins that a tree-wide invocation (no item at all) still ends
+    // up passing targetRootPath/scopeFilter through unchanged (both
+    // undefined in that case, via the ternary chains' own fallthrough).
     expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {")
-    expect(EXT_SRC).toContain('commitAdrChanges(adrDir, targetRootPath);')
+    expect(EXT_SRC).toContain('commitAdrChanges(adrDir, targetRootPath, scopeFilter);')
   })
 
   it('when targeted, commits that one root directly — no cross-root QuickPick, matching Jérémie\'s own ask to "circumvent the palette"', () => {
