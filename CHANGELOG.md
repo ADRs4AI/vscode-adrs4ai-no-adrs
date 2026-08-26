@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.102] - 2026-08-26
+
+### Added
+- **`adr:`/`seed:` refs are now clickable in the integrated terminal**, not just in editor documents — crew briefs and logs routinely print bare refs and canonical `adr://v1/...` URIs in terminal output; clicking one jumps to the target the same way clicking an in-document link already does.
+
 ## [0.7.101] - 2026-08-26
 
 ### Fixed
