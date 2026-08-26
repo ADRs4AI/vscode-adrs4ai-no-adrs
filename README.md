@@ -14,7 +14,7 @@ It's built for a specific document format ([`adr` v1](docs/SPEC-adr-v1.md)) — 
 
 ## What this is called
 
-The practice has a name: **deliberative programming** — specifying software by capturing the reasoning behind a decision, not just the decision itself, so an AI collaborator (and your future self) can act on *why*, not only *what*. The property it depends on is **epistemic continuity**: That reasoning surviving intact across sessions, models, and however long it sits before someone reads it again.
+The practice has a name: **Deliberative programming** — specifying software by capturing the reasoning behind a decision, not just the decision itself, so an AI collaborator (and your future self) can act on *why*, not only *what*. The property it depends on is **epistemic continuity**: That reasoning surviving intact across sessions, models, and however long it sits before someone reads it again.
 
 *(If "epistemic programming" rings a bell from computer-science education—Cheng, Hüsing, the ITiCSE line of work—that's a different, unrelated field about programming as a way to teach or discover epistemic beliefs. This points the other direction: Not programming to learn what's true, but recording why a decision was true enough to make.)*
 
@@ -67,7 +67,7 @@ That's the whole loop. Everything else—deep links between ADRs, creating new o
 | ADR Commit | Stage and commit only your ADR changes, stash everything else, restore it after |
 | Format tolerance | Works with the `adr` format (QST/ANS/NOT navigation codes) and plain MADR files side by side |
 | Sidebar badge | The Activity Bar icon shows your live open-question count, with a tooltip disclosing parse-health so the number is never trusted blind |
-| Multi-root workspaces | Discovers and aggregates every ADR-bearing project root — submodules, a forest workspace — sidebar, panel, and diagnostics span all of them, not just the first folder |
+| Multi-root workspaces | Discovers and aggregates every ADR-bearing project root—submodules, a forest workspace—so sidebar, panel, and diagnostics span all of them, not just the first folder |
 | Tours | Curated, ordered, shareable walks over a chosen subset of open questions, with a comment on each stop — a view over your questions, never a second queue |
 | Seed lifecycle | Seeds show their real state at a glance—iterating, quiet, parked, superseded, terminated, or chunked-with-a-rollup-badge—instead of one wrench for everything pending |
 | Pause & retire | Pause a whole ADR's questions (`Deferred`/`Paused`/`Suspended`/`On Hold`) or retire one specifically (`withdrawn`/`superseded`/`moot`) — both stay fully readable, neither counts as answered |
