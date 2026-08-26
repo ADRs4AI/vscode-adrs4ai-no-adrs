@@ -30,7 +30,7 @@ The practice has a name: **deliberative programming** — specifying software by
 
 ## What you install
 
-1. Install **ADRs for AI** from the VS Code Marketplace (search "ADRs for AI", or `ext install jlumbroso.adrs-for-ai`).
+1. Install **ADRs for AI** from the VS Code Marketplace (search "ADRs for AI", or `ext install jlumbroso.adrs4ai`).
 2. Open a project that has a `docs/adr/` folder with at least one Markdown file in it. (Don't have one yet? The extension can scaffold your first ADR — see below.)
 
 That's it — there's no server to run, no account, no API key required. (An Anthropic API key is optional and only unlocks AI-assisted extras; everything above works without one.)

@@ -1455,7 +1455,7 @@ async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boole
         appendLedgerRecord({
           schema: 'error-record/2',
           ts: new Date().toISOString(),
-          extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+          extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
           source: 'commit',
           kind: 'commit-failed',
           message: `Commit failed (${label}) — ${err}`,
@@ -1887,7 +1887,7 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
     appendLedgerRecord({
       schema: 'error-record/2',
       ts: new Date().toISOString(),
-      extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+      extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
       source: 'treeview',
       kind: 'observation',
       message: note || 'manual tree-item report',
@@ -2077,7 +2077,7 @@ async function addSeedThreadTurn(item?: import('./views/adrTreeProvider').AdrTre
       appendLedgerRecord({
         schema: 'error-record/2',
         ts: new Date().toISOString(),
-        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
         source: 'treeview',
         kind: 'workspace-edit-rejected',
         message,

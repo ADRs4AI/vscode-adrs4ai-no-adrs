@@ -691,7 +691,7 @@ export class OpenQuestionsPanel {
       appendLedgerRecord({
         schema: 'error-record/2',
         ts: new Date().toISOString(),
-        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
         source: 'tour-resolver',
         kind: 'tour-unresolved-refs',
         message: `${unresolved.length} entr${unresolved.length === 1 ? 'y' : 'ies'} in tour "${tour.title}" could not be resolved`,
@@ -745,7 +745,7 @@ export class OpenQuestionsPanel {
       appendLedgerRecord({
         schema: 'error-record/2',
         ts: new Date().toISOString(),
-        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
         source: 'panel',
         kind: 'observation',
         message,
@@ -855,7 +855,7 @@ export class OpenQuestionsPanel {
       // boxText; duplicating full drafts in meta doubles record size for nothing.
       const { answerText: _omit, ...metaMsg } = msg
       appendErrorRecord(buildErrorRecord(kind, message, msg.adrPath, {
-        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs-for-ai')?.packageJSON?.version,
+        extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
         questionId: msg.questionId,
         draftKey: msg.draftKey,
         boxText: msg.answerText,
