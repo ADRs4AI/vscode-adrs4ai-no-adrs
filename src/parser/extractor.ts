@@ -1443,8 +1443,22 @@ export function extractQuestion(
 
     if (/^(```|~~~)/.test(line)) inFence = !inFence;
 
-    const opens = (line.match(/<details\b/gi) || []).length;
-    const closes = (line.match(/<\/details>/gi) || []).length;
+    // Founder Report, 2026-08-26 (HQ seed-2026-08-25-sol-precision-pass-
+    // ratification.md, QST-STAGING-NOTE): a recommendation's own PROSE
+    // mentioned the HTML tag by name as a backtick-quoted code span —
+    // "If the `<details>` renders poorly..." — describing the feature, not
+    // opening one. The fold-depth scan below ran on the raw line with no
+    // code-span awareness, so it read that mention as a real opening
+    // <details> tag with no matching close, leaving detailsDepth stuck
+    // open for the rest of the question: the next Recommendation marker
+    // and the ANS marker both got swallowed into the first recommendation's
+    // text instead of starting their own blocks. Strip backtick spans
+    // before scanning for tags — same discipline the webview's own
+    // renderInline already applies before its bold/italic pass, just
+    // never extended to this scan.
+    const lineForTagScan = line.replace(/`[^`]*`/g, '');
+    const opens = (lineForTagScan.match(/<details\b/gi) || []).length;
+    const closes = (lineForTagScan.match(/<\/details>/gi) || []).length;
     const insideDetails = detailsDepth > 0 || opens > 0;
     detailsDepth = Math.max(0, detailsDepth + opens - closes);
     if (inFence || insideDetails) {

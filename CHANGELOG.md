@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.96] - 2026-08-26
+
+### Fixed
+- **A recommendation mentioning `<details>` by name (in backticks, as prose) no longer silently swallows everything after it.** The parser's `<details>` fold-tracking didn't know the difference between a real HTML tag and a code-quoted mention of one — a stacked second recommendation and its answer could vanish into the first recommendation's text.
+
 ## [0.7.95] - 2026-08-25
 
 ### Added

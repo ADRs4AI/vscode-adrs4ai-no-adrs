@@ -4685,6 +4685,31 @@ describe('Regression tests: folded is archival — <details> blocks are inert to
     expect(q.rawBody ?? '').toContain('archival prose')
     expect(q.answer?.text).toBe('Live answer after the fold.')
   })
+
+  // Regression test (fixes real bug, founder Report 2026-08-26, HQ
+  // seed-2026-08-25-sol-precision-pass-ratification.md, QST-STAGING-NOTE):
+  // a recommendation's own prose mentioned the tag by name as a backtick
+  // code span — "If the `<details>` renders poorly..." — describing the
+  // feature, not opening one. The fold-depth scan had no code-span
+  // awareness, read that mention as a real unclosed <details>, and
+  // swallowed everything after it (a second stacked Recommendation, and
+  // the ANS) into the first recommendation's text. "somehow this is
+  // parsed incorrectly: the second recommendation is parsed incorrectly,
+  // and teh ANS is parsed incorrectly" — his exact words.
+  it('a backtick-quoted mention of <details> in a recommendation\'s own prose does not open a fold', () => {
+    const doc = [
+      '## Questions', '', '### QST: Q?', '- Status: answered', '',
+      '**Recommendation**: (by Pharos 5, 2026-08-25)', '',
+      'First rec text. If the `<details>` renders poorly, inline returns.', '',
+      '**Recommendation**: (by Fable 5, 2026-08-25)', '',
+      'Second rec text.', '',
+      '**ANS:** Concur.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect((q.recommendations ?? []).length).toBe(2)
+    expect((q.recommendations ?? [])[1]?.text).toBe('Second rec text.')
+    expect(q.answer?.text).toBe('Concur.')
+  })
 })
 
 describe('Regression tests: fenced code blocks are inert to field structure, same doctrine as <details> (founder Report on ADR-0009, 2026-08-18)', () => {
