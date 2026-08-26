@@ -1733,6 +1733,37 @@ function owningRootNamespace(filePath: string): string | undefined {
 }
 
 /**
+ * Facet's brief (2026-08-26, docs/inbox/2026-08-26-facet-to-fitter-
+ * copydeeplink-never-reaches-repo-scope-plus-terminal-link-provider-
+ * ask.md — a live founder bug report against this file's own open
+ * Decision 7): copyDeepLink never once reached ADR-0008's tier-3
+ * repo-scoped canonical form (`adr://v1/repo/<owner>/<repo>/...`) — the
+ * one form meant to survive being pasted into a DIFFERENT repo entirely
+ * (HQ, a sibling crew's inbox, anywhere outside the local composite
+ * workspace). Not a missing builder (buildCanonicalRef's `scope: 'repo'`
+ * branch already existed) — a missing caller.
+ *
+ * Option A from Facet's brief, chosen at my own discretion (she
+ * explicitly left it to me, leaning A herself): always copy the
+ * richest form the item's root supports, rather than a second "copy
+ * cross-repo" command. Reasoning specific to how this project's own
+ * crew actually uses this command: inbox briefs constantly cross repo
+ * boundaries (this very bug report is one), so "will this get pasted
+ * outside the local workspace" isn't a rare edge case here — it's close
+ * to the default case. `root.gitRemoteSlug` (submodule-aware, already
+ * computed at discovery time for the root-caption feature, v0.7.81) is
+ * the exact input `buildCanonicalRef({scope:'repo',...})` needs — no
+ * new git-parsing logic. Checked BEFORE the multi-root project-alias
+ * tier, and unlike that tier, applies even in the N=1 case: a namespace
+ * alias only ever resolves against the local composite tree, but a
+ * repo-scoped canonical ref identifies the source repo regardless of
+ * which workspace it's read from.
+ */
+function owningRootGitSlug(filePath: string): { owner: string; repo: string } | undefined {
+  return compositeIndex?.findRoot(filePath)?.gitRemoteSlug
+}
+
+/**
  * Tooltip-preview note (Decision 7's other half): VS Code's
  * `view/item/context` menu items have no live hover-preview mechanism —
  * titles are static, declared once in package.json, with no per-
@@ -1747,30 +1778,41 @@ function owningRootNamespace(filePath: string): string | undefined {
 function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void {
   let ref: string | undefined;
   if (item.kind === 'adr' && item.adr) {
+    const gitSlug = owningRootGitSlug(item.adr.path);
     const namespace = owningRootNamespace(item.adr.path);
-    ref = namespace
-      ? buildXProjectAdrRef({ namespace, number: item.adr.number })
-      : buildLocalAdrRef({ number: item.adr.number });
+    ref = gitSlug
+      ? buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'adr', number: item.adr.number })
+      : namespace
+        ? buildXProjectAdrRef({ namespace, number: item.adr.number })
+        : buildLocalAdrRef({ number: item.adr.number });
   } else if (item.kind === 'question' && item.question) {
+    const gitSlug = owningRootGitSlug(item.question.adrPath);
     const namespace = owningRootNamespace(item.question.adrPath);
     if (item.question.sourceKind === 'seed') {
       // No cross-project alias exists for seeds in ADR-0008's grammar
       // (XPROJECT_RE only ever resolves an ADR locator) — the canonical
       // form is the correct, already-ratified fallback, not an invented
       // extension to the alias grammar.
-      ref = namespace
-        ? buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.question.adrPath), anchor: item.question.slug })
-        : buildLocalSeedRef(seedSlugFromPath(item.question.adrPath), item.question.slug);
+      ref = gitSlug
+        ? buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'seed', seedSlug: seedSlugFromPath(item.question.adrPath), anchor: item.question.slug })
+        : namespace
+          ? buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.question.adrPath), anchor: item.question.slug })
+          : buildLocalSeedRef(seedSlugFromPath(item.question.adrPath), item.question.slug);
     } else {
-      ref = namespace
-        ? buildXProjectAdrRef({ namespace, number: item.question.adrNumber, anchor: item.question.slug })
-        : buildLocalAdrRef({ number: item.question.adrNumber, anchor: item.question.slug });
+      ref = gitSlug
+        ? buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'adr', number: item.question.adrNumber, anchor: item.question.slug })
+        : namespace
+          ? buildXProjectAdrRef({ namespace, number: item.question.adrNumber, anchor: item.question.slug })
+          : buildLocalAdrRef({ number: item.question.adrNumber, anchor: item.question.slug });
     }
   } else if (item.kind === 'seed' && item.seed) {
+    const gitSlug = owningRootGitSlug(item.seed.path);
     const namespace = owningRootNamespace(item.seed.path);
-    ref = namespace
-      ? buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.seed.path) })
-      : buildLocalSeedRef(seedSlugFromPath(item.seed.path));
+    ref = gitSlug
+      ? buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'seed', seedSlug: seedSlugFromPath(item.seed.path) })
+      : namespace
+        ? buildCanonicalRef({ scope: 'project', namespace, artifact: 'seed', seedSlug: seedSlugFromPath(item.seed.path) })
+        : buildLocalSeedRef(seedSlugFromPath(item.seed.path));
   }
   if (!ref) return;
   vscode.env.clipboard.writeText(ref);

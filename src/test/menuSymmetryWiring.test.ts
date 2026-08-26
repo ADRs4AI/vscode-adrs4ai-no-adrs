@@ -75,6 +75,43 @@ describe('extension.ts: copyDeepLink is multi-root aware (ADR-0025 Decision 7)',
   })
 })
 
+// Facet's brief (2026-08-26, docs/inbox/2026-08-26-facet-to-fitter-
+// copydeeplink-never-reaches-repo-scope-plus-terminal-link-provider-
+// ask.md — a live founder bug report): copyDeepLink never once reached
+// ADR-0008's tier-3 repo-scoped canonical form. Fixed by checking
+// root.gitRemoteSlug FIRST, ahead of the namespace-alias tier, and
+// applying it even in the N=1 case (unlike the namespace tier, a
+// repo-scope ref identifies the source repo regardless of which
+// workspace it's read from). The gitRemoteSlug field itself (submodule-
+// aware git-remote resolution) has its own behavioral tests in
+// rootNode.test.ts; this file only pins that copyDeepLink's glue
+// prioritizes it correctly for every item kind.
+describe('extension.ts: copyDeepLink reaches repo-scope when a git remote resolves (Facet\'s brief, 2026-08-26)', () => {
+  const fn = EXT_SRC.match(/function copyDeepLink\([\s\S]*?\n\}/)![0]
+
+  it('owningRootGitSlug reads the already-computed RootNode field — no new git-parsing logic', () => {
+    const helperFn = EXT_SRC.match(/function owningRootGitSlug\(filePath: string\)[\s\S]*?\n\}/)![0]
+    expect(helperFn).toContain('compositeIndex?.findRoot(filePath)?.gitRemoteSlug')
+  })
+
+  it('an ADR item prefers the repo-scope canonical form over the xproject-alias/bare-local tiers', () => {
+    expect(fn).toContain("gitSlug\n      ? buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'adr', number: item.adr.number })")
+  })
+
+  it('an ADR-sourced question carries its anchor through to the repo-scope form too', () => {
+    expect(fn).toContain("buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'adr', number: item.question.adrNumber, anchor: item.question.slug })")
+  })
+
+  it('a seed (whole item or seed-sourced question) reaches repo-scope too, not just the project-scope canonical form', () => {
+    expect(fn).toContain("buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'seed', seedSlug: seedSlugFromPath(item.seed.path) })")
+    expect(fn).toContain("buildCanonicalRef({ scope: 'repo', owner: gitSlug.owner, repo: gitSlug.repo, artifact: 'seed', seedSlug: seedSlugFromPath(item.question.adrPath), anchor: item.question.slug })")
+  })
+
+  it('gitSlug is computed unconditionally (not gated behind isMultiRootWorkspace) — applies even in N=1, unlike the namespace tier', () => {
+    expect(fn).toMatch(/const gitSlug = owningRootGitSlug\([^)]+\);\s*const namespace = owningRootNamespace/)
+  })
+})
+
 describe('extension.ts: copyItemPath / copyItemRelativePath — new commands for menu symmetry', () => {
   it('copyItemPath copies resourceUri.fsPath verbatim', () => {
     const fn = EXT_SRC.match(/function copyItemPath\([\s\S]*?\n\}/)![0]
