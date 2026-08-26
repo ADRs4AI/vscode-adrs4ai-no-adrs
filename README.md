@@ -8,25 +8,25 @@
 
 You ask an AI model to help design something — auth, a schema, an API shape. It asks good questions, you argue a little, you land somewhere. Two weeks later you (or a different AI session, or a teammate) open the same file and none of that conversation is there anymore. Just the code, with no record of what you tried instead, or why.
 
-This extension makes the *deliberation* — not just the code — a durable, browseable artifact inside your editor. Open questions live in a sidebar you can answer without hunting through chat history. Answers are captured the moment you type them, so a file refresh or an agent editing nearby never costs you a half-written thought. Every decision keeps its own history of how it changed and why.
+This extension makes the *deliberation*—not just the code—a durable, browseable artifact inside your editor. Open questions live in a sidebar you can answer without hunting through chat history. Answers are captured the moment you type them, so a file refresh or an agent editing nearby never costs you a half-written thought. Every decision keeps its own history of how it changed and why.
 
 It's built for a specific document format ([`adr` v1](docs/SPEC-adr-v1.md)) — Architectural Deliberation Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
 
 ## What this is called
 
-The practice has a name: **deliberative programming** — specifying software by capturing the reasoning behind a decision, not just the decision itself, so an AI collaborator (and your future self) can act on *why*, not only *what*. The property it depends on is **epistemic continuity**: that reasoning surviving intact across sessions, models, and however long it sits before someone reads it again.
+The practice has a name: **deliberative programming** — specifying software by capturing the reasoning behind a decision, not just the decision itself, so an AI collaborator (and your future self) can act on *why*, not only *what*. The property it depends on is **epistemic continuity**: That reasoning surviving intact across sessions, models, and however long it sits before someone reads it again.
 
-*(If "epistemic programming" rings a bell from computer-science education — Cheng, Hüsing, the ITiCSE line of work — that's a different, unrelated field about programming as a way to teach or discover epistemic beliefs. This points the other direction: not programming to learn what's true, but recording why a decision was true enough to make.)*
+*(If "epistemic programming" rings a bell from computer-science education—Cheng, Hüsing, the ITiCSE line of work—that's a different, unrelated field about programming as a way to teach or discover epistemic beliefs. This points the other direction: Not programming to learn what's true, but recording why a decision was true enough to make.)*
 
 ## Why you'd want it
 
 - **Nothing gets buried.** Every open question, across every decision in your project, shows up in one panel — sorted, counted, one click from "unresolved" to "answered."
-- **Your answers can't be lost.** Type an answer, and it's saved as you type — even if the file changes underneath you mid-answer (an AI agent editing the same file, a git pull, a reindex), your draft survives and reloads where you left off. This isn't a hopeful claim: it's a regression test we run against the exact incident that used to destroy people's answers — see [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md), which is also the honest record of how we found the bug.
+- **Your answers can't be lost.** Type an answer, and it's saved as you type — even if the file changes underneath you mid-answer (an AI agent editing the same file, a git pull, a reindex), your draft survives and reloads where you left off. This isn't a hopeful claim: It's a regression test we run against the exact incident that used to destroy people's answers — see [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md), which is also the honest record of how we found the bug.
 - **Nobody has to remember the format.** The sidebar tree shows status at a glance (draft, accepted, superseded); the panel handles the QST/ANS bookkeeping; plain Markdown files without any of the extra structure still show up and work, just with fewer bells.
 - **It's yours, not a walled garden.** Everything lives in Markdown files in your repo (`docs/adr/` by default). Delete the extension tomorrow and you still have readable documents — no lock-in, no proprietary database.
-- **It scales the way AI-driven projects actually grow.** The faster you can spin up a subproject with an AI collaborator, the faster you accumulate separate ADR trees that need to reference each other — a meta-repo of meta-repos, not a hypothetical. This extension is built for that pattern natively: a single project is the simplest case of the same structure it uses for ten nested ones, not a special mode bolted on after the fact. This isn't aspirational — the team's own coordination repo nests this extension's own repo as a subproject, and the extension navigates that structure without a special mode.
+- **It scales the way AI-driven projects actually grow.** The faster you can spin up a subproject with an AI collaborator, the faster you accumulate separate ADR trees that need to reference each other — a meta-repo of meta-repos, not a hypothetical. This extension is built for that pattern natively: A single project is the simplest case of the same structure it uses for ten nested ones, not a special mode bolted on after the fact. This isn't aspirational — the team's own coordination repo nests this extension's own repo as a subproject, and the extension navigates that structure without a special mode.
 - **A tour curates attention, not just storage.** On a real project, "every open question" is a wall of text — the honest answer to "what actually matters right now" isn't the whole list. Save a chosen order over a subset of your open questions, with a note on each stop, as a shareable `docs/adr/tours/*.tour.json` file (**Mint Tour from Current Filter**). Anyone who opens it sees your judgment, not just your backlog — same answering surface as the regular panel, just walked in the order and with the commentary you picked.
-- **A question can be paused or retired without lying about being answered.** Mark a whole ADR `Deferred` / `Paused` / `Suspended` / `On Hold` and its questions drop out of your open-question count everywhere — sidebar, badge, panel — while staying fully readable, never invisible. Retire a single question that will never get answered with `withdrawn` / `superseded` / `moot`. Neither one pretends a decision got made that didn't.
+- **A question can be paused or retired without lying about being answered.** Mark a whole ADR `Deferred` / `Paused` / `Suspended` / `On Hold` and its questions drop out of your open-question count everywhere—sidebar, badge, panel—while staying fully readable, never invisible. Retire a single question that will never get answered with `withdrawn` / `superseded` / `moot`. Neither one pretends a decision got made that didn't.
 
 ## What you install
 
@@ -45,7 +45,7 @@ If you're starting from nothing, pair this with the [companion template](https:/
 4. **Type an answer, `Cmd+Enter` to submit.** Watch for the small "draft saved" line while you type — that's the anti-clobbering fence working, not a feature you need to think about.
 5. **Set your name once** (`adrManager.humanName` in Settings, or it'll fall back to your git `user.name`) so it pre-fills who's answering.
 
-That's the whole loop. Everything else — deep links between ADRs, creating new ones, filtering by status, committing only your ADR changes — is discoverable from the sidebar's toolbar and right-click menu when you're ready for it.
+That's the whole loop. Everything else—deep links between ADRs, creating new ones, filtering by status, committing only your ADR changes—is discoverable from the sidebar's toolbar and right-click menu when you're ready for it.
 
 ## Where to go when it surprises you
 
@@ -69,7 +69,7 @@ That's the whole loop. Everything else — deep links between ADRs, creating new
 | Sidebar badge | The Activity Bar icon shows your live open-question count, with a tooltip disclosing parse-health so the number is never trusted blind |
 | Multi-root workspaces | Discovers and aggregates every ADR-bearing project root — submodules, a forest workspace — sidebar, panel, and diagnostics span all of them, not just the first folder |
 | Tours | Curated, ordered, shareable walks over a chosen subset of open questions, with a comment on each stop — a view over your questions, never a second queue |
-| Seed lifecycle | Seeds show their real state at a glance — iterating, quiet, parked, superseded, terminated, or chunked-with-a-rollup-badge — instead of one wrench for everything pending |
+| Seed lifecycle | Seeds show their real state at a glance—iterating, quiet, parked, superseded, terminated, or chunked-with-a-rollup-badge—instead of one wrench for everything pending |
 | Pause & retire | Pause a whole ADR's questions (`Deferred`/`Paused`/`Suspended`/`On Hold`) or retire one specifically (`withdrawn`/`superseded`/`moot`) — both stay fully readable, neither counts as answered |
 | Report button | Flag a problem from inside the panel, in one gesture, without losing your in-progress answer — off by default |
 
