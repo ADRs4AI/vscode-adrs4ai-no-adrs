@@ -10,7 +10,7 @@ You ask an AI model to help design something — auth, a schema, an API shape. I
 
 This extension makes the *deliberation*—not just the code—a durable, browseable artifact inside your editor. Open questions live in a sidebar you can answer without hunting through chat history. Answers are captured the moment you type them, so a file refresh or an agent editing nearby never costs you a half-written thought. Every decision keeps its own history of how it changed and why.
 
-It's built for a specific document format ([`adr` v1](docs/SPEC-adr-v1.md)) — Architectural Deliberation Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
+It's built for a specific document format (`adr` v1) — Architectural Deliberation Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
 
 ## What this is called
 
@@ -21,7 +21,7 @@ The practice has a name: **Deliberative programming** — specifying software by
 ## Why you'd want it
 
 - **Nothing gets buried.** Every open question, across every decision in your project, shows up in one panel — sorted, counted, one click from "unresolved" to "answered."
-- **Your answers can't be lost.** Type an answer, and it's saved as you type — even if the file changes underneath you mid-answer (an AI agent editing the same file, a git pull, a reindex), your draft survives and reloads where you left off. This isn't a hopeful claim: It's a regression test we run against the exact incident that used to destroy people's answers — see [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md), which is also the honest record of how we found the bug.
+- **Your answers can't be lost.** Type an answer, and it's saved as you type — even if the file changes underneath you mid-answer (an AI agent editing the same file, a git pull, a reindex), your draft survives and reloads where you left off. This isn't a hopeful claim: It's a regression test we run against the exact incident that used to destroy people's answers, documented in full the day we found it (DEBRIEF-001) — the source repo isn't public yet, so that record isn't independently checkable right now.
 - **Nobody has to remember the format.** The sidebar tree shows status at a glance (draft, accepted, superseded); the panel handles the QST/ANS bookkeeping; plain Markdown files without any of the extra structure still show up and work, just with fewer bells.
 - **It's yours, not a walled garden.** Everything lives in Markdown files in your repo (`docs/adr/` by default). Delete the extension tomorrow and you still have readable documents — no lock-in, no proprietary database.
 - **It scales the way AI-driven projects actually grow.** The faster you can spin up a subproject with an AI collaborator, the faster you accumulate separate ADR trees that need to reference each other — a meta-repo of meta-repos, not a hypothetical. This extension is built for that pattern natively: A single project is the simplest case of the same structure it uses for ten nested ones, not a special mode bolted on after the fact. This isn't aspirational — the team's own coordination repo nests this extension's own repo as a subproject, and the extension navigates that structure without a special mode.
@@ -51,7 +51,7 @@ That's the whole loop. Everything else—deep links between ADRs, creating new o
 
 - **Something looks wrong or a file didn't update** — right-click the sidebar and hit Refresh; the extension re-scans on save automatically, so this is rarely needed.
 - **A question you answered still shows as open** — check that you hit `Cmd+Enter` or the Answer button rather than just clicking away; the status bar (bottom right) shows the extension's version if you suspect a stale build.
-- **Something actually breaks** — [open an issue](https://github.com/ADRs4AI/vscode-adrs4ai/issues). We keep a public, ADR-formatted debrief for every incident that costs a user real work (again: [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md) is one), because a project whose whole pitch is "honest record-keeping" doesn't get to hide its own.
+- **Something actually breaks** — email [hello@adrs.systems](mailto:hello@adrs.systems). Every incident that costs a user real work gets a full, ADR-formatted debrief (DEBRIEF-001 is one) — that record lives in the source repo, which isn't public yet, so it's not independently checkable right now. What is checkable: every fix it produced is dated in this extension's own Changelog tab.
 
 ## Reference
 
@@ -95,5 +95,5 @@ A curated few — there are just over thirty in total by now, all browsable via 
 ## Related
 
 - [`human-ai-collaboration-template-A`](https://github.com/ADRs4AI/human-ai-collaboration-template-A) — the ADR framework and starter files this extension is built for
-- [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) — the fuller reasoning behind the format, for anyone who wants the "why," not just the "how"
-- [`CHANGELOG.md`](CHANGELOG.md) — what shipped, when, including the incidents that shaped a fix
+- [`METHODOLOGY.md`](https://github.com/ADRs4AI/human-ai-collaboration-template-A/blob/main/docs/METHODOLOGY.md) — the fuller reasoning behind the format, for anyone who wants the "why," not just the "how"
+- `CHANGELOG.md` — what shipped, when, including the incidents that shaped a fix (see this listing's own Changelog tab)
