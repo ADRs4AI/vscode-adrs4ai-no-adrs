@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.101] - 2026-08-26
+
+### Fixed
+- **"Copy Deep Link" now copies a link that survives being pasted into a different repo**, not just a different project in the same workspace. When your project has a git remote, the copied link is now fully qualified (`adr://v1/repo/<owner>/<repo>/...`) instead of stopping at the project-local form.
+
 ## [0.7.98] - 2026-08-26
 
 ### Added
