@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.97] - 2026-08-26
+
+### Fixed
+- **"Commit" on an individual ADR or seed (or the ADRs/Seeds category header) now commits only what it applies to**, instead of every changed file in the whole project. Right-clicking one ADR no longer sweeps in unrelated ADRs, seeds, or bookkeeping changes.
+
 ## [0.7.96] - 2026-08-26
 
 ### Fixed
