@@ -16,9 +16,19 @@ export interface DetectedLink {
   endOffset: number
 }
 
-/** Scan raw markdown text for `[label](adr:...)` / `[label](seed:...)` links. */
+// Bare refs + canonical URIs (2026-08-26, founder demand via ADR-0008's 🔲
+// pair): the panel's v0.7.91 autolink pattern, mirrored exactly — word-
+// boundary guarded so mid-token text never matches. Canonical URIs match
+// FIRST (adr:// would otherwise half-match as a bare adr: ref).
+const CANONICAL_RE = /\badr:\/\/v\d+\/[a-zA-Z0-9._/-]+(?:\?[a-zA-Z0-9=&._-]*)?(?:#[a-z0-9][a-z0-9-]*)?/g
+const BARE_REF_RE = /\b(?:adr|seed):[a-zA-Z0-9._/-]+(?:#[a-z0-9][a-z0-9-]*)?/g
+
+/** Scan raw markdown text for deep links: wrapped `[label](adr:...)`, bare `adr:NNNN#slug`, and canonical `adr://v1/...` forms. */
 export function detectDeepLinks(text: string): DetectedLink[] {
   const links: DetectedLink[] = []
+  const claimed: Array<[number, number]> = []
+  const overlaps = (a: number, b: number) => claimed.some(([s2, e2]) => a < e2 && b > s2)
+
   const re = new RegExp(LINK_HREF_RE)
   let match: RegExpExecArray | null
   while ((match = re.exec(text))) {
@@ -28,5 +38,21 @@ export function detectDeepLinks(text: string): DetectedLink[] {
     const startOffset = match.index + 2 // past "]("
     links.push({ ref, startOffset, endOffset: startOffset + ref.length })
   }
+  for (const [, e] of links.map((l, i) => [i, l] as const)) claimed.push([e.startOffset, e.endOffset])
+
+  for (const rx of [CANONICAL_RE, BARE_REF_RE]) {
+    const r = new RegExp(rx)
+    let m2: RegExpExecArray | null
+    while ((m2 = r.exec(text))) {
+      const start = m2.index, end = m2.index + m2[0].length
+      if (overlaps(start, end)) continue
+      // skip pure-scheme noise like "adr:" mid-prose (no locator)
+      if (/^(?:adr|seed):$/.test(m2[0])) continue
+      links.push({ ref: m2[0], startOffset: start, endOffset: end })
+      claimed.push([start, end])
+    }
+  }
+
+  links.sort((a, b) => a.startOffset - b.startOffset)
   return links
 }

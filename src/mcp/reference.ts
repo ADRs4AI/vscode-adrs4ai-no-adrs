@@ -289,6 +289,28 @@ export function resolveAdrByRef(ctx: RepositoryContext, rawRef: string): Resolve
 export function resolveReference(ctx: RepositoryContext, rawRef: string): ResolvedRef | RefError {
   const ref = rawRef.trim()
 
+  // Canonical adr://v1/ URIs (ADR-0008 grammar; the Scope Remaining 🔲 item,
+  // built 2026-08-26 on direct founder demand — "couldn't they eventually be
+  // clickable?"). Strategy: parse scope + artifact, DELEGATE the artifact to
+  // the short-ref grammar below (one resolution, never a second), and be
+  // honest about scope: this resolver serves ONE workspace — a URI naming a
+  // foreign project/repo that still resolves locally is reported as resolved
+  // (the artifact was found here); one that doesn't resolve gets an error
+  // that NAMES the scope, so "not found" and "wrong workspace" are
+  // distinguishable at the call site.
+  if (/^adr:\/\//.test(ref)) {
+    const m = ref.match(/^adr:\/\/(v\d+)\/(project\/[^/]+|repo\/[^/]+\/[^/]+)\/(adr|seed)\/([^?#]+)(\?[^#]*)?(#.*)?$/)
+    if (!m) return { kind: 'error', error: 'unrecognized_reference', message: `Not a valid canonical reference: "${ref}" — expected adr://v1/{project/<ns>|repo/<owner>/<repo>}/{adr/<locator>|seed/<slug>}[#anchor] (ADR-0008 §canonical_ref)` }
+    const [, version, scope, artifact, locator, , fragment] = m
+    if (version !== 'v1') return { kind: 'error', error: 'unsupported_reference', message: `Canonical reference version "${version}" is not supported (this resolver speaks v1); ref: "${ref}"` }
+    const shortRef = `${artifact}:${locator}${fragment ?? ''}`
+    const result = resolveReference(ctx, shortRef)
+    if (result.kind === 'error') {
+      return { ...result, message: `${result.message} (canonical ref scoped to ${scope} — if that names a different workspace, open it there)` }
+    }
+    return result
+  }
+
   // Tolerance 1: bare Question.id, e.g. "adr-0001-qst-scope".
   if (/^adr-\d{4}-/.test(ref)) {
     for (const adr of ctx.listAdrs()) {

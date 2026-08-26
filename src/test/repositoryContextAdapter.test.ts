@@ -108,3 +108,39 @@ describe('Regression tests', () => {
     if (back.kind === 'seed') expect(back.seed.path).toBe(seed.path)
   })
 })
+
+describe('Regression tests: canonical adr://v1 parser (ADR-0008 Scope Remaining, founder demand 2026-08-26)', () => {
+  let ctx: ReturnType<typeof createRepositoryContextAdapter>
+  beforeAll(async () => {
+    const adrIndex = new AdrIndex()
+    const seedIndex = new SeedIndex()
+    await adrIndex.indexDirectory(FIXTURE_DIR)
+    await seedIndex.indexDirectory(FIXTURE_DIR)
+    ctx = createRepositoryContextAdapter({ allAdrs: () => adrIndex.allAdrs(), allSeeds: () => seedIndex.allSeeds() })
+  })
+  it('canonical URI resolves to the same target as its short form (delegated, one resolution)', () => {
+    const short = resolveReference(ctx, 'adr:0001#qst-session-cookies-or-jwt')
+    const canon = resolveReference(ctx, 'adr://v1/repo/jlumbroso/fixture/adr/0001#qst-session-cookies-or-jwt')
+    expect(short.kind).toBe('question')
+    expect(canon.kind).toBe('question')
+    if (short.kind === 'question' && canon.kind === 'question') {
+      expect(canon.question.id).toBe(short.question.id)
+    }
+  })
+  it('project-scoped form parses and delegates', () => {
+    expect(resolveReference(ctx, 'adr://v1/project/fixture/adr/0001').kind).toBe('adr')
+  })
+  it('unsupported version + malformed refs fail LOUDLY with grammar named', () => {
+    const v2 = resolveReference(ctx, 'adr://v2/repo/o/r/adr/0001')
+    expect(v2.kind).toBe('error')
+    if (v2.kind === 'error') expect(v2.error).toBe('unsupported_reference')
+    const bad = resolveReference(ctx, 'adr://v1/nonsense')
+    expect(bad.kind).toBe('error')
+    if (bad.kind === 'error') expect(bad.message).toContain('canonical_ref')
+  })
+  it('a not-found canonical ref names its scope — wrong-workspace stays diagnosable', () => {
+    const r = resolveReference(ctx, 'adr://v1/repo/other/elsewhere/adr/9999')
+    expect(r.kind).toBe('error')
+    if (r.kind === 'error') expect(r.message).toContain('repo/other/elsewhere')
+  })
+})

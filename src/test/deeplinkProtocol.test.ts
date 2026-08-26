@@ -230,3 +230,21 @@ describe('Grammar conformance — mechanical drift check against ADR-0008', () =
     expect(hash).toBe(GRAMMAR_BLOCK_SHA1)
   })
 })
+
+import { detectDeepLinks } from '../deeplink/linkDetection'
+
+describe("Regression tests: clickability detection — bare refs + canonical URIs (founder demand, 2026-08-26)", () => {
+  it('bare refs and canonical URIs are found; wrapped links not double-counted; mid-token never matches', () => {
+    const text = [
+      'See [scope](adr:0001#qst-scope) and bare adr:0008#decision in prose.',
+      'Canonical: adr://v1/repo/jlumbroso/vscode-adrs-for-ai/adr/0008#decision here.',
+      'Not a ref: consider madr:0001 (mid-token guard).',
+    ].join('\n')
+    const refs = detectDeepLinks(text).map(l => l.ref)
+    expect(refs).toContain('adr:0001#qst-scope')
+    expect(refs).toContain('adr:0008#decision')
+    expect(refs).toContain('adr://v1/repo/jlumbroso/vscode-adrs-for-ai/adr/0008#decision')
+    expect(refs.filter(r => r === 'adr:0001#qst-scope')).toHaveLength(1)
+    expect(refs.some(r => r.includes('madr'))).toBe(false)
+  })
+})
