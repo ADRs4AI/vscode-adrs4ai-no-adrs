@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.98] - 2026-08-26
+
+### Added
+- **Fully qualified deep links are clickable everywhere**: canonical `adr://v1/project/...` and `adr://v1/repo/owner/name/...` URIs now parse (per ADR-0008's grammar) and resolve like their short forms — and the editor's link detection catches bare refs (`adr:0008#decision` typed straight into prose) and canonical URIs, not just `[wrapped](adr:...)` links, matching what the panel learned in v0.7.91. A canonical ref that doesn't resolve tells you which project/repo it was scoped to, so "not found" and "wrong workspace" are different messages.
+
 ## [0.7.97] - 2026-08-26
 
 ### Fixed
