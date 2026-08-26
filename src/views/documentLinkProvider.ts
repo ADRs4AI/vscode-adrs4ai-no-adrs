@@ -9,14 +9,13 @@
  * CALLER, not a resolver"): this file contains zero resolution logic. It
  * turns clicks into calls against an injected `resolve` function. Today
  * that function is `resolveReference` from `src/mcp/reference.ts` bound to
- * a `RepositoryContextAdapter` over the live `AdrIndex`/`SeedIndex`
- * (single-root only — see extension.ts wiring). When the resolver-
- * unification conversation (Fitter's CompositeIndex overlap, routed to
- * Cairn) settles, only the injected function at the call site changes —
- * this provider and its command handler never do.
- *
- * Scope, stated per the Shipwright clause: single-root only. Multi-root
- * topology awaits the CompositeIndex unification.
+ * a `RepositoryContextAdapter` over the live `CompositeIndex` (extension.ts
+ * wiring: `resolveReference(createRepositoryContextAdapter(compositeIndex!), ref)`)
+ * — the resolver-unification conversation this comment used to flag as
+ * pending (Fitter's CompositeIndex overlap, routed to Cairn) has since
+ * settled; multi-root resolution is live. Only the injected function at the
+ * call site would change if that ever moves again — this provider and its
+ * command handler never do.
  */
 
 import * as vscode from 'vscode'
