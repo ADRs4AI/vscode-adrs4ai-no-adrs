@@ -133,3 +133,115 @@ overrides:
     reason: extension's own release changelog (Marketplace), not the template's — moved from canonical-zone
       comment at the v3.10.0 refresh
     decided: '2026-08-24'
+  CLAUDE.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  justfile:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  .gitignore:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  README.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  docs/METHODOLOGY.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  docs/adr/templates/adr.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  docs/adr/templates/seed.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  docs/inbox/ONBOARDING.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  docs/inbox/CONVENTIONS.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  docs/inbox/ENCODING-MAP.md:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  scripts/hooks/remind-uncommitted-substrate.py:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  scripts/unwrap-adrs/unwrap-adrs.mjs:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  scripts/unwrap-adrs/unwrap-adrs.py:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
+  scripts/tmux/seat.conf:
+    skip: true
+    reason: 'Independent crew''s own repo (this ecosystem''s doctrine: vscode-adrs-for-ai runs its own
+      crew, own inbox protocol, coordinate-not-override). All 15 predate the v3.9 marker-line convention
+      or carry real repo-specific content (README/CHANGELOG are the extension''s own, not template boilerplate).
+      Kept as-is by Grafter 5 on Jérémie''s request, 2026-08-26 — a future template sync is this crew''s
+      own call, not unilaterally applied here.'
+    decided: '2026-08-26T08:27:09Z'
