@@ -35,7 +35,7 @@ The practice has a name: **deliberative programming** — specifying software by
 
 That's it — there's no server to run, no account, no API key required. (An Anthropic API key is optional and only unlocks AI-assisted extras; everything above works without one.)
 
-If you're starting from nothing, pair this with the [companion template](https://github.com/jlumbroso/human-ai-collaboration-template-A) — a set of starter files (`CLAUDE.md`, ADR templates, a short methodology doc) that gives an AI model the vocabulary this extension expects.
+If you're starting from nothing, pair this with the [companion template](https://github.com/ADRs4AI/human-ai-collaboration-template-A) — a set of starter files (`CLAUDE.md`, ADR templates, a short methodology doc) that gives an AI model the vocabulary this extension expects.
 
 ## Your first ten minutes
 
@@ -51,7 +51,7 @@ That's the whole loop. Everything else — deep links between ADRs, creating new
 
 - **Something looks wrong or a file didn't update** — right-click the sidebar and hit Refresh; the extension re-scans on save automatically, so this is rarely needed.
 - **A question you answered still shows as open** — check that you hit `Cmd+Enter` or the Answer button rather than just clicking away; the status bar (bottom right) shows the extension's version if you suspect a stale build.
-- **Something actually breaks** — [open an issue](https://github.com/jlumbroso/vscode-adrs-for-ai/issues). We keep a public, ADR-formatted debrief for every incident that costs a user real work (again: [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md) is one), because a project whose whole pitch is "honest record-keeping" doesn't get to hide its own.
+- **Something actually breaks** — [open an issue](https://github.com/ADRs4AI/vscode-adrs4ai/issues). We keep a public, ADR-formatted debrief for every incident that costs a user real work (again: [`DEBRIEF-001`](docs/adr/DEBRIEF-001-panel-answer-loss-agent-rewrite.md) is one), because a project whose whole pitch is "honest record-keeping" doesn't get to hide its own.
 
 ## Reference
 
@@ -94,6 +94,6 @@ A curated few — there are just over thirty in total by now, all browsable via 
 
 ## Related
 
-- [`human-ai-collaboration-template-A`](https://github.com/jlumbroso/human-ai-collaboration-template-A) — the ADR framework and starter files this extension is built for
+- [`human-ai-collaboration-template-A`](https://github.com/ADRs4AI/human-ai-collaboration-template-A) — the ADR framework and starter files this extension is built for
 - [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) — the fuller reasoning behind the format, for anyone who wants the "why," not just the "how"
 - [`CHANGELOG.md`](CHANGELOG.md) — what shipped, when, including the incidents that shaped a fix
