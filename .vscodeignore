@@ -13,6 +13,12 @@ fixture-workspace/**
 temp/**
 releases/**
 CLAUDE.md
+QUICK-START.md
+TEMPLATE-UPDATES.md
+justfile
+kintsugi.yaml
+kintsugi.lock
+.pneumatic/**
 .gitignore
 .gitattributes
 .eslintrc.json
