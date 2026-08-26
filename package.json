@@ -1,7 +1,7 @@
 {
   "name": "adrs-for-ai",
   "displayName": "ADRs for AI",
-  "description": "Turn AI design conversations into durable, answerable decision records — open questions live in your sidebar, answers can't be lost.",
+  "description": "Your AI's reasoning stops evaporating: Every open question in your project's deliberation records, in one sidebar — with the options, the recommendation, and the reasons — answered in place, never lost.",
   "version": "0.7.96",
   "publisher": "jlumbroso",
   "license": "MIT",

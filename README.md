@@ -8,7 +8,7 @@
 
 You ask an AI model to help design something — auth, a schema, an API shape. It asks good questions, you argue a little, you land somewhere. Two weeks later you (or a different AI session, or a teammate) open the same file and none of that conversation is there anymore. Just the code, with no record of what you tried instead, or why.
 
-This extension makes the *decision* — not just the code — a durable, browseable thing inside your editor. Open questions live in a sidebar you can answer without hunting through chat history. Answers are captured the moment you type them, so a file refresh or an agent editing nearby never costs you a half-written thought. Every decision keeps its own history of how it changed and why.
+This extension makes the *deliberation* — not just the code — a durable, browseable artifact inside your editor. Open questions live in a sidebar you can answer without hunting through chat history. Answers are captured the moment you type them, so a file refresh or an agent editing nearby never costs you a half-written thought. Every decision keeps its own history of how it changed and why.
 
 It's built for a specific document format ([`adr` v1](docs/SPEC-adr-v1.md)) — Architectural Deliberation Records extended with a few navigation codes (`QST:`, `ANS:`, `NOT:`) so both you and any AI model can grep straight to what's unresolved. You don't need to memorize the format; the extension reads and writes it for you.
 
