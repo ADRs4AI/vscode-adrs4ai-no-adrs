@@ -47,6 +47,24 @@ If you're starting from nothing, pair this with the [companion template](https:/
 
 That's the whole loop. Everything else—deep links between ADRs, creating new ones, filtering by status, committing only your ADR changes—is discoverable from the sidebar's toolbar and right-click menu when you're ready for it.
 
+## See it in action
+
+**Answering a question, in place.** An open question, the context for why it's being asked, and a stated recommendation to react to — no file to open, no place lost.
+
+![Answering an open question directly in the panel](https://adrs.systems/screens/vscode-panel-answering.gif)
+
+**Every decision, at a glance.** Settled, open, and replaced decisions all show up in the same tree — and a closed decision still carries the reasoning that closed it.
+
+![The ADR Explorer sidebar showing decisions in different states](https://adrs.systems/screens/vscode-tree-view.gif)
+
+**A tour, not a wall of text.** A maintainer's own judgment about what actually matters right now, saved and shareable — the same answering surface, just walked in a chosen order with a note on each stop.
+
+![Walking a saved tour over a subset of open questions](https://adrs.systems/screens/vscode-tours.gif)
+
+**Your draft survives.** Type an answer, and it's saved as you type — a file changing underneath you mid-answer never costs you the half-written thought.
+
+![An in-progress answer surviving a concurrent file change](https://adrs.systems/screens/vscode-draft-persistence.gif)
+
 ## Where to go when it surprises you
 
 - **Something looks wrong or a file didn't update** — right-click the sidebar and hit Refresh; the extension re-scans on save automatically, so this is rarely needed.
