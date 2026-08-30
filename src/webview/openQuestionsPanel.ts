@@ -448,7 +448,21 @@ export class OpenQuestionsPanel {
       totalOccurrences: total,
       fileChecksum: opts.checksum,
       draftText: draft?.draftText,
-      existingAnswer: !q.isAnswered && q.answer ? q.answer.text : undefined,
+      // Jérémie's founder Report (2026-08-30, companion-thinking-stream-
+      // etude specimen): a bare "**ANS:** (by ...)\n[ ]" placeholder ROUND
+      // placed after a real answer (no new Recommendation between them)
+      // reopens the question per ADR-0033's dialogue-layering fold — a real,
+      // deliberate design, unchanged here — but `q.answer` (the singular,
+      // CURRENT-round field) then reads undefined, and this line only ever
+      // looked at `q.answer`, so the box rendered fully blank: his real
+      // answer was still on disk (`q.answers`, the plural round history,
+      // never lost it) but had zero trace anywhere the panel could show.
+      // Falling back to the last REAL round's text keeps isAnswered's
+      // verdict exactly as-is (a genuinely reopened round still needs a
+      // fresh confirmation) while making sure "reopened" never means
+      // "your prior answer vanished" — same prefill affordance this field
+      // already gives the Status-declared-unanswered-with-stale-content case.
+      existingAnswer: !q.isAnswered ? (q.answer?.text ?? q.answers?.[q.answers.length - 1]?.text) : undefined,
       fileMtime: statMtimeMs(q.adrPath),
       draftSavedAt: draft?.updatedAt,
       draftSource: draft?.source,

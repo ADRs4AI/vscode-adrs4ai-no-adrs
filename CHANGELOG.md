@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.106] - 2026-08-30
+
+### Fixed
+- **A reopened question no longer shows a fully blank answer box.** A bare `**ANS:** (by ...)` placeholder round placed after a real answer (with no new Recommendation between them) correctly reopens the question — that's intentional dialogue-layering behavior, unchanged — but the answer box had nothing to show because it only ever looked at the *current* round. It now falls back to the last real round's text, so your prior answer resurfaces as a pre-filled draft instead of vanishing.
+
 ## [0.7.105] - 2026-08-30
 
 ### Added

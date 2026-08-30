@@ -4330,6 +4330,34 @@ describe('Question.rounds (ADR-0021 Iteration 10, Riddle 5 format ruling)', () =
     expect(q.rounds[0].answer?.qualifier).toBe('to a recommendation nobody wrote')
     expect(q.rounds[0].answer?.text).toBe('Fine anyway.')
   })
+
+  // Jérémie's founder Report, 2026-08-30 (real specimen: companion-thinking-
+  // stream-etude's seed-2026-08-07-four-directions-… QST-STATESMAN-MCP): "a
+  // ANS: placeholder placed after my own confuses the parser into missing an
+  // answer." A bare "**ANS:** (by ...)\n[ ]" round with NO new Recommendation
+  // between it and a real prior answer reopens the question per this fold's
+  // own documented rule ("an answer with no preceding recommendation is a
+  // round with recommendations: []") — intentional, unchanged here. The
+  // singular `answer` field (the CURRENT round only) is correctly undefined;
+  // the real answer is NOT lost — it survives in `answers` (plural, the full
+  // round history) — confirming the fix belongs at the panel's display layer
+  // (openQuestionsPanel.ts's existingAnswer fallback), not in this fold.
+  it('a trailing bare placeholder round with no new Recommendation reopens the question, but the real prior answer survives in answers[], not just rounds[]', () => {
+    const doc = [
+      '## Open Questions', '', '### QST-STATESMAN-MCP: Integrate the MCP?', '',
+      '**Rec**: YES, as experiment.', '',
+      '**ANS:** (by Jérémie Lumbroso)',
+      'Yes, definitely. Here are my requirements though: ...', '',
+      '**ANS:** (by Jérémie)', '[ ]', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+    expect(q.rounds).toHaveLength(2)
+    expect(q.rounds[1].answer).toBeUndefined()
+    expect(q.answers).toHaveLength(1)
+    expect(q.answers?.[0].text).toContain('Here are my requirements')
+  })
 })
 
 describe("Regression tests: byline scaffold — '(Jérémie Lumbroso)' as an ANS slot's entire content (Herald's second tour, 2026-07-28)", () => {
