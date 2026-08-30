@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.105] - 2026-08-30
+
+### Added
+- **Seeds' Hide/Show filters now match ADRs': a "Hide/Show Seeds Without Open Questions" pair**, alongside the existing "Hide/Show Closed Seeds" — the Seeds category header was one filter dimension short of the ADRs one, with no design reason behind the gap.
+- **A root-level "Hide/Show Without Open Questions" toggle** that sets the ADRs and Seeds dimensions together in one gesture, from a project root's own right-click menu — no more toggling each category header separately to get to "just show me what's left to do."
+
 ## [0.7.104] - 2026-08-29
 
 ### Fixed

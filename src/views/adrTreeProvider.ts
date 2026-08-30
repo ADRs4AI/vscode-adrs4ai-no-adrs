@@ -914,20 +914,33 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
    * siblings.
    */
   /**
-   * Category-header filter checkbox for Seeds (Facet's go-ahead,
-   * 2026-08-16; Jérémie's coherence ask, 2026-08-25): `seeds.hideClosed`
-   * hides the closed-family seeds (parked/superseded/terminated —
-   * closedFamilyToken, ADR-0041's own vocabulary), default off. Kept
-   * separate from getSeedGroupChildren's own aging-median computation
-   * below on purpose — the median is a statistical property of the
-   * whole repo's activity, not of what's currently being displayed, so
-   * it's always computed from the FULL seed list regardless of this
-   * filter.
+   * Category-header filter checkboxes for Seeds (Facet's go-ahead,
+   * 2026-08-16; Jérémie's coherence ask, 2026-08-25; second dimension —
+   * `seeds.hideWithoutOpenQuestions` — added 2026-08-30 per his own
+   * founder Report: the Seeds category had only `hideClosed`, one
+   * dimension short of ADRs' two, an unexplained asymmetry with no
+   * design reason behind it, seeds carry `.questions` the same as ADRs
+   * do). `seeds.hideClosed` hides the closed-family seeds (parked/
+   * superseded/terminated — closedFamilyToken, ADR-0041's own
+   * vocabulary); `seeds.hideWithoutOpenQuestions` hides seeds with
+   * nothing left to actually do, same `filterQuestions` the ADR side
+   * uses — no seed-side "document paused" concept to short-circuit on,
+   * unlike ADRs. Both default off. Kept separate from
+   * getSeedGroupChildren's own aging-median computation below on
+   * purpose — the median is a statistical property of the whole repo's
+   * activity, not of what's currently being displayed, so it's always
+   * computed from the FULL seed list regardless of either filter.
    */
   private visibleSeeds(node: RootNode): SeedFile[] {
-    const hideClosed = vscode.workspace.getConfiguration('adrManager').get<boolean>('seeds.hideClosed', false)
-    if (!hideClosed) return node.seeds.allSeeds()
-    return node.seeds.allSeeds().filter(s => !closedFamilyToken(s.status))
+    const cfg = vscode.workspace.getConfiguration('adrManager')
+    const hideClosed = cfg.get<boolean>('seeds.hideClosed', false)
+    const hideWithoutOpenQuestions = cfg.get<boolean>('seeds.hideWithoutOpenQuestions', false)
+    if (!hideClosed && !hideWithoutOpenQuestions) return node.seeds.allSeeds()
+    return node.seeds.allSeeds().filter(seed => {
+      if (hideClosed && closedFamilyToken(seed.status)) return false
+      if (hideWithoutOpenQuestions && this.filterQuestions(seed.questions).length === 0) return false
+      return true
+    })
   }
 
   private getSeedGroupChildren(node: RootNode): AdrTreeItem[] {

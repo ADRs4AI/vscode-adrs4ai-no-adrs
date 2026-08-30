@@ -477,6 +477,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.workspace.getConfiguration('adrManager').update('seeds.hideClosed', false);
       treeProvider?.refresh();
     }),
+    // Seeds' missing second dimension (Jérémie's 2026-08-30 founder Report:
+    // "why are the Hide/show options for seed not the same as ADRs, or not
+    // as powerful") — same shape as ADRs' pair just above.
+    vscode.commands.registerCommand('adrManager.hideSeedsWithoutOpenQuestions', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('seeds.hideWithoutOpenQuestions', true);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.showSeedsWithoutOpenQuestions', async () => {
+      await vscode.workspace.getConfiguration('adrManager').update('seeds.hideWithoutOpenQuestions', false);
+      treeProvider?.refresh();
+    }),
+    // The report's second half — "there should also be a root level option
+    // that commands the two": one gesture for both ADRs' and Seeds'
+    // without-open-questions filters together, so getting to "just show me
+    // what's left to do" doesn't take two separate category-header clicks.
+    // Sets both dimensions unconditionally (a partially-toggled state
+    // resolves to "hide" on the next Hide click, "show" on the next Show
+    // click, same convention as every other toggle pair here).
+    vscode.commands.registerCommand('adrManager.hideWithoutOpenQuestions', async () => {
+      const cfg = vscode.workspace.getConfiguration('adrManager');
+      await cfg.update('adrs.hideWithoutOpenQuestions', true);
+      await cfg.update('seeds.hideWithoutOpenQuestions', true);
+      treeProvider?.refresh();
+    }),
+    vscode.commands.registerCommand('adrManager.showWithoutOpenQuestions', async () => {
+      const cfg = vscode.workspace.getConfiguration('adrManager');
+      await cfg.update('adrs.hideWithoutOpenQuestions', false);
+      await cfg.update('seeds.hideWithoutOpenQuestions', false);
+      treeProvider?.refresh();
+    }),
 
     // seeds-as-issues minimum lovable slice (Lapidary's 2026-07-31
     // founder-escalation dispatch): one gesture appends a correctly-

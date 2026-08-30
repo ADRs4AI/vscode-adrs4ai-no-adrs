@@ -35,7 +35,7 @@ describe('adrTreeProvider.ts: visibleAdrs() — two independent filter dimension
   })
 })
 
-describe('adrTreeProvider.ts: visibleSeeds() — closed-family filter, aging median unaffected', () => {
+describe('adrTreeProvider.ts: visibleSeeds() — two independent filter dimensions, same shape as ADRs', () => {
   it('getSeedGroupChildren computes the aging median from the FULL seed list, not the filtered one', () => {
     const fn = TREE_SRC.match(/private getSeedGroupChildren\(node: RootNode\): AdrTreeItem\[\] \{[\s\S]*?\n  \}/)![0]
     expect(fn).toContain('const allSeeds = node.seeds.allSeeds()')
@@ -43,10 +43,16 @@ describe('adrTreeProvider.ts: visibleSeeds() — closed-family filter, aging med
     expect(fn).toContain('allSeeds\n      .filter(s => !closedFamilyToken(s.status) && !s.isProcessed)')
   })
 
-  it('visibleSeeds reads seeds.hideClosed, default false', () => {
+  it('reads both settings, default false (nothing hidden until asked for)', () => {
     const fn = TREE_SRC.match(/private visibleSeeds\(node: RootNode\): SeedFile\[\] \{[\s\S]*?\n  \}/)![0]
     expect(fn).toContain("get<boolean>('seeds.hideClosed', false)")
-    expect(fn).toContain('closedFamilyToken(s.status)')
+    expect(fn).toContain("get<boolean>('seeds.hideWithoutOpenQuestions', false)")
+    expect(fn).toContain('closedFamilyToken(seed.status)')
+  })
+
+  it('the open-questions filter reuses the same filterQuestions() as the ADR side, no seed-specific reimplementation', () => {
+    const fn = TREE_SRC.match(/private visibleSeeds\(node: RootNode\): SeedFile\[\] \{[\s\S]*?\n  \}/)![0]
+    expect(fn).toContain('this.filterQuestions(seed.questions).length === 0')
   })
 })
 
@@ -58,11 +64,12 @@ describe('adrTreeProvider.ts: header counts match what the filters actually leav
   })
 })
 
-describe('extension.ts: six toggle commands, refreshing the tree explicitly after each write', () => {
+describe('extension.ts: eight single-setting toggle commands, refreshing the tree explicitly after each write', () => {
   const pairs: Array<[string, string, string]> = [
     ['hideSettledAdrs', 'showSettledAdrs', 'adrs.hideSettled'],
     ['hideAdrsWithoutOpenQuestions', 'showAdrsWithoutOpenQuestions', 'adrs.hideWithoutOpenQuestions'],
     ['hideClosedSeeds', 'showClosedSeeds', 'seeds.hideClosed'],
+    ['hideSeedsWithoutOpenQuestions', 'showSeedsWithoutOpenQuestions', 'seeds.hideWithoutOpenQuestions'],
   ]
 
   for (const [hideCmd, showCmd, setting] of pairs) {
@@ -77,20 +84,45 @@ describe('extension.ts: six toggle commands, refreshing the tree explicitly afte
   }
 })
 
+// The root-level combined toggle (Jérémie's 2026-08-30 founder Report,
+// second half: "there should also be a root level option that commands
+// the two") — one command pair writing BOTH dimensions' settings at once.
+describe('extension.ts: root-level combined without-open-questions toggle writes both settings', () => {
+  it('hideWithoutOpenQuestions sets both adrs.* and seeds.* to true and refreshes', () => {
+    const block = EXT_SRC.match(/registerCommand\('adrManager\.hideWithoutOpenQuestions'[\s\S]*?\}\),/)![0]
+    expect(block).toContain("update('adrs.hideWithoutOpenQuestions', true)")
+    expect(block).toContain("update('seeds.hideWithoutOpenQuestions', true)")
+    expect(block).toContain('treeProvider?.refresh();')
+  })
+
+  it('showWithoutOpenQuestions sets both adrs.* and seeds.* to false and refreshes', () => {
+    const block = EXT_SRC.match(/registerCommand\('adrManager\.showWithoutOpenQuestions'[\s\S]*?\}\),/)![0]
+    expect(block).toContain("update('adrs.hideWithoutOpenQuestions', false)")
+    expect(block).toContain("update('seeds.hideWithoutOpenQuestions', false)")
+    expect(block).toContain('treeProvider?.refresh();')
+  })
+})
+
 describe('package.json: filter settings + menu entries', () => {
-  it('all three settings default to false', () => {
-    for (const key of ['adrManager.adrs.hideSettled', 'adrManager.adrs.hideWithoutOpenQuestions', 'adrManager.seeds.hideClosed']) {
+  it('all four settings default to false', () => {
+    for (const key of [
+      'adrManager.adrs.hideSettled',
+      'adrManager.adrs.hideWithoutOpenQuestions',
+      'adrManager.seeds.hideClosed',
+      'adrManager.seeds.hideWithoutOpenQuestions',
+    ]) {
       const match = PKG.match(new RegExp(`"${key.replace(/\./g, '\\.')}":\\s*\\{[\\s\\S]*?\\n\\s*\\}`))
       expect(match, `${key} declaration missing`).toBeTruthy()
       expect(match![0]).toContain('"default": false')
     }
   })
 
-  it('the two ADR filter pairs and one Seed filter pair appear on their category headers with complementary when clauses', () => {
+  it('the two ADR filter pairs and two Seed filter pairs appear on their category headers with complementary when clauses', () => {
     const cases: Array<[string, string, string, string]> = [
       ['adrManager.hideSettledAdrs', 'adrManager.showSettledAdrs', 'adr-group', 'config.adrManager.adrs.hideSettled'],
       ['adrManager.hideAdrsWithoutOpenQuestions', 'adrManager.showAdrsWithoutOpenQuestions', 'adr-group', 'config.adrManager.adrs.hideWithoutOpenQuestions'],
       ['adrManager.hideClosedSeeds', 'adrManager.showClosedSeeds', 'seed-group', 'config.adrManager.seeds.hideClosed'],
+      ['adrManager.hideSeedsWithoutOpenQuestions', 'adrManager.showSeedsWithoutOpenQuestions', 'seed-group', 'config.adrManager.seeds.hideWithoutOpenQuestions'],
     ]
     for (const [hideCmd, showCmd, viewItem, configKey] of cases) {
       const hideEntry = PKG.match(new RegExp(`\\{\\s*"command": "${hideCmd.replace(/\./g, '\\.')}",\\s*"when": "([^"]+)"`))
@@ -103,5 +135,17 @@ describe('package.json: filter settings + menu entries', () => {
       expect(showEntry![1]).toContain(configKey)
       expect(showEntry![1]).not.toContain(`!${configKey}`)
     }
+  })
+
+  it('the root-level combined toggle appears on the root context menu, gated on BOTH dimensions together', () => {
+    const hideEntry = PKG.match(/\{\s*"command": "adrManager\.hideWithoutOpenQuestions",\s*"when": "([^"]+)"/)
+    const showEntry = PKG.match(/\{\s*"command": "adrManager\.showWithoutOpenQuestions",\s*"when": "([^"]+)"/)
+    expect(hideEntry, 'hideWithoutOpenQuestions menu entry missing').toBeTruthy()
+    expect(showEntry, 'showWithoutOpenQuestions menu entry missing').toBeTruthy()
+    expect(hideEntry![1]).toContain('viewItem == root')
+    expect(hideEntry![1]).toContain('config.adrManager.adrs.hideWithoutOpenQuestions')
+    expect(hideEntry![1]).toContain('config.adrManager.seeds.hideWithoutOpenQuestions')
+    expect(showEntry![1]).toContain('viewItem == root')
+    expect(showEntry![1]).toContain('config.adrManager.adrs.hideWithoutOpenQuestions && config.adrManager.seeds.hideWithoutOpenQuestions')
   })
 })
