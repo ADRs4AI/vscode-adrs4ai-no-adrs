@@ -146,5 +146,7 @@
                 }
             }
         ]
-    }
+    },
+    "adrManager.adrs.hideWithoutOpenQuestions": true,
+    "adrManager.seeds.hideClosed": false
 }

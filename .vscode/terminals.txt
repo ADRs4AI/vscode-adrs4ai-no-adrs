@@ -9,6 +9,7 @@ facet
 relay
 cairn
 
+# paused (Sonnet 4.6 1M extra usage cost)
 hearth
 surveyor
 
@@ -23,3 +24,5 @@ riddle
 
 midden
 gleaner
+
+docent

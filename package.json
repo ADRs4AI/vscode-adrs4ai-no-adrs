@@ -189,6 +189,30 @@
         "icon": "$(eye)"
       },
       {
+        "command": "adrManager.hideSeedsWithoutOpenQuestions",
+        "title": "Hide Seeds Without Open Questions",
+        "category": "ADR Manager",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adrManager.showSeedsWithoutOpenQuestions",
+        "title": "Show Seeds Without Open Questions",
+        "category": "ADR Manager",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adrManager.hideWithoutOpenQuestions",
+        "title": "Hide Without Open Questions (ADRs + Seeds)",
+        "category": "ADR Manager",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adrManager.showWithoutOpenQuestions",
+        "title": "Show Without Open Questions (ADRs + Seeds)",
+        "category": "ADR Manager",
+        "icon": "$(eye)"
+      },
+      {
         "command": "adrManager.addSeedThreadTurn",
         "title": "Add Thread Turn",
         "category": "ADR Manager",
@@ -332,6 +356,16 @@
           "group": "2_filter@1"
         },
         {
+          "command": "adrManager.hideSeedsWithoutOpenQuestions",
+          "when": "view == adrExplorer && viewItem == seed-group && !config.adrManager.seeds.hideWithoutOpenQuestions",
+          "group": "2_filter@2"
+        },
+        {
+          "command": "adrManager.showSeedsWithoutOpenQuestions",
+          "when": "view == adrExplorer && viewItem == seed-group && config.adrManager.seeds.hideWithoutOpenQuestions",
+          "group": "2_filter@2"
+        },
+        {
           "command": "adrManager.excludeRoot",
           "when": "view == adrExplorer && viewItem == root",
           "group": "1_actions@1"
@@ -340,6 +374,16 @@
           "command": "adrManager.commitAdrs",
           "when": "view == adrExplorer && viewItem == root",
           "group": "1_actions@2"
+        },
+        {
+          "command": "adrManager.hideWithoutOpenQuestions",
+          "when": "view == adrExplorer && viewItem == root && !(config.adrManager.adrs.hideWithoutOpenQuestions && config.adrManager.seeds.hideWithoutOpenQuestions)",
+          "group": "1_actions@3"
+        },
+        {
+          "command": "adrManager.showWithoutOpenQuestions",
+          "when": "view == adrExplorer && viewItem == root && config.adrManager.adrs.hideWithoutOpenQuestions && config.adrManager.seeds.hideWithoutOpenQuestions",
+          "group": "1_actions@3"
         },
         {
           "command": "adrManager.expandRoot",
@@ -646,12 +690,17 @@
         "adrManager.adrs.hideWithoutOpenQuestions": {
           "type": "boolean",
           "default": false,
-          "description": "Hide ADRs with no open questions from the sidebar's ADRs category. Toggle from the ADRs category's own right-click menu (Hide/Show ADRs Without Open Questions) or here."
+          "description": "Hide ADRs with no open questions from the sidebar's ADRs category. Toggle from the ADRs category's own right-click menu (Hide/Show ADRs Without Open Questions), a project root's right-click menu (Hide/Show Without Open Questions, together with the Seeds equivalent), or here."
         },
         "adrManager.seeds.hideClosed": {
           "type": "boolean",
           "default": false,
           "description": "Hide closed-family seeds (parked/superseded/terminated) from the sidebar's Seeds category. Toggle from the Seeds category's own right-click menu (Hide/Show Closed Seeds) or here."
+        },
+        "adrManager.seeds.hideWithoutOpenQuestions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide seeds with no open questions from the sidebar's Seeds category. Toggle from the Seeds category's own right-click menu (Hide/Show Seeds Without Open Questions), a project root's right-click menu (Hide/Show Without Open Questions, together with the ADRs equivalent), or here."
         },
         "adrManager.reportButton.enabled": {
           "type": "boolean",
