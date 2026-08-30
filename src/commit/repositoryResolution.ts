@@ -56,6 +56,35 @@ export interface RepoWithChanges<Change> {
     workingTreeChanges: Change[]
     indexChanges: Change[]
   }
+  /**
+   * The git extension's own force-refresh — optional here only because the
+   * founding DEBRIEF-002 test fixtures predate it and have no reason to
+   * implement it. Real `Repository` objects from `vscode.git`'s exported
+   * API always have it.
+   */
+  status?(): Promise<void>
+}
+
+/**
+ * Jérémie's 2026-08-29 founder Report ("commit adrs in this root just now
+ * said 'no changes'" right after answering a question in the panel):
+ * his own hypothesis was that commit-scoping had gotten coupled to the
+ * "Hide ADRs Without Open Questions" tree filter — checked against the
+ * actual call graph and refuted; `commitAdrChanges` never reads tree
+ * display state at all, only `repo.state` (real git status) via
+ * `groupChangesByOwningRoot` below.
+ *
+ * The real cause: `repo.state.workingTreeChanges`/`indexChanges` are the
+ * git extension's OWN cached model, refreshed asynchronously off a file
+ * watcher — reading them immediately after this extension's own write
+ * (answering a question saves the ADR file) can race the watcher and see
+ * pre-write state, exactly matching "just now." `Repository.status()` is
+ * the git extension's documented synchronous-refresh call — forcing it
+ * right before every read of `.state` here closes the race without
+ * touching anything about how roots or scopes are resolved.
+ */
+export async function refreshRepositories<Repo extends RepoWithChanges<unknown>>(repos: Repo[]): Promise<void> {
+  await Promise.all(repos.map(r => r.status?.()))
 }
 
 export interface ChangeWithUri {

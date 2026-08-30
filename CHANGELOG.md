@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.104] - 2026-08-29
+
+### Fixed
+- **"Commit ADR changes" no longer says "no changes" right after you've just saved one** (answered a question, added a recommendation, etc.). The command was reading the git extension's own cached status, which refreshes asynchronously off a file watcher and can lag a beat behind a write this extension just made itself — a real race, not a display-filter issue. It now forces a synchronous git-status refresh immediately before checking for anything to commit.
+
 ## [0.7.102] - 2026-08-26
 
 ### Added

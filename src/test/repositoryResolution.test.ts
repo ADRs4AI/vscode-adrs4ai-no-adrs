@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { resolveWorkspaceRepository, isNewGitStatus, groupChangesByOwningRoot, type GitApiLike } from '../commit/repositoryResolution'
+import { resolveWorkspaceRepository, isNewGitStatus, groupChangesByOwningRoot, refreshRepositories, type GitApiLike } from '../commit/repositoryResolution'
 import type { RootNode } from '../index/compositeIndex'
 
 interface FakeRepo {
@@ -157,5 +157,48 @@ describe('groupChangesByOwningRoot (DEBRIEF-002, finished)', () => {
 
   it('no repos, no changes: empty, no crash', () => {
     expect(groupChangesByOwningRoot([], 'docs/adr', () => null)).toEqual([])
+  })
+})
+
+// Jérémie's 2026-08-29 founder Report: "commit adrs in this root just now
+// said 'no changes'" moments after answering a question in-panel (a real
+// file write). His own hypothesis — commit-scoping coupled to the "Hide
+// ADRs Without Open Questions" tree filter — was checked against the call
+// graph and refuted: `commitAdrChanges` never reads tree display state,
+// only `repo.state`. The actual cause is a race against the git
+// extension's OWN async refresh of that state off its file watcher.
+describe('refreshRepositories (2026-08-29 "commit says no changes right after saving")', () => {
+  function fakeRoot(p: string): RootNode {
+    return { path: p, hasAdrDir: true } as unknown as RootNode
+  }
+  function fakeChange(fsPath: string) {
+    return { uri: { fsPath } }
+  }
+
+  it('a repo whose cached state has not caught up to a just-saved file is missed without a refresh, and seen with one', async () => {
+    const root = fakeRoot('/work/hq')
+    // Simulates the git extension's real behavior: `.state` reflects
+    // whatever the last background refresh saw (stale, empty) until
+    // `.status()` is awaited, which is the extension's own documented
+    // synchronous-refresh call.
+    const repo = {
+      state: { workingTreeChanges: [] as ReturnType<typeof fakeChange>[], indexChanges: [] as ReturnType<typeof fakeChange>[] },
+      status: async () => {
+        repo.state.workingTreeChanges = [fakeChange('/work/hq/docs/adr/0001-just-answered.md')]
+      },
+    }
+
+    const staleGroups = groupChangesByOwningRoot([repo], 'docs/adr', () => root)
+    expect(staleGroups).toHaveLength(0) // the exact "no changes" symptom from the report
+
+    await refreshRepositories([repo])
+    const freshGroups = groupChangesByOwningRoot([repo], 'docs/adr', () => root)
+    expect(freshGroups).toHaveLength(1)
+    expect(freshGroups[0].changes).toHaveLength(1)
+  })
+
+  it('a repo with no status() (older fixture shape) is left untouched, not crashed', async () => {
+    const repo = { state: { workingTreeChanges: [fakeChange('/work/hq/docs/adr/0001-a.md')], indexChanges: [] } }
+    await expect(refreshRepositories([repo])).resolves.toBeUndefined()
   })
 })

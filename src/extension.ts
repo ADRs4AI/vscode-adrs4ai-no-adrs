@@ -58,7 +58,7 @@ import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-miss
 import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { D97RecommendationBulletFormHandler } from './normalizer/handlers/d9-7-recommendation-bullet-form'
 import { buildAdrCommitMessage, type ChangedFile } from './commit/commitMessage'
-import { isNewGitStatus, groupChangesByOwningRoot } from './commit/repositoryResolution'
+import { isNewGitStatus, groupChangesByOwningRoot, refreshRepositories } from './commit/repositoryResolution'
 import { findReferencedUntrackedFiles, type UntrackedReferencesMode } from './commit/untrackedReferences'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 import { generateSeedTemplate } from './creation/seedTemplate'
@@ -1289,6 +1289,14 @@ async function commitAdrChanges(adrDirRel: string, targetRootPath?: string, scop
   }
   const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
   const api = git.getAPI(1);
+
+  // Force a synchronous git-status refresh before reading `repo.state` —
+  // Jérémie's 2026-08-29 Report ("commit adrs in this root just now said
+  // 'no changes'" right after saving an answer in-panel): the git
+  // extension's own cached state can lag its file watcher by a beat, so
+  // reading it immediately after this extension's own write can race and
+  // see the pre-write status. See refreshRepositories's own doc comment.
+  await refreshRepositories(api.repositories);
 
   const groups = groupChangesByOwningRoot<any, any>(api.repositories, adrDirRel, fp => compositeIndex!.findRoot(fp)); // eslint-disable-line @typescript-eslint/no-explicit-any
   const dirtyRoots: DirtyRoot[] = groups
