@@ -97,6 +97,46 @@ describe('renderInline: links coexist with existing formatting/protection', () =
     expect(html).toContain('<code>curl https://example.com/api</code>')
   })
 
+  // Jérémie, 2026-09-03 (re: docket's first-specimen founder Report,
+  // "fully specified URIs unfortunately can't be clicked yet"): "can we
+  // detect code tags containing only a URL? Or only one of ours?" Scoped
+  // to ours only (adr:/seed:), not any bare URL — see the fix's own
+  // comment in openQuestionsPanel.ts for the counter-examples (illustrative
+  // URLs this repo's own docs deliberately code-wrap without meaning them
+  // navigable) that rule out the broader form.
+  describe('a code span whose ENTIRE content is one of our own adr:/seed: refs autolinks, staying monospace', () => {
+    it('a bare adr:NNNN ref, alone in a code span', () => {
+      const html = renderMd('See `adr:0008` for the protocol.')
+      expect(html).toContain('data-kind="ref"')
+      expect(html).toContain('data-ref="adr:0008"')
+      expect(html).toContain('<code>adr:0008</code>')
+      expect(html).toMatch(/<a[^>]*data-ref="adr:0008"[^>]*><code>adr:0008<\/code><\/a>/)
+    })
+
+    it('a canonical adr://v1/... ref, alone in a code span — the docket specimen itself', () => {
+      const html = renderMd('Constitution: `adr://v1/repo/jlumbroso/vscode-adrs-for-ai/seed/2026-08-18-conduit`.')
+      expect(html).toContain('data-kind="ref"')
+      expect(html).toContain('data-ref="adr://v1/repo/jlumbroso/vscode-adrs-for-ai/seed/2026-08-18-conduit"')
+    })
+
+    it('a bare seed: ref with an anchor, alone in a code span', () => {
+      const html = renderMd('See `seed:2026-03-04-foo#qst-1` for the origin.')
+      expect(html).toContain('data-ref="seed:2026-03-04-foo#qst-1"')
+    })
+
+    it('mixed content — an adr: ref alongside other text in the SAME code span — stays inert (whole-content-only, same discipline as the placeholder family)', () => {
+      const html = renderMd('Run `adr:0008 is the spec` to see it.')
+      expect(html).not.toContain('panel-link')
+      expect(html).toContain('<code>adr:0008 is the spec</code>')
+    })
+
+    it('a generic https:// URL alone in a code span stays inert — not one of ours, and this repo has real illustrative-URL specimens that must not become misleadingly clickable', () => {
+      const html = renderMd('Not yet live: `https://adrs.systems/clients/vscode/`.')
+      expect(html).not.toContain('panel-link')
+      expect(html).toContain('<code>https://adrs.systems/clients/vscode/</code>')
+    })
+  })
+
   it('bold/italic elsewhere in the same string still renders correctly alongside a link', () => {
     const html = renderMd('**Important**: see https://example.com for *details*.')
     expect(html).toContain('<strong>Important</strong>')

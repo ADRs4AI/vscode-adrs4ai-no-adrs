@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.107] - 2026-09-03
+
+### Added
+- **A code span whose entire content is one of our own `adr:`/`seed:` refs (bare or canonical `adr://v1/...`) is now clickable**, staying monospace. Scoped narrowly to our own reference scheme, not any URL in backticks — this repo's own docs have real examples of a code-wrapped URL that's deliberately not meant to be navigated yet, and those stay inert.
+
 ## [0.7.106] - 2026-08-30
 
 ### Fixed

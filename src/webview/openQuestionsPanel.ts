@@ -2380,7 +2380,32 @@ function renderMarkdown(md) {
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
     // Restore links, then backtick spans as <code> elements
     s = s.replace(/\\x03(\\d+)\\x03/g, (_, i) => links[+i]);
-    s = s.replace(/\\x02(\\d+)\\x02/g, (_, i) => '<code>' + codes[+i] + '</code>');
+    // A code span whose ENTIRE content is one of our own adr:/seed: refs
+    // (bare or canonical adr://v1/... form) is a deliberate reference, not
+    // literal code — Jérémie, 2026-09-03, re: docket's first-specimen
+    // "fully specified URIs unfortunately can't be clicked yet": "can we
+    // detect code tags containing only a URL? Or only one of ours?"
+    // Scoped to ours only, not any bare http(s) URL: this repo's own docs
+    // corpus has counter-examples where a code-wrapped URL is deliberately
+    // non-navigable — ADR-0042 code-wraps a not-yet-deployed adrs.systems
+    // sub-page in the same sentence that says it isn't deployed yet, and
+    // ADR-0003 code-wraps the canonical URI grammar's own placeholder form
+    // (namespace/NNNN/section), not a real ref. A generic "any URL" rule
+    // would make both of those clickable and, for the adrs.systems case,
+    // actively misleading (a live domain, just not that page yet) rather
+    // than harmlessly unresolvable. Our own refs carry no such risk:
+    // INTERNAL_DEST_RE is the same whole-string grammar the wrapped-link
+    // form above already trusts, so a malformed or illustrative one (like
+    // the ADR-0003 placeholder) just resolves to "not found," the same
+    // failure every other stale ref already has.
+    s = s.replace(/\\x02(\\d+)\\x02/g, (_, i) => {
+      const raw = codes[+i];
+      const trimmed = raw.trim();
+      if (trimmed && INTERNAL_DEST_RE.test(trimmed)) {
+        return '<a class="panel-link" href="#" data-kind="ref" data-ref="' + escAttr(trimmed) + '"><code>' + raw + '</code></a>';
+      }
+      return '<code>' + raw + '</code>';
+    });
     return s;
   }
 
