@@ -180,7 +180,7 @@ function registerLoggedCommand(commandId: string, handler: (...args: any[]) => a
     } catch (err) {
       const anchorPath = anchorPathFromCommandArg(args[0]);
       if (anchorPath) {
-        appendLedgerRecord({
+        const logged = appendLedgerRecord({
           schema: 'error-record/2',
           ts: new Date().toISOString(),
           extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
@@ -193,6 +193,15 @@ function registerLoggedCommand(commandId: string, handler: (...args: any[]) => a
             rawError: err && typeof err === 'object' ? { ...err } : String(err),
           },
         });
+        // Jérémie's own feedback, 2026-09-05 (replying to this same fix):
+        // "I hope that it reports a little message in the status bar like
+        // when we report things because I find that very helpful as
+        // feedback to the user." Same pattern reportTreeItem already uses
+        // (setStatusBarMessage, auto-dismissing) — VS Code's own error
+        // popup still fires unchanged; this just confirms the OTHER half
+        // (it reached the ledger) happened too, rather than leaving that
+        // invisible the way it was before this fix existed.
+        if (logged) vscode.window.setStatusBarMessage('ADR Manager: Error logged to errors.jsonl.', 4000);
       }
       throw err;
     }

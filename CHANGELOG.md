@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.109] - 2026-09-05
+
+### Fixed
+- **Copied deep links to a repo with a mixed-case GitHub org (like this one's own `ADRs4AI`) now keep the real case** instead of being silently lowercased. The previous fix (0.7.108) avoided the crash by normalizing at build time, which erased the real name everywhere the link got pasted; it now validates case-insensitively but preserves exactly what's there, matching how GitHub itself displays names.
+
+### Added
+- **A status-bar confirmation when a command error reaches the ledger** ("Error logged to errors.jsonl"), alongside VS Code's own error popup — the same lightweight feedback the Report button already gives.
+
 ## [0.7.108] - 2026-09-05
 
 ### Fixed

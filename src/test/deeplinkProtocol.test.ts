@@ -148,15 +148,27 @@ describe('builders round-trip what the parser accepts', () => {
   // repo, because its own GitHub org is "ADRs4AI" (mixed case) and the
   // slug grammar was lowercase-only — real git remote owner/repo names
   // aren't tool-chosen slugs, they're external and case-preserving.
-  it('a mixed-case owner/repo (this repo\'s own remote, "ADRs4AI") no longer throws — lowercased before validating/encoding', () => {
+  it('a mixed-case owner/repo (this repo\'s own remote, "ADRs4AI") no longer throws', () => {
     const ref = buildCanonicalRef({ scope: 'repo', artifact: 'adr', owner: 'ADRs4AI', repo: 'vscode-adrs4ai', number: 1 })
-    expect(ref).toBe('adr://v1/repo/adrs4ai/vscode-adrs4ai/adr/0001')
+    expect(ref).toBe('adr://v1/repo/ADRs4AI/vscode-adrs4ai/adr/0001')
   })
 
-  it('two refs to the same repo differing only in remote casing produce the IDENTICAL canonical string — case-normalization, not just crash-avoidance', () => {
-    const upper = buildCanonicalRef({ scope: 'repo', artifact: 'adr', owner: 'ADRs4AI', repo: 'docket', number: 1 })
-    const lower = buildCanonicalRef({ scope: 'repo', artifact: 'adr', owner: 'adrs4ai', repo: 'docket', number: 1 })
-    expect(upper).toBe(lower)
+  // Jérémie's correction, same day: normalize at COMPARE time, not STORE
+  // time — a canonical ref is pasted around as a human-visible identifier
+  // (this repo's own ADRs cite "ADRs4AI" throughout), so silently
+  // lowercasing it at build time would erase the real name everywhere the
+  // ref got read, for a scheme's own administrative convenience. GitHub
+  // itself preserves display case while resolving routing case-
+  // insensitively — this matches that, not a normalize-on-write scheme.
+  it('preserves the real case exactly as given — does NOT normalize to lowercase on build', () => {
+    const ref = buildCanonicalRef({ scope: 'repo', artifact: 'adr', owner: 'ADRs4AI', repo: 'docket', number: 1 })
+    expect(ref).toContain('/repo/ADRs4AI/docket/')
+    expect(ref).not.toContain('/repo/adrs4ai/')
+  })
+
+  it('still accepts lowercase owner/repo unchanged (most real remotes) — the fix only widens what\'s accepted, never narrows it', () => {
+    const ref = buildCanonicalRef({ scope: 'repo', artifact: 'adr', owner: 'jlumbroso', repo: 'vscode-adrs-for-ai', number: 8 })
+    expect(ref).toBe('adr://v1/repo/jlumbroso/vscode-adrs-for-ai/adr/0008')
   })
 
   // ADR-0025 Decision 7 (context-aware deep-link copy format): the missing

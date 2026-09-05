@@ -56,6 +56,22 @@ export interface BuildCanonicalRefOptions {
 }
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
+/**
+ * Jérémie's correction, 2026-09-05 (replying to the same-day fix that
+ * lowercased owner/repo before encoding): normalize at COMPARE time, not
+ * STORE time. `namespace` is a tool-chosen alias — kebab-case lowercase is
+ * a deliberate legibility convention, and SLUG_RE enforcing it is correct.
+ * `owner`/`repo` are someone else's real, external git identity (this
+ * repo's own "ADRs4AI") — case-normalizing them at build time would have
+ * silently displayed "adrs4ai" everywhere a canonical ref got pasted,
+ * discarding the actual name for a scheme's administrative convenience
+ * (the "seeing like a state" failure mode: legible-to-the-tool over
+ * faithful-to-the-thing). GitHub itself works this way already — routing
+ * is case-insensitive, display is always case-preserving. Same
+ * shape as SLUG_RE otherwise (starts alphanumeric, then alphanumeric/
+ * hyphen) — just case-insensitive.
+ */
+const OWNER_REPO_RE = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/
 const NUMBER_RE = /^[0-9]+$/
 const LOCAL_ADR_RE = /^adr:([^#?]+)(?:#([a-z0-9][a-z0-9-]*))?$/
 const LOCAL_SEED_RE = /^seed:([^#?]+)(?:#([a-z0-9][a-z0-9-]*))?$/
@@ -270,18 +286,15 @@ function buildScopePath(opts: BuildCanonicalRefOptions): string {
   }
 
   // Founder Report, 2026-09-02/05 (real crash, every copyDeepLink call in
-  // THIS repo): `owner`/`repo` come from a real git remote URL
-  // (gitRemoteSlugFor, case-preserved for display), not a tool-chosen
-  // slug — GitHub org/repo names allow mixed case (this repo's own remote
-  // is "ADRs4AI/vscode-adrs4ai"), and SLUG_RE is lowercase-only. Lower-
-  // casing here (not at the gitRemoteSlug source, which stays real-cased
-  // for the tree/panel caption) keeps the canonical form both crash-free
-  // and stable/unique — GitHub itself resolves "ADRs4AI" and "adrs4ai" to
-  // the same repo, so two differently-cased refs to the same repo now
-  // produce the identical canonical string instead of one throwing.
-  const owner = opts.owner?.toLowerCase()
-  const repo = opts.repo?.toLowerCase()
-  if (!owner || !repo || !SLUG_RE.test(owner) || !SLUG_RE.test(repo)) {
+  // THIS repo): `owner`/`repo` come from a real git remote URL, case-
+  // preserved (this repo's own remote is "ADRs4AI/vscode-adrs4ai") — SLUG_RE
+  // is lowercase-only, wrong for an external identity we don't own.
+  // OWNER_REPO_RE (case-insensitive, see its own doc comment) validates
+  // without normalizing: the emitted ref keeps whatever case the remote
+  // actually has, same as GitHub's own display behavior.
+  const owner = opts.owner
+  const repo = opts.repo
+  if (!owner || !repo || !OWNER_REPO_RE.test(owner) || !OWNER_REPO_RE.test(repo)) {
     throw new Error('Canonical repo references require slug owner and repo.')
   }
   return `repo/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`

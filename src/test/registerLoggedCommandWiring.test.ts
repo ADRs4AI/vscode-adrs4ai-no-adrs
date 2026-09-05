@@ -37,11 +37,19 @@ describe('extension.ts: registerLoggedCommand catches, logs, and re-throws', () 
   })
 
   it('re-throws after logging — VS Code\'s own error popup still fires, this is additive not a replacement', () => {
-    expect(fn).toMatch(/appendLedgerRecord\(\{[\s\S]*?\}\);\s*\}\s*throw err;/)
+    expect(fn).toMatch(/appendLedgerRecord\(\{[\s\S]*?\}\);[\s\S]*?\}\s*throw err;/)
   })
 
   it('captures the raw error object, same discipline as the commit-failure fix', () => {
     expect(fn).toContain('rawError:')
+  })
+
+  // Jérémie's feedback, 2026-09-05 (replying to this same fix): "I hope
+  // that it reports a little message in the status bar... I find that
+  // very helpful as feedback to the user." Same pattern reportTreeItem
+  // already uses.
+  it('confirms via the status bar when logging actually succeeded — same pattern as reportTreeItem', () => {
+    expect(fn).toContain("if (logged) vscode.window.setStatusBarMessage('ADR Manager: Error logged to errors.jsonl.', 4000);")
   })
 })
 
