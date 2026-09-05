@@ -18,7 +18,7 @@ const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8')
 const PKG = readFileSync(resolve(__dirname, '../../package.json'), 'utf8')
 
 describe('extension.ts: adrManager.commitAdrs resolves the owning root for every item kind', () => {
-  const fn = EXT_SRC.match(/registerCommand\('adrManager\.commitAdrs'[\s\S]*?\}\),/)![0]
+  const fn = EXT_SRC.match(/registerLoggedCommand\('adrManager\.commitAdrs'[\s\S]*?\}\),/)![0]
 
   it('root/category-header items use item.rootNode.path directly (unchanged)', () => {
     expect(fn).toContain('item?.rootNode?.path')

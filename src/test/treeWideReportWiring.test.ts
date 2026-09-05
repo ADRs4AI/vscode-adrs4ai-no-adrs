@@ -173,8 +173,8 @@ describe('extension.ts: outputChannel is module-scoped so failure-soft code outs
 
 describe('extension.ts: adrManager.reportTreeItem command registration', () => {
   it('the command is registered and guards against an undefined item', () => {
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.reportTreeItem'")
-    const reg = EXT_SRC.match(/registerCommand\('adrManager\.reportTreeItem'[\s\S]*?\}\),/)![0]
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.reportTreeItem'")
+    const reg = EXT_SRC.match(/registerLoggedCommand\('adrManager\.reportTreeItem'[\s\S]*?\}\),/)![0]
     expect(reg).toContain('if (item)')
   })
 })

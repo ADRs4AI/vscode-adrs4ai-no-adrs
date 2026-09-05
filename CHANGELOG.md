@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.108] - 2026-09-05
+
+### Fixed
+- **"Copy Deep Link" (and every command building a repo-scoped canonical link) no longer crashes in THIS repo itself.** Its own GitHub org, `ADRs4AI`, has mixed case, and the canonical-reference grammar required an all-lowercase owner/repo — a real, reproducible crash on every item, not an edge case. Owner/repo are now case-normalized before validating and encoding, so differently-cased refs to the same repo also now produce the identical canonical string.
+
+### Added
+- **Every command error is now automatically captured to `errors.jsonl`**, not just the ones with their own hand-added logging. A single wrapper around command registration catches whatever a handler throws, logs it (which command, the raw error), and re-throws — VS Code's own error popup still fires exactly as before, this only adds the automatic paper trail behind it.
+
 ## [0.7.107] - 2026-09-03
 
 ### Added

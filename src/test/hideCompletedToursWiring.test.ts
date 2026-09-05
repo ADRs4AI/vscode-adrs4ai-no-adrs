@@ -39,15 +39,15 @@ describe('adrTreeProvider.ts: visibleTours() — one shared filter, no per-tour 
 
 describe('extension.ts: hideCompletedTours / showCompletedTours commands', () => {
   it('both are registered and write the workspace setting directly — no custom context key to keep in sync', () => {
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.hideCompletedTours', async () => {")
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.showCompletedTours', async () => {")
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.hideCompletedTours', async () => {")
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.showCompletedTours', async () => {")
     expect(EXT_SRC).toContain("update('tours.hideCompleted', true)")
     expect(EXT_SRC).toContain("update('tours.hideCompleted', false)")
   })
 
   it('both explicitly refresh the tree — this codebase has no onDidChangeConfiguration listener, so a bare setting write would silently not redraw', () => {
-    const hideBlock = EXT_SRC.match(/registerCommand\('adrManager\.hideCompletedTours'[\s\S]*?\}\),/)![0]
-    const showBlock = EXT_SRC.match(/registerCommand\('adrManager\.showCompletedTours'[\s\S]*?\}\),/)![0]
+    const hideBlock = EXT_SRC.match(/registerLoggedCommand\('adrManager\.hideCompletedTours'[\s\S]*?\}\),/)![0]
+    const showBlock = EXT_SRC.match(/registerLoggedCommand\('adrManager\.showCompletedTours'[\s\S]*?\}\),/)![0]
     expect(hideBlock).toContain('treeProvider?.refresh();')
     expect(showBlock).toContain('treeProvider?.refresh();')
   })

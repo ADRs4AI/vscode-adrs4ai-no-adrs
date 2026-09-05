@@ -136,6 +136,69 @@ let badgeSubscription: (() => void) | undefined;
  */
 let outputChannel: vscode.OutputChannel | undefined;
 
+/**
+ * Best-effort anchor for a command failure with no dedicated catch block of
+ * its own (see registerLoggedCommand below): most `view/item/context`
+ * commands' first argument is an `AdrTreeItem`, which names a real file or
+ * root one of these ways; falling further back to the active editor, then
+ * to any known root at all, means a command invoked from the Command
+ * Palette (no tree item) still lands SOMEWHERE rather than being silently
+ * unloggable for lack of an owning ledger.
+ */
+function anchorPathFromCommandArg(arg: unknown): string | undefined {
+  const item = arg as
+    | { adr?: { path: string }; seed?: { path: string }; question?: { adrPath: string }; rootNode?: { path: string } }
+    | undefined;
+  return item?.adr?.path
+    ?? item?.seed?.path
+    ?? item?.question?.adrPath
+    ?? item?.rootNode?.path
+    ?? vscode.window.activeTextEditor?.document.uri.fsPath
+    ?? compositeIndex?.root.path;
+}
+
+/**
+ * Wraps `vscode.commands.registerCommand` so ANY error a handler throws is
+ * captured to errors.jsonl before VS Code's own generic "Error running
+ * command X: ..." popup surfaces it — Jérémie's own founder Report,
+ * 2026-09-02/05 (copyDeepLink's crash sat unlogged for three days,
+ * rediscovered only because he happened to hit it again and reported it a
+ * second time): "make sure that EVERY error experienced is LOGGED, and
+ * doesn't require me RELOGGING it." One wrapper at every registration
+ * site, generalizing the commit-failure fix's pattern (2026-08-13,
+ * `source: 'commit'`) instead of hand-adding a try/catch per incident —
+ * `source: 'command'` covers every command with one tag; `payload.
+ * commandId` keeps each ledger row specific to which one failed.
+ * Re-throws after logging: this changes NOTHING about what the user sees
+ * (VS Code's own popup still fires), only whether it also reached the
+ * ledger.
+ */
+function registerLoggedCommand(commandId: string, handler: (...args: any[]) => any): vscode.Disposable { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return vscode.commands.registerCommand(commandId, async (...args: any[]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    try {
+      return await handler(...args);
+    } catch (err) {
+      const anchorPath = anchorPathFromCommandArg(args[0]);
+      if (anchorPath) {
+        appendLedgerRecord({
+          schema: 'error-record/2',
+          ts: new Date().toISOString(),
+          extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
+          source: 'command',
+          kind: 'command-execution-failed',
+          message: `Command "${commandId}" threw — ${err}`,
+          anchorPath,
+          payload: {
+            commandId,
+            rawError: err && typeof err === 'object' ? { ...err } : String(err),
+          },
+        });
+      }
+      throw err;
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Activation
 // ---------------------------------------------------------------------------
@@ -223,11 +286,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // ── Commands ─────────────────────────────────────────────────────────────
   context.subscriptions.push(
-    vscode.commands.registerCommand('adrManager.open', () => {
+    registerLoggedCommand('adrManager.open', () => {
       vscode.commands.executeCommand('adrExplorer.focus');
     }),
 
-    vscode.commands.registerCommand('adrManager.refresh', () => {
+    registerLoggedCommand('adrManager.refresh', () => {
       // Prefer a full rediscovery (picks up new/removed roots too) when a
       // live watcher lifecycle exists; fall back to a content-only
       // re-parse of already-known roots otherwise (no-workspace edge case).
@@ -243,7 +306,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // this tree's actual depth (root -> ADR/seed -> question). A reveal()
     // failure on any one item degrades gracefully — expand what's
     // reachable, never surface an error for what's cosmetic.
-    vscode.commands.registerCommand('adrManager.expandAll', async () => {
+    registerLoggedCommand('adrManager.expandAll', async () => {
       if (!treeProvider || !treeView) return;
       const topLevel = treeProvider.getChildren();
       for (const item of topLevel) {
@@ -259,7 +322,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // tree-wide expandAll above has to iterate every top-level item because
     // there are several independent starting points; a single root is just
     // one reveal() call from that same item, same expand:3 depth cap.
-    vscode.commands.registerCommand('adrManager.expandRoot', async (item) => {
+    registerLoggedCommand('adrManager.expandRoot', async (item) => {
       if (!item?.rootNode || !treeView) return;
       try {
         await treeView.reveal(item, { expand: 3, select: false, focus: false });
@@ -282,7 +345,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // `showCollapseAll: true` (adrExplorer is) — unverified live (no
     // Extension Development Host in this environment), so failure here
     // degrades to "just expand this root" rather than doing nothing.
-    vscode.commands.registerCommand('adrManager.focusRoot', async (item) => {
+    registerLoggedCommand('adrManager.focusRoot', async (item) => {
       if (!item?.rootNode || !treeView) return;
       try {
         await vscode.commands.executeCommand('workbench.actions.treeView.adrExplorer.collapseAll');
@@ -296,7 +359,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
-    vscode.commands.registerCommand('adrManager.showVersion', () => {
+    registerLoggedCommand('adrManager.showVersion', () => {
       // 2026-07-30 (live founder-blocked report: report button absent after
       // reload+setting in a companion workspace): this project has a
       // documented recurring failure mode — code verified fixed in source,
@@ -327,7 +390,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // installed path (`context.extensionUri`, not this source tree — same
     // staleness-proofing as `showVersion`, above) and copies a ready-to-
     // paste `.mcp.json` entry for the current workspace.
-    vscode.commands.registerCommand('adrManager.configureMcpServer', async () => {
+    registerLoggedCommand('adrManager.configureMcpServer', async () => {
       const serverPath = vscode.Uri.joinPath(context.extensionUri, 'dist', 'mcp-server.js').fsPath;
       const snippet = JSON.stringify(
         {
@@ -353,7 +416,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
-    vscode.commands.registerCommand('adrManager.openAdr', (filePath: string, lineNumber?: number) => {
+    registerLoggedCommand('adrManager.openAdr', (filePath: string, lineNumber?: number) => {
       openAdrFile(filePath, lineNumber);
     }),
 
@@ -365,7 +428,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // header was clicked. Command-palette / nav-button invocations pass no
     // item, so both fall back to undefined and resolveCreationTargetRoot()
     // + the ordinary kind-picker run exactly as before.
-    vscode.commands.registerCommand('adrManager.createAdr', (item) => {
+    registerLoggedCommand('adrManager.createAdr', (item) => {
       const targetRoot = item?.kind === 'root' ? item.rootNode
         : item?.kind === 'adr-group' || item?.kind === 'seed-group' ? (item.rootNode ?? compositeIndex?.root)
         : undefined;
@@ -388,7 +451,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // root (isAdrBasename/isSeedBasename — deliberately excludes the
     // OTHER category's files, tours, and `.working/` bookkeeping); root
     // itself stays whole-root, since "the root" IS the everything-scope.
-    vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {
+    registerLoggedCommand('adrManager.commitAdrs', (item) => {
       const targetRootPath = item?.rootNode?.path
         ?? (item?.kind === 'adr' && item.adr ? compositeIndex?.findRoot(item.adr.path)?.path : undefined)
         ?? (item?.kind === 'seed' && item.seed ? compositeIndex?.findRoot(item.seed.path)?.path : undefined);
@@ -400,27 +463,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       commitAdrChanges(adrDir, targetRootPath, scopeFilter);
     }),
 
-    vscode.commands.registerCommand('adrManager.copyDeepLink', (item) => {
+    registerLoggedCommand('adrManager.copyDeepLink', (item) => {
       copyDeepLink(item);
     }),
 
-    vscode.commands.registerCommand('adrManager.copyPath', (item) => {
+    registerLoggedCommand('adrManager.copyPath', (item) => {
       copyItemPath(item);
     }),
 
-    vscode.commands.registerCommand('adrManager.copyRelativePath', (item) => {
+    registerLoggedCommand('adrManager.copyRelativePath', (item) => {
       copyItemRelativePath(item);
     }),
 
-    vscode.commands.registerCommand('adrManager.reportTreeItem', async (item) => {
+    registerLoggedCommand('adrManager.reportTreeItem', async (item) => {
       if (item) await reportTreeItem(item);
     }),
 
-    vscode.commands.registerCommand('adrManager.excludeRoot', async (item) => {
+    registerLoggedCommand('adrManager.excludeRoot', async (item) => {
       if (item?.rootNode) await excludeRoot(item.rootNode);
     }),
 
-    vscode.commands.registerCommand('adrManager.mintTourFromFilter', async () => {
+    registerLoggedCommand('adrManager.mintTourFromFilter', async () => {
       if (treeProvider && compositeIndex) await mintTourFromFilter(treeProvider, compositeIndex);
     }),
 
@@ -438,11 +501,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // for a Settings-UI edit but would make a dedicated TOGGLE COMMAND read
     // as silently broken: click it, nothing visibly happens until some
     // other event happens to redraw the tree.
-    vscode.commands.registerCommand('adrManager.hideCompletedTours', async () => {
+    registerLoggedCommand('adrManager.hideCompletedTours', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', true);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.showCompletedTours', async () => {
+    registerLoggedCommand('adrManager.showCompletedTours', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', false);
       treeProvider?.refresh();
     }),
@@ -453,38 +516,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // mechanism (a) shape as the tours toggle pair just above: two
     // commands per dimension, `when`-clause-driven, `treeProvider.refresh()`
     // explicit for the same "no onDidChangeConfiguration listener" reason.
-    vscode.commands.registerCommand('adrManager.hideSettledAdrs', async () => {
+    registerLoggedCommand('adrManager.hideSettledAdrs', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('adrs.hideSettled', true);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.showSettledAdrs', async () => {
+    registerLoggedCommand('adrManager.showSettledAdrs', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('adrs.hideSettled', false);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.hideAdrsWithoutOpenQuestions', async () => {
+    registerLoggedCommand('adrManager.hideAdrsWithoutOpenQuestions', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('adrs.hideWithoutOpenQuestions', true);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.showAdrsWithoutOpenQuestions', async () => {
+    registerLoggedCommand('adrManager.showAdrsWithoutOpenQuestions', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('adrs.hideWithoutOpenQuestions', false);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.hideClosedSeeds', async () => {
+    registerLoggedCommand('adrManager.hideClosedSeeds', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('seeds.hideClosed', true);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.showClosedSeeds', async () => {
+    registerLoggedCommand('adrManager.showClosedSeeds', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('seeds.hideClosed', false);
       treeProvider?.refresh();
     }),
     // Seeds' missing second dimension (Jérémie's 2026-08-30 founder Report:
     // "why are the Hide/show options for seed not the same as ADRs, or not
     // as powerful") — same shape as ADRs' pair just above.
-    vscode.commands.registerCommand('adrManager.hideSeedsWithoutOpenQuestions', async () => {
+    registerLoggedCommand('adrManager.hideSeedsWithoutOpenQuestions', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('seeds.hideWithoutOpenQuestions', true);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.showSeedsWithoutOpenQuestions', async () => {
+    registerLoggedCommand('adrManager.showSeedsWithoutOpenQuestions', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('seeds.hideWithoutOpenQuestions', false);
       treeProvider?.refresh();
     }),
@@ -495,13 +558,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Sets both dimensions unconditionally (a partially-toggled state
     // resolves to "hide" on the next Hide click, "show" on the next Show
     // click, same convention as every other toggle pair here).
-    vscode.commands.registerCommand('adrManager.hideWithoutOpenQuestions', async () => {
+    registerLoggedCommand('adrManager.hideWithoutOpenQuestions', async () => {
       const cfg = vscode.workspace.getConfiguration('adrManager');
       await cfg.update('adrs.hideWithoutOpenQuestions', true);
       await cfg.update('seeds.hideWithoutOpenQuestions', true);
       treeProvider?.refresh();
     }),
-    vscode.commands.registerCommand('adrManager.showWithoutOpenQuestions', async () => {
+    registerLoggedCommand('adrManager.showWithoutOpenQuestions', async () => {
       const cfg = vscode.workspace.getConfiguration('adrManager');
       await cfg.update('adrs.hideWithoutOpenQuestions', false);
       await cfg.update('seeds.hideWithoutOpenQuestions', false);
@@ -513,7 +576,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // scaffolded, attributed Thread turn — from the sidebar's right-click
     // on a seed, or the Command Palette against whichever seed is the
     // active editor.
-    vscode.commands.registerCommand('adrManager.addSeedThreadTurn', async (item) => {
+    registerLoggedCommand('adrManager.addSeedThreadTurn', async (item) => {
       await addSeedThreadTurn(item);
     }),
 
@@ -524,22 +587,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ADR-0034: tour tree items pass their slug as the first argument
     // ("Walk Tour" command) — the plain sidebar/toolbar invocation passes
     // none, opening the ordinary full walk.
-    vscode.commands.registerCommand('adrManager.openQuestionsPanel', (tourSlugArg?: unknown) => {
+    registerLoggedCommand('adrManager.openQuestionsPanel', (tourSlugArg?: unknown) => {
       // Fix (Jérémie's GIF-rerecording catch, 2026-08-18): the view/title
       // button's invocation lets VS Code inject a non-string first argument;
       // trusting it as a slug rendered "All caught up" over open questions.
       if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex, coerceTourSlug(tourSlugArg));
     }),
 
-    vscode.commands.registerCommand('adrManager.filterQuestions', () => {
+    registerLoggedCommand('adrManager.filterQuestions', () => {
       if (treeProvider) filterQuestions(treeProvider);
     }),
 
-    vscode.commands.registerCommand('adrManager.changeStatus', (item) => {
+    registerLoggedCommand('adrManager.changeStatus', (item) => {
       if (item?.adr) changeAdrStatus(item);
     }),
 
-    vscode.commands.registerCommand('adrManager.goToQuestionInPanel', (item) => {
+    registerLoggedCommand('adrManager.goToQuestionInPanel', (item) => {
       if (item?.question && compositeIndex) {
         // ADR-0034 fix (Facet's live click-through report, 2026-07-26
         // inbox 0349): a tour-entry's click carries its owning tour along,
@@ -654,7 +717,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
     ),
 
-    vscode.commands.registerCommand('adrManager.goToAnswerInFile', (item) => {
+    registerLoggedCommand('adrManager.goToAnswerInFile', (item) => {
       if (item?.question) {
         const line = item.question.answer?.line ?? item.question.lineStart;
         openAdrFile(item.question.adrPath, line);

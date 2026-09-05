@@ -74,8 +74,8 @@ describe('extension.ts: eight single-setting toggle commands, refreshing the tre
 
   for (const [hideCmd, showCmd, setting] of pairs) {
     it(`${hideCmd}/${showCmd} write ${setting} and refresh the tree`, () => {
-      const hideBlock = EXT_SRC.match(new RegExp(`registerCommand\\('adrManager\\.${hideCmd}'[\\s\\S]*?\\}\\),`))![0]
-      const showBlock = EXT_SRC.match(new RegExp(`registerCommand\\('adrManager\\.${showCmd}'[\\s\\S]*?\\}\\),`))![0]
+      const hideBlock = EXT_SRC.match(new RegExp(`registerLoggedCommand\\('adrManager\\.${hideCmd}'[\\s\\S]*?\\}\\),`))![0]
+      const showBlock = EXT_SRC.match(new RegExp(`registerLoggedCommand\\('adrManager\\.${showCmd}'[\\s\\S]*?\\}\\),`))![0]
       expect(hideBlock).toContain(`update('${setting}', true)`)
       expect(hideBlock).toContain('treeProvider?.refresh();')
       expect(showBlock).toContain(`update('${setting}', false)`)
@@ -89,14 +89,14 @@ describe('extension.ts: eight single-setting toggle commands, refreshing the tre
 // the two") — one command pair writing BOTH dimensions' settings at once.
 describe('extension.ts: root-level combined without-open-questions toggle writes both settings', () => {
   it('hideWithoutOpenQuestions sets both adrs.* and seeds.* to true and refreshes', () => {
-    const block = EXT_SRC.match(/registerCommand\('adrManager\.hideWithoutOpenQuestions'[\s\S]*?\}\),/)![0]
+    const block = EXT_SRC.match(/registerLoggedCommand\('adrManager\.hideWithoutOpenQuestions'[\s\S]*?\}\),/)![0]
     expect(block).toContain("update('adrs.hideWithoutOpenQuestions', true)")
     expect(block).toContain("update('seeds.hideWithoutOpenQuestions', true)")
     expect(block).toContain('treeProvider?.refresh();')
   })
 
   it('showWithoutOpenQuestions sets both adrs.* and seeds.* to false and refreshes', () => {
-    const block = EXT_SRC.match(/registerCommand\('adrManager\.showWithoutOpenQuestions'[\s\S]*?\}\),/)![0]
+    const block = EXT_SRC.match(/registerLoggedCommand\('adrManager\.showWithoutOpenQuestions'[\s\S]*?\}\),/)![0]
     expect(block).toContain("update('adrs.hideWithoutOpenQuestions', false)")
     expect(block).toContain("update('seeds.hideWithoutOpenQuestions', false)")
     expect(block).toContain('treeProvider?.refresh();')

@@ -73,7 +73,7 @@ describe('extension.ts: read-before-write status bar visibility (Decision 6)', (
 })
 
 describe('extension.ts: adrManager.createAdr command routes root-click and category-click context', () => {
-  const fn = EXT_SRC.match(/registerCommand\('adrManager\.createAdr'[\s\S]*?\}\),/)![0]
+  const fn = EXT_SRC.match(/registerLoggedCommand\('adrManager\.createAdr'[\s\S]*?\}\),/)![0]
 
   it('a root right-click passes item.rootNode straight through — no resolution, matching the explicit-override spec', () => {
     expect(fn).toContain("item?.kind === 'root' ? item.rootNode")

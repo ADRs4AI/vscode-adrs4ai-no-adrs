@@ -125,8 +125,8 @@ describe('extension.ts: copyItemPath / copyItemRelativePath — new commands for
   })
 
   it('both commands are registered', () => {
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.copyPath'")
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.copyRelativePath'")
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.copyPath'")
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.copyRelativePath'")
   })
 })
 

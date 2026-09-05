@@ -16,15 +16,15 @@ const PKG = readFileSync(resolve(__dirname, '../../package.json'), 'utf8')
 
 describe('extension.ts: adrManager.expandRoot', () => {
   it('registered, guards on item.rootNode, reveals with the same expand:3 depth as tree-wide expandAll', () => {
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.expandRoot', async (item) => {");
-    const reg = EXT_SRC.match(/registerCommand\('adrManager\.expandRoot'[\s\S]*?\}\),/)![0]
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.expandRoot', async (item) => {");
+    const reg = EXT_SRC.match(/registerLoggedCommand\('adrManager\.expandRoot'[\s\S]*?\}\),/)![0]
     expect(reg).toContain('if (!item?.rootNode || !treeView) return;')
     expect(reg).toContain('treeView.reveal(item, { expand: 3, select: false, focus: false })')
   })
 })
 
 describe('extension.ts: adrManager.focusRoot', () => {
-  const reg = EXT_SRC.match(/registerCommand\('adrManager\.focusRoot'[\s\S]*?\n    \}\),/)![0]
+  const reg = EXT_SRC.match(/registerLoggedCommand\('adrManager\.focusRoot'[\s\S]*?\n    \}\),/)![0]
 
   it('attempts a tree-wide collapse before expanding this root', () => {
     expect(reg).toContain("workbench.actions.treeView.adrExplorer.collapseAll")
@@ -51,7 +51,7 @@ describe('extension.ts: commitAdrChanges accepts an optional targetRootPath', ()
     // only pins that a tree-wide invocation (no item at all) still ends
     // up passing targetRootPath/scopeFilter through unchanged (both
     // undefined in that case, via the ternary chains' own fallthrough).
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.commitAdrs', (item) => {")
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.commitAdrs', (item) => {")
     expect(EXT_SRC).toContain('commitAdrChanges(adrDir, targetRootPath, scopeFilter);')
   })
 

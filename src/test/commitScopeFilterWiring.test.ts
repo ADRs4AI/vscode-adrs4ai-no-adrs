@@ -22,7 +22,7 @@ import { describe, it, expect } from 'vitest'
 const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8')
 
 describe('extension.ts: adrManager.commitAdrs computes a scopeFilter matching the clicked item', () => {
-  const fn = EXT_SRC.match(/registerCommand\('adrManager\.commitAdrs'[\s\S]*?\}\),/)![0]
+  const fn = EXT_SRC.match(/registerLoggedCommand\('adrManager\.commitAdrs'[\s\S]*?\}\),/)![0]
 
   it('an individual adr item scopes to EXACTLY that file — nothing else in the root', () => {
     expect(fn).toContain("item?.kind === 'adr' && item.adr ? (p: string) => p === item.adr!.path")

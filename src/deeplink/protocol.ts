@@ -269,10 +269,22 @@ function buildScopePath(opts: BuildCanonicalRefOptions): string {
     return `project/${encodeURIComponent(opts.namespace)}`
   }
 
-  if (!opts.owner || !opts.repo || !SLUG_RE.test(opts.owner) || !SLUG_RE.test(opts.repo)) {
+  // Founder Report, 2026-09-02/05 (real crash, every copyDeepLink call in
+  // THIS repo): `owner`/`repo` come from a real git remote URL
+  // (gitRemoteSlugFor, case-preserved for display), not a tool-chosen
+  // slug — GitHub org/repo names allow mixed case (this repo's own remote
+  // is "ADRs4AI/vscode-adrs4ai"), and SLUG_RE is lowercase-only. Lower-
+  // casing here (not at the gitRemoteSlug source, which stays real-cased
+  // for the tree/panel caption) keeps the canonical form both crash-free
+  // and stable/unique — GitHub itself resolves "ADRs4AI" and "adrs4ai" to
+  // the same repo, so two differently-cased refs to the same repo now
+  // produce the identical canonical string instead of one throwing.
+  const owner = opts.owner?.toLowerCase()
+  const repo = opts.repo?.toLowerCase()
+  if (!owner || !repo || !SLUG_RE.test(owner) || !SLUG_RE.test(repo)) {
     throw new Error('Canonical repo references require slug owner and repo.')
   }
-  return `repo/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`
+  return `repo/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
 }
 
 function buildLocator(opts: BuildCanonicalRefOptions): string {

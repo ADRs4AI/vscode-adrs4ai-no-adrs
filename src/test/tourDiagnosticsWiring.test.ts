@@ -84,7 +84,7 @@ describe('extension.ts: TOUR_UNRESOLVED_REFS Problems diagnostic', () => {
 // also reports a live-resolved setting value for exactly this debugging case.
 describe('extension.ts: ADR Manager: Show Version self-diagnoses staleness/scoping', () => {
   it('reports the setting resolved from the live vscode.workspace.getConfiguration, not a cached value', () => {
-    const cmd = EXT_SRC.match(/registerCommand\('adrManager\.showVersion', \(\) => \{[\s\S]*?\}\),/)
+    const cmd = EXT_SRC.match(/registerLoggedCommand\('adrManager\.showVersion', \(\) => \{[\s\S]*?\}\),/)
     expect(cmd).toBeTruthy()
     expect(cmd![0]).toContain("vscode.workspace.getConfiguration('adrManager')")
     expect(cmd![0]).toContain("cfg.get<boolean>('reportButton.enabled', false)")

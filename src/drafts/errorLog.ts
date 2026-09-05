@@ -76,8 +76,17 @@ export interface LedgerRecord {
    * conversation (Gleaner's brief, docs/inbox/2026-08-13-gleaner-to-
    * fitter-commit-failures-never-reach-error-record.md) — genuinely
    * distinct from a panel/roots-config/treeview event, so its own tag.
+   * 'command' (2026-09-05): the generic catch-all — Jérémie's own pointed
+   * question after copyDeepLink's crash sat unlogged for three days
+   * ("make sure that EVERY error experienced is LOGGED... doesn't
+   * require me RELOGGING it"). One wrapper (`registerLoggedCommand` in
+   * extension.ts) around every `vscode.commands.registerCommand` call
+   * catches whatever a handler throws and logs it here before VS Code's
+   * own generic popup surfaces it — `payload.commandId` names which
+   * command, so this one tag covers all of them without a new tag per
+   * command the way 'commit' got one for itself.
    */
-  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview' | 'commit'
+  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview' | 'commit' | 'command'
   kind: string
   message: string
   /** Any file inside the owning root's docs/adr — decides which ledger this lands in. */

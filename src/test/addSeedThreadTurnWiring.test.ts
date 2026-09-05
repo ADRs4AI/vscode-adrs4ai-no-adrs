@@ -19,7 +19,7 @@ describe('extension.ts: addSeedThreadTurn', () => {
   const fn = EXT_SRC.match(/async function addSeedThreadTurn\([\s\S]*?\n\}/)![0]
 
   it('registered and reachable from both the tree context menu and the Command Palette', () => {
-    expect(EXT_SRC).toContain("vscode.commands.registerCommand('adrManager.addSeedThreadTurn', async (item) => {")
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.addSeedThreadTurn', async (item) => {")
   })
 
   it('falls back to the active editor\'s document when invoked with no tree item', () => {
