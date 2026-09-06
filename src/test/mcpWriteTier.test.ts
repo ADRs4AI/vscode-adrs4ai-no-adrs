@@ -853,3 +853,73 @@ Round-3 convergence leads to the Builder implementation, which becomes the publi
     expect(finalAdr.questions).toHaveLength(1)
   })
 })
+
+describe('Regression tests', () => {
+  // Bug: resolveAdrByRef (src/mcp/reference.ts) — used by every write tool's
+  // adr_ref param — was a second, hand-rolled reference grammar, completely
+  // independent of resolveReference (which lookup/get_sections/get_outline
+  // already go through). It had its own namespace.NNNN regex and no support
+  // at all for canonical adr://v1/... URIs or subpath-shaped locators.
+  // Reported by Riddle 5 (2026-09-05), two firsthand data points from
+  // Prothonotary's 14-root docket workspace: add_recommendation failed on a
+  // reference lookup() resolved fine. Confirmed by differential testing both
+  // patterns against real reference shapes (not assumed from reading the
+  // regex): a canonical adr://v1/repo/<owner>/<repo>/adr/<n> ref resolved via
+  // lookup but hit `unrecognized_reference` via any write tool. Fixed by
+  // making resolveAdrByRef delegate to resolveReference instead of
+  // maintaining a second grammar — same class of fix as CATCH 11 above, one
+  // parser for one grammar, applied to reference resolution this time.
+  function makeNamespacedContext(namespace: string): { ctx: RepositoryContext; files: Map<string, string> } {
+    const files = new Map<string, string>([[ADR_PATH, FIXTURE]])
+    const ctx: RepositoryContext = {
+      listAdrs: () => [...files.entries()].map(([path, content]) => parseAdr(content, path, { namespace })),
+      getAdr: (ref: string) => {
+        const num = parseInt(ref.replace(/^adr:/, ''), 10)
+        const entry = [...files.entries()].find(([path, content]) => parseAdr(content, path, { namespace }).number === num)
+        return entry ? parseAdr(entry[1], entry[0], { namespace }) : undefined
+      },
+      listSeeds: () => [],
+      getSeed: () => undefined,
+      readFile: async (path: string) => {
+        const content = files.get(path)
+        if (content === undefined) throw new Error(`mock context: no such file ${path}`)
+        return content
+      },
+      writeFile: async (path: string, content: string) => { files.set(path, content) },
+      listFiles: async () => [...files.keys()],
+    }
+    return { ctx, files }
+  }
+
+  it('add_recommendation succeeds on a canonical adr:// URI, the same ref lookup() already resolved (fixes the Riddle/Prothonotary docket report)', async () => {
+    const { ctx, files } = makeNamespacedContext('adrs4ai-docket')
+    const result = await addRecommendation(
+      ctx,
+      'adr://v1/repo/ADRs4AI/docket/adr/1',
+      'adr-0001-qst-what-is-the-scope',
+      'Relay 5',
+      'Ship it.',
+    )
+    expect(result).not.toContain('error:')
+    expect(files.get(ADR_PATH)).toContain('Ship it.')
+  })
+
+  it('add_recommendation succeeds on a namespace-qualified ref (the grammar resolveAdrByRef used to hand-roll itself)', async () => {
+    const { ctx, files } = makeNamespacedContext('adrs4ai-docket')
+    const result = await addRecommendation(
+      ctx,
+      'adrs4ai-docket.1',
+      'adr-0001-qst-what-is-the-scope',
+      'Relay 5',
+      'Ship it.',
+    )
+    expect(result).not.toContain('error:')
+    expect(files.get(ADR_PATH)).toContain('Ship it.')
+  })
+
+  it('a namespace-qualified ref for a genuinely unknown namespace still returns a structured not_found, not a crash', async () => {
+    const { ctx } = makeNamespacedContext('adrs4ai-docket')
+    const result = await addRecommendation(ctx, 'wrong-namespace.1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'x')
+    expect(result).toContain('error: not_found')
+  })
+})

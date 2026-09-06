@@ -219,7 +219,7 @@ function resolveAnchorInAdr(adr: AdrFile, anchor: string): ResolvedSection | Res
   }
 }
 
-function isRefError(x: AdrFile | RefError): x is RefError {
+function isRefError<T>(x: T | RefError): x is RefError {
   return (x as RefError).kind === 'error'
 }
 
@@ -258,27 +258,48 @@ function resolveAdrByNumber(ctx: RepositoryContext, num: number): AdrFile | RefE
   }
 }
 
-/** Resolve just the ADR part of a reference — used by tools whose signature takes a plain `adr_ref`. */
+/**
+ * Resolve just the ADR part of a reference — used by tools whose signature
+ * takes a plain `adr_ref`.
+ *
+ * FIXED (2026-09-06, Riddle 5's ledger row / Prothonotary's docket repro):
+ * this used to be a second, hand-rolled reference grammar — its own
+ * `namespace.NNNN` regex, no canonical `adr://` support, no subpath-locator
+ * support — completely independent of `resolveReference` below, which every
+ * read tool (`lookup`, `get_sections`, `get_outline`) already goes through.
+ * Two parsers for one grammar is exactly the class of bug this module's own
+ * header comment exists to prevent; it just hid in the ADR-only half. In a
+ * genuine multi-root workspace this meant `lookup("adr://v1/repo/.../adr/5")`
+ * resolved fine while `add_recommendation(adr_ref: "adr://v1/repo/.../adr/5", ...)`
+ * failed outright with `unrecognized_reference` — confirmed by differential
+ * testing both patterns against real reference shapes, not assumed from
+ * reading the regex alone. Now delegates to `resolveReference` and unwraps
+ * whichever container it lands on; `resolveAdrByNumber`'s cross-root
+ * ambiguity handling is preserved exactly, since `resolveReference`'s own
+ * bare-number path already goes through the same function.
+ */
 export function resolveAdrByRef(ctx: RepositoryContext, rawRef: string): ResolvedAdr | RefError {
+  // Preserve prior behavior exactly: `adr_ref` ignores any fragment (write
+  // tools take `question_id` as a separate param, never a fused ref) rather
+  // than newly failing on a bogus one.
   const ref = rawRef.trim().split('#')[0]
-  const qualified = ref.match(/^([a-z0-9-]+)\.(\d+)$/)
-  if (qualified) {
-    const [, namespace, numStr] = qualified
-    const num = parseInt(numStr, 10)
-    const match = ctx.listAdrs().find((a) => a.namespace === namespace && a.number === num)
-    if (!match) {
-      const known = Array.from(new Set(ctx.listAdrs().map((a) => a.namespace).filter(Boolean)))
-      return { kind: 'error', error: 'not_found', message: `No ADR ${numStr} in namespace "${namespace}"`, hint: known.length ? `known namespaces: ${known.join(', ')}` : undefined }
+  const result = resolveReference(ctx, ref)
+  if (isRefError(result)) return result
+  switch (result.kind) {
+    case 'adr':
+      return result
+    case 'section':
+      return { kind: 'adr', adr: result.adr }
+    case 'question': {
+      const adr = containerAdr(result.container)
+      if (!adr) {
+        return { kind: 'error', error: 'unrecognized_reference', message: `"${rawRef}" resolves to a seed-borne question — this tool operates on ADRs, not seeds.` }
+      }
+      return { kind: 'adr', adr }
     }
-    return { kind: 'adr', adr: match }
+    case 'seed':
+      return { kind: 'error', error: 'unrecognized_reference', message: `"${rawRef}" resolves to a seed, not an ADR — this tool operates on ADRs only.` }
   }
-
-  const bareNumber = /^\d+$/.test(ref) ? ref : ref.match(/^adr:(\d+)$/)?.[1]
-  if (!bareNumber) {
-    return { kind: 'error', error: 'unrecognized_reference', message: `"${rawRef}" is not a recognized ADR reference` }
-  }
-  const result = resolveAdrByNumber(ctx, parseInt(bareNumber, 10))
-  return isRefError(result) ? result : { kind: 'adr', adr: result }
 }
 
 /**

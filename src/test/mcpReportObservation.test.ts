@@ -123,6 +123,41 @@ describe('reportObservation', () => {
     expect(result).toContain('error: not_found')
   })
 
+  // Bug: with no adr_ref, the observation always landed at defaultAnchorPath
+  // — a single path fixed at server startup from this process's own
+  // workspaceRoot. Correct for single-root; in a genuine multi-root
+  // composite there is no one "the workspace's own root" for an unscoped
+  // observation to mean, and this silently misfiled a real observation into
+  // the wrong repo's ledger (Riddle 5's ledger row, 2026-09-05, from
+  // Prothonotary's 14-root docket workspace: an HQ-vs-docket misfile).
+  // Fixed: fail loud with the known namespaces, same discipline
+  // resolveAdrByNumber already applies to bare-number cross-root ambiguity,
+  // rather than silently picking the launch-time root.
+  it('refuses an unscoped observation in a multi-root workspace rather than silently misfiling it (regression, Riddle/Prothonotary)', async () => {
+    const docketAdr = parseAdr('# ADR-0001\n', '/fake/docket/docs/adr/0001-x.md', { namespace: 'adrs4ai-docket' })
+    const hqAdr = parseAdr('# ADR-0001\n', '/fake/hq/docs/adr/0001-x.md', { namespace: 'adrs4ai-hq' })
+    const defaultAnchor = path.join(tmpDir, 'docs/adr/.mcp-report-observation-anchor')
+
+    const result = await reportObservation(makeContext([docketAdr, hqAdr]), 'A note with no adr_ref.', defaultAnchor, {
+      author: 'Prothonotary 5',
+    })
+
+    expect(result).toContain('error: ambiguous_root')
+    expect(result).toContain('adrs4ai-docket')
+    expect(result).toContain('adrs4ai-hq')
+    // Nothing should have been written anywhere — no ledger file created.
+    expect(fs.existsSync(path.join(tmpDir, 'docs/adr/.working/errors.jsonl'))).toBe(false)
+  })
+
+  it('an unscoped observation still works when every ADR shares one namespace (the common single-root case, unaffected)', async () => {
+    const adr = parseAdr('# ADR-0001\n', path.join(tmpDir, 'docs/adr/0001-x.md'), { namespace: 'my-project' })
+    const defaultAnchor = path.join(tmpDir, 'docs/adr/.mcp-report-observation-anchor')
+
+    const result = await reportObservation(makeContext([adr]), 'A workspace-wide note.', defaultAnchor, { author: 'Relay 5' })
+
+    expect(result).toContain('Observation recorded to')
+  })
+
   it('v1 panel records and v2 mcp records coexist in one ledger, distinguishable by source', async () => {
     const defaultAnchor = path.join(tmpDir, 'docs/adr/.mcp-report-observation-anchor')
     await reportObservation(makeContext([]), 'First observation.', defaultAnchor, { author: 'Relay 5' })

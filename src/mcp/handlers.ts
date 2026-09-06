@@ -734,6 +734,27 @@ export async function reportObservation(
     const resolved = resolveAdrByRef(ctx, options.adrRef)
     if (resolved.kind === 'error') return formatRefError(resolved)
     anchorPath = resolved.adr.path
+  } else {
+    // Riddle 5's ledger row (2026-09-05, Prothonotary's docket 14-root
+    // repro): with no adr_ref, `defaultAnchorPath` is a single path fixed
+    // at server startup from this process's own launch-time workspaceRoot —
+    // correct for the common single-root case, but in a genuine multi-root
+    // composite there is no single "the workspace's own root" for an
+    // unscoped observation to mean, and silently defaulting to the launch
+    // root misfiled a real observation into the wrong repo's ledger. Same
+    // discipline resolveAdrByNumber already applies to bare-number
+    // ambiguity across roots: fail loud with the known candidates, never
+    // silently pick one. Single-root workspaces (namespace unset, or every
+    // ADR shares one namespace) are completely unaffected.
+    const namespaces = Array.from(new Set(ctx.listAdrs().map((a) => a.namespace).filter((n): n is string => !!n)))
+    if (namespaces.length > 1) {
+      return [
+        'error: ambiguous_root',
+        `message: report_observation with no adr_ref is ambiguous in this multi-root workspace (${namespaces.length} namespaces present) — an unscoped observation would silently land in whichever root this server happened to be launched against, not necessarily the one you mean.`,
+        `candidates: [${namespaces.join(', ')}]`,
+        'hint: pass adr_ref (e.g. "<namespace>.<NNNN>") to anchor the observation to a specific root, or to the ADR you were actually looking at.',
+      ].join('\n')
+    }
   }
 
   const doc = captureDocument(anchorPath)
