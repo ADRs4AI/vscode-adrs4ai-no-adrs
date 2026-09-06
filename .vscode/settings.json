@@ -148,5 +148,6 @@
         ]
     },
     "adrManager.adrs.hideWithoutOpenQuestions": true,
-    "adrManager.seeds.hideClosed": false
+    "adrManager.seeds.hideClosed": false,
+    "adrManager.seeds.hideWithoutOpenQuestions": true
 }
