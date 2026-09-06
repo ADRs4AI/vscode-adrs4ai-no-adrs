@@ -425,8 +425,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
-    registerLoggedCommand('adrManager.openAdr', (filePath: string, lineNumber?: number) => {
-      openAdrFile(filePath, lineNumber);
+    // Fixture 5's smoke-test harness catch (2026-09-06, priority-A deepening
+    // pass): same bug class as commitAdrs' 2026-09-05 catch, found here by
+    // extending the audit to every non-async handler in this file rather
+    // than trusting the earlier "this was the one gap" claim (which was
+    // itself wrong — see QST-DETECTION-LEDGER.md). A plain arrow calling an
+    // async function without await/return turns any internal error into an
+    // unhandled promise rejection, invisible to registerLoggedCommand.
+    registerLoggedCommand('adrManager.openAdr', async (filePath: string, lineNumber?: number) => {
+      await openAdrFile(filePath, lineNumber);
     }),
 
     // Decision 6's explicit override, plus Jérémie's own extension of it
@@ -437,12 +444,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // header was clicked. Command-palette / nav-button invocations pass no
     // item, so both fall back to undefined and resolveCreationTargetRoot()
     // + the ordinary kind-picker run exactly as before.
-    registerLoggedCommand('adrManager.createAdr', (item) => {
+    // Fixture 5's smoke-test harness catch (2026-09-06, priority-A deepening
+    // pass — same bug class as commitAdrs' 2026-09-05 catch): unawaited
+    // async call, error invisible to registerLoggedCommand. Caught by a
+    // real "did the file actually land on disk" assertion, not a "doesn't
+    // throw" one — createNewAdr's real fs.promises I/O genuinely yields to
+    // the event loop, so the missing await was directly observable (0
+    // files immediately after the handler "resolved").
+    registerLoggedCommand('adrManager.createAdr', async (item) => {
       const targetRoot = item?.kind === 'root' ? item.rootNode
         : item?.kind === 'adr-group' || item?.kind === 'seed-group' ? (item.rootNode ?? compositeIndex?.root)
         : undefined;
       const forceKind = item?.kind === 'adr-group' ? 'adr' : item?.kind === 'seed-group' ? 'seed' : undefined;
-      createNewAdr(adrDir, { targetRoot, forceKind });
+      await createNewAdr(adrDir, { targetRoot, forceKind });
     }),
 
     // Menu coherence (Jérémie, 2026-08-25 live ask): "Commit" now appears
@@ -616,12 +630,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (compositeIndex) OpenQuestionsPanel.createOrShow(compositeIndex, coerceTourSlug(tourSlugArg));
     }),
 
-    registerLoggedCommand('adrManager.filterQuestions', () => {
-      if (treeProvider) filterQuestions(treeProvider);
+    // Fixture 5's smoke-test harness catch (2026-09-06, priority-A pass) —
+    // same bug class as commitAdrs and createAdr above.
+    registerLoggedCommand('adrManager.filterQuestions', async () => {
+      if (treeProvider) await filterQuestions(treeProvider);
     }),
 
-    registerLoggedCommand('adrManager.changeStatus', (item) => {
-      if (item?.adr) changeAdrStatus(item);
+    // Fixture 5's smoke-test harness catch (2026-09-06, priority-A pass) —
+    // same bug class. This one was the hardest to observe directly: the
+    // mock's own applyEdit is synchronous fs work wrapped in a promise, so
+    // a single microtask-draining `await` in a test happened to let the
+    // whole unawaited chain finish "in time" anyway, masking the gap. Real
+    // VS Code's applyEdit is genuinely async I/O — the masking would not
+    // hold there. Fixed on the same audit, not because a test failed here.
+    registerLoggedCommand('adrManager.changeStatus', async (item) => {
+      if (item?.adr) await changeAdrStatus(item);
     }),
 
     registerLoggedCommand('adrManager.goToQuestionInPanel', (item) => {
@@ -739,10 +762,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
     ),
 
-    registerLoggedCommand('adrManager.goToAnswerInFile', (item) => {
+    // Fixture 5's smoke-test harness catch (2026-09-06, priority-A pass) —
+    // same bug class as openAdr above (shares openAdrFile).
+    registerLoggedCommand('adrManager.goToAnswerInFile', async (item) => {
       if (item?.question) {
         const line = item.question.answer?.line ?? item.question.lineStart;
-        openAdrFile(item.question.adrPath, line);
+        await openAdrFile(item.question.adrPath, line);
       }
     }),
   );
