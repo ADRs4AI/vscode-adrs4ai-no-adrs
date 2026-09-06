@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.111] - 2026-09-06
+
+### Fixed
+- **Four more commands had the exact same unawaited-async bug 0.7.110 fixed in "Commit ADR changes"**: "Open ADR", "Create ADR", "Filter Questions", "Change Status", and "Go to Answer in File" could all silently drop an internal error as an invisible unhandled rejection instead of it reaching `errors.jsonl` or the user. Found by extending the new command smoke-test harness's audit to every command in the file, rather than trusting that the first fix had closed the whole class.
+
+### Added
+- **Deeper, real-behavior assertions for eight more commands** in the smoke-test harness (Create ADR, Copy Path/Copy Relative Path, Add Thread Turn, Exclude Root, Mint Tour, and the Hide/Show Completed Tours pair) — checking that the right file/config actually changed on disk, not just that the command didn't crash.
+
 ## [0.7.110] - 2026-09-06
 
 ### Fixed
