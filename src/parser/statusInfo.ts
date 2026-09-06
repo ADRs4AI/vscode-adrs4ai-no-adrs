@@ -6,9 +6,12 @@
  *
  * Simon's near-decomposability principle: status knowledge should be
  * strongly coupled *within* this module and weakly coupled to consumers.
+ *
+ * Zero vscode surface, including type-only (Phase 0(a) of the docket
+ * extraction, ADR-0001): `statusThemeIcon` — this file's only vscode-typed
+ * export — moved to `src/views/statusIcon.ts`. Enforced by
+ * `mcpPurity.test.ts`'s static scan of the whole parser/index/mcp graph.
  */
-
-import type * as vscode from 'vscode'
 
 // ---------------------------------------------------------------------------
 // Status definitions
@@ -146,14 +149,3 @@ export function requiresScopeRemaining(status: string): boolean {
 
 /** The ordered list of canonical status strings (for parser validation) */
 export const KNOWN_STATUS_VALUES: string[] = ADR_STATUSES.map(s => s.value)
-
-/** Build a VS Code ThemeIcon for a status (requires vscode import at call site) */
-export function statusThemeIcon(
-  status: string,
-  ThemeIcon: typeof import('vscode').ThemeIcon,
-  ThemeColor: typeof import('vscode').ThemeColor,
-): import('vscode').ThemeIcon {
-  const info = resolveStatusInfo(status)
-  if (!info) return new ThemeIcon('file-text')
-  return new ThemeIcon(info.codicon, new ThemeColor(info.colorToken))
-}

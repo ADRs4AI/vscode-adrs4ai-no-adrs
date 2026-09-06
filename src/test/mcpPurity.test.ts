@@ -20,11 +20,24 @@
  * runtime dependency) — the static check below deliberately doesn't special
  * case this, since a type-only vscode import in handlers.ts would still be
  * an architecture smell worth catching, even though it's runtime-harmless.
+ *
+ * Strengthened (Phase 0(a), docket ADR-0001 — the extraction RFC's
+ * statusInfo split): a hand-picked two-file check missed exactly the real
+ * incident that motivated it — `src/parser/statusInfo.ts`'s type-only
+ * `import type * as vscode from 'vscode'` was a TRANSITIVE dependency of
+ * handlers.ts, invisible to a check that only reads handlers.ts's own
+ * source text. The closure walk below traces the REAL import graph from
+ * both real entry points (`handlers.ts`, `stdioServer.ts`) — relative
+ * imports only, no guessing which `src/index/` files belong to "the core"
+ * (some, like `rootsConfigWriter.ts`/`watcherMetrics.ts`, are legitimately
+ * extension-only and correctly outside this closure) — and checks every
+ * file actually reachable, not a maintained list that can silently drift
+ * from what's really imported.
  */
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
-import { resolve } from 'path'
+import { readFileSync, existsSync } from 'fs'
+import { resolve, dirname } from 'path'
 import type { RepositoryContext } from '../mcp/repositoryContext'
 import { projectOverview } from '../mcp/handlers'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
@@ -48,6 +61,68 @@ describe('MCP handler purity (ADR-0003 portability requirement 1)', () => {
     // vitest.config.ts aliases nothing for 'vscode' (checked: no such alias
     // exists), so this is a real absence, not a mocked one.
     expect(typeof projectOverview).toBe('function')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Transitive closure purity (Phase 0(a) strengthening) — traces the real
+// import graph rather than a hand-maintained file list.
+// ---------------------------------------------------------------------------
+
+function extractRelativeImportSpecifiers(source: string): string[] {
+  // `from '../foo'` / `from "./bar"`, both value and type-only imports —
+  // deliberately not distinguishing them, same rationale as the file-level
+  // checks above: a type-only vscode import is exactly the incident this
+  // strengthening exists to catch.
+  const re = /from\s+['"](\.[^'"]+)['"]/g
+  const out: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source))) out.push(m[1])
+  return out
+}
+
+function resolveModulePath(fromFile: string, specifier: string): string {
+  const base = resolve(dirname(fromFile), specifier)
+  if (existsSync(base) && base.endsWith('.ts')) return base
+  if (existsSync(`${base}.ts`)) return `${base}.ts`
+  if (existsSync(resolve(base, 'index.ts'))) return resolve(base, 'index.ts')
+  return `${base}.ts` // best-effort; the closure walk below just skips missing files
+}
+
+/** BFS over relative imports only (node_modules deps never reached — they can't be 'vscode' via a relative specifier). */
+function collectImportClosure(entryFiles: string[]): Set<string> {
+  const visited = new Set<string>()
+  const queue = [...entryFiles]
+  while (queue.length > 0) {
+    const file = queue.pop()!
+    if (visited.has(file) || !existsSync(file)) continue
+    visited.add(file)
+    const source = readFileSync(file, 'utf-8')
+    for (const spec of extractRelativeImportSpecifiers(source)) {
+      queue.push(resolveModulePath(file, spec))
+    }
+  }
+  return visited
+}
+
+describe('Core dependency graph purity (Phase 0(a) strengthening, docket ADR-0001)', () => {
+  const closure = collectImportClosure([
+    resolve(__dirname, '../mcp/handlers.ts'),
+    resolve(__dirname, '../mcp/stdioServer.ts'),
+  ])
+
+  it('the closure walk actually found a real, non-trivial graph (guards this test against silently checking nothing)', () => {
+    expect(closure.size).toBeGreaterThan(15)
+    expect([...closure].some(f => f.endsWith('statusInfo.ts'))).toBe(true)
+    expect([...closure].some(f => f.endsWith('extractor.ts'))).toBe(true)
+  })
+
+  it('every file in the real transitive import closure has zero vscode imports, type-only included', () => {
+    const offenders = [...closure].filter(file => {
+      const source = readFileSync(file, 'utf-8')
+      return /from\s+['"]vscode['"]/.test(source) || /require\(['"]vscode['"]\)/.test(source)
+    })
+    expect(offenders).toEqual([])
   })
 })
 

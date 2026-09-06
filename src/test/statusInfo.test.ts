@@ -6,8 +6,8 @@
  * tests cover the three things that are actual behavioral contracts a
  * refactor or copy-paste edit could silently break: the unknown-status
  * fallback, the requiresScope rule's single-status scope, and table
- * uniqueness. `statusThemeIcon` is tested via injected constructors (its
- * own design already avoids needing the real `vscode` module).
+ * uniqueness. `statusThemeIcon` moved to `src/views/statusIcon.ts` (Phase
+ * 0(a), docket ADR-0001) — see `statusIcon.test.ts`.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -19,7 +19,6 @@ import {
   statusCodicon,
   statusColorToken,
   requiresScopeRemaining,
-  statusThemeIcon,
   isSettledAdrStatus,
 } from '../parser/statusInfo'
 
@@ -74,30 +73,6 @@ describe('ADR_STATUSES table invariants', () => {
 
   it('KNOWN_STATUS_VALUES (consumed by the UNKNOWN_STATUS diagnostic) matches ADR_STATUSES exactly', () => {
     expect(KNOWN_STATUS_VALUES).toEqual(ADR_STATUSES.map((s) => s.value))
-  })
-})
-
-describe('statusThemeIcon', () => {
-  // Injected fakes standing in for vscode.ThemeIcon/ThemeColor — the
-  // function's own signature was already designed to make this possible
-  // without importing the real vscode module.
-  class FakeThemeColor {
-    constructor(public token: string) {}
-  }
-  class FakeThemeIcon {
-    constructor(public codicon: string, public color?: FakeThemeColor) {}
-  }
-
-  it('builds an icon with the status\'s codicon and color for a known status', () => {
-    const icon = statusThemeIcon('Accepted', FakeThemeIcon as never, FakeThemeColor as never) as unknown as FakeThemeIcon
-    expect(icon.codicon).toBe('check')
-    expect((icon.color as unknown as FakeThemeColor).token).toBe('testing.iconPassed')
-  })
-
-  it('falls back to a plain file-text icon with no color for an unknown status', () => {
-    const icon = statusThemeIcon('Nonstandard', FakeThemeIcon as never, FakeThemeColor as never) as unknown as FakeThemeIcon
-    expect(icon.codicon).toBe('file-text')
-    expect(icon.color).toBeUndefined()
   })
 })
 
