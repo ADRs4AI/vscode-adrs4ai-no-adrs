@@ -16,7 +16,9 @@ import type { RepositoryContext } from '../mcp/repositoryContext'
 import { answerQuestion, addRecommendation, appendIteration, updateResolution, applyBatch, blessQstHandle } from '../mcp/handlers'
 import { verifyNoCollateralQuestionChanges, type BatchOperation } from '../mcp/writeOps'
 import { parseAdr } from '../parser/extractor'
-import { _resetDedupeCacheForTests } from '../mcp/dedupe'
+import { DocketSession } from '../mcp/session'
+
+const session = DocketSession.createForTests()
 
 const ADR_PATH = '/fake/docs/adr/0001-test-decision.md'
 
@@ -83,13 +85,13 @@ function makeContext(initialContent: string): { ctx: RepositoryContext; files: M
 }
 
 beforeEach(() => {
-  _resetDedupeCacheForTests()
+  session._resetForTests()
 })
 
 describe('answerQuestion', () => {
   it('replaces status and the ANS placeholder, and returns a diff', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.', { author: 'Relay 5' })
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.', { author: 'Relay 5' })
 
     expect(result).toContain('Answered adr-0001-qst-what-is-the-scope in adr:0001')
     const newContent = files.get(ADR_PATH)!
@@ -112,7 +114,7 @@ describe('answerQuestion', () => {
   it('replaces a "[to be filled]" placeholder (not just canonical "[Fill this in]") via the simple fill-line path', async () => {
     const doc = FIXTURE.replace('[Fill this in]', '[to be filled]')
     const { ctx, files } = makeContext(doc)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.', { author: 'Relay 5' })
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.', { author: 'Relay 5' })
 
     expect(result).toContain('Answered adr-0001-qst-what-is-the-scope in adr:0001')
     const newContent = files.get(ADR_PATH)!
@@ -124,14 +126,14 @@ describe('answerQuestion', () => {
 
   it('requires an explicit author — never defaults to "AI"', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.')
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'The scope is X.')
     expect(result).toContain('error: missing_author')
     expect(writeCount()).toBe(0)
   })
 
   it('detects a stale base_checksum and refuses to overwrite', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'X', {
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'X', {
       author: 'Relay 5',
       baseChecksum: 'not-the-real-checksum',
     })
@@ -142,14 +144,14 @@ describe('answerQuestion', () => {
 
   it('proceeds without base_checksum — anchored writes are safe with no prior read', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'X', { author: 'Relay 5' })
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'X', { author: 'Relay 5' })
     expect(result).toContain('Answered')
     expect(writeCount()).toBe(1)
   })
 
   it('accepts a matching base_checksum and writes normally', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'X', {
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'X', {
       author: 'Relay 5',
       baseChecksum: sha1(FIXTURE),
     })
@@ -159,15 +161,15 @@ describe('answerQuestion', () => {
 
   it('dedupes on client_msg_id: a repeated call returns the cached result without writing again', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const first = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'X', { author: 'Relay 5', clientMsgId: 'm1' })
-    const second = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'Y (should not land)', { author: 'Relay 5', clientMsgId: 'm1' })
+    const first = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'X', { author: 'Relay 5', clientMsgId: 'm1' })
+    const second = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'Y (should not land)', { author: 'Relay 5', clientMsgId: 'm1' })
     expect(second).toBe(first)
     expect(writeCount()).toBe(1)
   })
 
   it('returns a structured error, not a throw, when the question id no longer exists', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-does-not-exist', 'X', { author: 'Relay 5' })
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-does-not-exist', 'X', { author: 'Relay 5' })
     expect(result).toContain('error: write_failed')
     expect(writeCount()).toBe(0)
   })
@@ -176,7 +178,7 @@ describe('answerQuestion', () => {
 describe('addRecommendation', () => {
   it('inserts a stacked Recommendation block before the ANS header, author+date auto-stamped', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    const result = await addRecommendation(ctx, '1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'Ship it.')
+    const result = await addRecommendation(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'Ship it.')
 
     expect(result).toContain('Added recommendation (by Relay 5)')
     const newContent = files.get(ADR_PATH)!
@@ -190,7 +192,7 @@ describe('addRecommendation', () => {
 
   it('requires an explicit author here too', async () => {
     const { ctx } = makeContext(FIXTURE)
-    const result = await addRecommendation(ctx, '1', 'adr-0001-qst-what-is-the-scope', '', 'Ship it.')
+    const result = await addRecommendation(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', '', 'Ship it.')
     expect(result).toContain('error: missing_author')
   })
 })
@@ -198,7 +200,7 @@ describe('addRecommendation', () => {
 describe('appendIteration', () => {
   it('computes the next iteration number from the actual log (MAX+1), not the header field', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    const result = await appendIteration(ctx, '1', { human: 'Reviewed.', ai: 'Implemented.', outcome: 'Shipped.', date: '2026-07-07' })
+    const result = await appendIteration(ctx, session, '1', { human: 'Reviewed.', ai: 'Implemented.', outcome: 'Shipped.', date: '2026-07-07' })
 
     expect(result).toContain('Appended Iteration 2 to adr:0001')
     const newContent = files.get(ADR_PATH)!
@@ -210,8 +212,8 @@ describe('appendIteration', () => {
 
   it('keeps incrementing across successive calls', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    await appendIteration(ctx, '1', { outcome: 'first', date: '2026-07-07' })
-    const result = await appendIteration(ctx, '1', { outcome: 'second', date: '2026-07-08' })
+    await appendIteration(ctx, session, '1', { outcome: 'first', date: '2026-07-07' })
+    const result = await appendIteration(ctx, session, '1', { outcome: 'second', date: '2026-07-08' })
     expect(result).toContain('Appended Iteration 3 to adr:0001')
     expect(files.get(ADR_PATH)).toContain('### Iteration 3 (2026-07-08)')
   })
@@ -226,7 +228,7 @@ describe('appendIteration', () => {
     // while investigating Quarry's report, but never given its own
     // regression test at the time. Fixing that gap now.
     const { ctx, files } = makeContext(FIXTURE)
-    await appendIteration(ctx, '1', { outcome: 'second', date: '2026-07-08' })
+    await appendIteration(ctx, session, '1', { outcome: 'second', date: '2026-07-08' })
     const content = files.get(ADR_PATH)!
 
     const iterEndIdx = content.indexOf('- Outcome: second')
@@ -246,7 +248,7 @@ describe('appendIteration', () => {
     const adr = parseAdr(content, ADR_PATH)
     expect(adr.iterationsAppendLine).toBeTypeOf('number')
 
-    await appendIteration(ctx, '1', { outcome: 'third', date: '2026-07-09' })
+    await appendIteration(ctx, session, '1', { outcome: 'third', date: '2026-07-09' })
     const newContent = files.get(ADR_PATH)!
     // The new entry lands starting exactly where iterationsAppendLine said it would.
     const insertedLine = newContent.split('\n')[adr.iterationsAppendLine! - 1]
@@ -258,21 +260,21 @@ describe('appendIteration', () => {
 describe('updateResolution', () => {
   it('sets a resolution that does not require a note', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    const result = await updateResolution(ctx, '1', 'consensus')
+    const result = await updateResolution(ctx, session, '1', 'consensus')
     expect(result).toContain("Updated resolution for adr:0001 to 'consensus'")
     expect(files.get(ADR_PATH)).toContain('- **Resolution**: consensus')
   })
 
   it('rejects fiat without a note, per ADR-0009, and does not write', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await updateResolution(ctx, '1', 'fiat')
+    const result = await updateResolution(ctx, session, '1', 'fiat')
     expect(result).toContain('error: missing_resolution_note')
     expect(writeCount()).toBe(0)
   })
 
   it('accepts fiat with a note and writes both fields', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    const result = await updateResolution(ctx, '1', 'fiat', 'Time pressure before the demo.')
+    const result = await updateResolution(ctx, session, '1', 'fiat', 'Time pressure before the demo.')
     expect(result).toContain("to 'fiat'")
     const content = files.get(ADR_PATH)!
     expect(content).toContain('- **Resolution**: fiat')
@@ -281,8 +283,8 @@ describe('updateResolution', () => {
 
   it('replaces an existing Resolution (+ Note) rather than duplicating it', async () => {
     const { ctx, files } = makeContext(FIXTURE)
-    await updateResolution(ctx, '1', 'fiat', 'First reason.')
-    await updateResolution(ctx, '1', 'contested', 'Second reason.')
+    await updateResolution(ctx, session, '1', 'fiat', 'First reason.')
+    await updateResolution(ctx, session, '1', 'contested', 'Second reason.')
     const content = files.get(ADR_PATH)!
     expect(content.match(/- \*\*Resolution\*\*:/g)?.length).toBe(1)
     expect(content).toContain('- **Resolution**: contested')
@@ -292,7 +294,7 @@ describe('updateResolution', () => {
 
   it('rejects an unrecognized resolution value', async () => {
     const { ctx, writeCount } = makeContext(FIXTURE)
-    const result = await updateResolution(ctx, '1', 'maybe')
+    const result = await updateResolution(ctx, session, '1', 'maybe')
     expect(result).toContain('error: invalid_resolution')
     expect(writeCount()).toBe(0)
   })
@@ -373,7 +375,7 @@ describe('applyBatch', () => {
       { tool: 'add_recommendation', questionId: 'adr-0002-qst-what-is-the-deploy-target', author: 'Relay 5', text: 'Fly.io, given the SQLite choice.', date: '2026-08-14' },
       { tool: 'append_iteration', human: 'Reviewed the batch.', ai: 'Answered scope, recommended deploy target.', outcome: 'Both landed in one commit.', date: '2026-08-14' },
     ]
-    const result = await applyBatch(ctx, '2', operations)
+    const result = await applyBatch(ctx, session, '2', operations)
     expect(result).toContain('Applied 3 operation(s) to adr:0002')
     expect(writeCount()).toBe(1) // one write for the whole batch, not three
 
@@ -390,7 +392,7 @@ describe('applyBatch', () => {
       { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: 'Relay 5' },
       { tool: 'answer_question', questionId: 'adr-0002-qst-does-not-exist', answerText: 'irrelevant', author: 'Relay 5' },
     ]
-    const result = await applyBatch(ctx, '2', operations)
+    const result = await applyBatch(ctx, session, '2', operations)
     expect(result).toContain('error: write_failed')
     expect(result).toContain('operation 2/2 (answer_question) failed')
     expect(writeCount()).toBe(0)
@@ -404,21 +406,21 @@ describe('applyBatch', () => {
     const operations: BatchOperation[] = [
       { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: '' },
     ]
-    const result = await applyBatch(ctx, '2', operations)
+    const result = await applyBatch(ctx, session, '2', operations)
     expect(result).toContain('error: missing_author')
     expect(writeCount()).toBe(0)
   })
 
   it('rejects an empty operations array rather than silently no-op-ing', async () => {
     const { ctx, writeCount } = makeTwoQuestionContext()
-    const result = await applyBatch(ctx, '2', [])
+    const result = await applyBatch(ctx, session, '2', [])
     expect(result).toContain('error: empty_batch')
     expect(writeCount()).toBe(0)
   })
 
   it('a batch of one operation behaves the same as calling that tool directly', async () => {
     const { ctx, files } = makeTwoQuestionContext()
-    const result = await applyBatch(ctx, '2', [
+    const result = await applyBatch(ctx, session, '2', [
       { tool: 'update_resolution', resolution: 'consensus' },
     ])
     expect(result).toContain('Applied 1 operation(s)')
@@ -430,8 +432,8 @@ describe('applyBatch', () => {
     const operations: BatchOperation[] = [
       { tool: 'answer_question', questionId: 'adr-0002-qst-what-is-the-scope', answerText: 'SQLite for now.', author: 'Relay 5' },
     ]
-    const first = await applyBatch(ctx, '2', operations, { clientMsgId: 'batch-1' })
-    const second = await applyBatch(ctx, '2', operations, { clientMsgId: 'batch-1' })
+    const first = await applyBatch(ctx, session, '2', operations, { clientMsgId: 'batch-1' })
+    const second = await applyBatch(ctx, session, '2', operations, { clientMsgId: 'batch-1' })
     expect(second).toBe(first)
     expect(writeCount()).toBe(1) // the retry did not re-apply
   })
@@ -488,7 +490,7 @@ describe('blessQstHandle', () => {
 
   it('blesses the matched question and writes once', async () => {
     const { ctx, files, writeCount } = makeBlessContext()
-    const result = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger')
+    const result = await blessQstHandle(ctx, session, '3', 'promotion trigger', 'promotion-trigger')
     expect(result).toContain('Blessed adr:0003#promotion-trigger')
     expect(writeCount()).toBe(1)
     expect(files.get(BLESS_ADR_PATH)).toContain('<!-- @adr-anchor: promotion-trigger -->')
@@ -496,23 +498,23 @@ describe('blessQstHandle', () => {
 
   it('an already-blessed no-op does NOT write to disk', async () => {
     const { ctx, writeCount } = makeBlessContext()
-    await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger')
+    await blessQstHandle(ctx, session, '3', 'promotion trigger', 'promotion-trigger')
     expect(writeCount()).toBe(1)
-    const second = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger')
+    const second = await blessQstHandle(ctx, session, '3', 'promotion trigger', 'promotion-trigger')
     expect(second).toContain('Already blessed')
     expect(writeCount()).toBe(1) // still 1 -- the no-op did not write again
   })
 
   it('returns a structured error for an unresolvable adr_ref', async () => {
     const { ctx } = makeBlessContext()
-    const result = await blessQstHandle(ctx, '999', 'promotion trigger', 'promotion-trigger')
+    const result = await blessQstHandle(ctx, session, '999', 'promotion trigger', 'promotion-trigger')
     expect(result).toContain('error: not_found')
   })
 
   it('supports client_msg_id dedup, same contract as every other write tool', async () => {
     const { ctx, writeCount } = makeBlessContext()
-    const first = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger', { clientMsgId: 'bless-1' })
-    const second = await blessQstHandle(ctx, '3', 'promotion trigger', 'promotion-trigger', { clientMsgId: 'bless-1' })
+    const first = await blessQstHandle(ctx, session, '3', 'promotion trigger', 'promotion-trigger', { clientMsgId: 'bless-1' })
+    const second = await blessQstHandle(ctx, session, '3', 'promotion trigger', 'promotion-trigger', { clientMsgId: 'bless-1' })
     expect(second).toBe(first)
     expect(writeCount()).toBe(1)
   })
@@ -579,8 +581,8 @@ describe('Adversarial findings: concurrency races in the write tier', () => {
     const deployQ = adr.questions.find((q) => q.text === 'What is the deploy target?')!
 
     await Promise.all([
-      answerQuestion(ctx, '1', scopeQ.id, 'Postgres.', { author: 'quarry-test' }),
-      answerQuestion(ctx, '1', deployQ.id, 'AWS.', { author: 'quarry-test' }),
+      answerQuestion(ctx, session, '1', scopeQ.id, 'Postgres.', { author: 'quarry-test' }),
+      answerQuestion(ctx, session, '1', deployQ.id, 'AWS.', { author: 'quarry-test' }),
     ])
 
     const content = files.get(ADR_PATH)!
@@ -608,8 +610,8 @@ describe('Adversarial findings: concurrency races in the write tier', () => {
     const q = adr.questions[0]
 
     await Promise.all([
-      addRecommendation(ctx, '1', q.id, 'quarry-test', 'Use Postgres.', { clientMsgId: 'retry-abc' }),
-      addRecommendation(ctx, '1', q.id, 'quarry-test', 'Use Postgres.', { clientMsgId: 'retry-abc' }),
+      addRecommendation(ctx, session, '1', q.id, 'quarry-test', 'Use Postgres.', { clientMsgId: 'retry-abc' }),
+      addRecommendation(ctx, session, '1', q.id, 'quarry-test', 'Use Postgres.', { clientMsgId: 'retry-abc' }),
     ])
 
     expect(writeCount()).toBe(1) // FAILS today — both calls pass the cache-miss check before either records success, so both write (writeCount is 2)
@@ -633,8 +635,8 @@ describe('Adversarial findings: concurrency races in the write tier', () => {
     const { ctx, files } = makeContext(FIXTURE)
 
     await Promise.all([
-      appendIteration(ctx, '1', { outcome: 'first', date: '2026-07-08' }),
-      appendIteration(ctx, '1', { outcome: 'second', date: '2026-07-08' }),
+      appendIteration(ctx, session, '1', { outcome: 'first', date: '2026-07-08' }),
+      appendIteration(ctx, session, '1', { outcome: 'second', date: '2026-07-08' }),
     ])
 
     const content = files.get(ADR_PATH)!
@@ -687,7 +689,7 @@ describe('Adversarial findings: concurrency races in the write tier', () => {
     const firstQuestion = adr.questions.find((q) => q.text.startsWith('First question'))!
     const secondQuestion = adr.questions.find((q) => q.text.startsWith('Second question'))!
 
-    const result = await answerQuestion(ctx, '1', firstQuestion.id, 'Meant for QST-1 only.', { author: 'relay-test' })
+    const result = await answerQuestion(ctx, session, '1', firstQuestion.id, 'Meant for QST-1 only.', { author: 'relay-test' })
 
     const content = files.get(ADR_PATH)!
     // Never land in QST-2's block:
@@ -816,7 +818,7 @@ Round-3 convergence leads to the Builder implementation, which becomes the publi
     const before = parseAdr(TWO_QUESTION_ADR, ADR_PATH)
     const firstId = before.questions[0].id
 
-    const result = await answerQuestion(ctx, '1', firstId, 'Postgres.', { author: 'relay-test' })
+    const result = await answerQuestion(ctx, session, '1', firstId, 'Postgres.', { author: 'relay-test' })
     // The real path succeeds normally (nothing corrupting it) -- confirms
     // the fidelity check does NOT produce false positives on a legitimate
     // write, which matters exactly as much as catching real violations.
@@ -841,7 +843,7 @@ Round-3 convergence leads to the Builder implementation, which becomes the publi
     const { ctx, files } = makeContext(FIXTURE)
     const forgedPayload = 'Real answer.\n\n### QST: Forged question\n- Status: unanswered\n\n**ANS:** (by nobody)\n[Fill this in]\n'
 
-    const result = await answerQuestion(ctx, '1', 'adr-0001-qst-what-is-the-scope', forgedPayload, { author: 'probe' })
+    const result = await answerQuestion(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', forgedPayload, { author: 'probe' })
 
     expect(result).toContain('error: write_failed')
     expect(result).toContain('write_fidelity_violation')
@@ -895,6 +897,7 @@ describe('Regression tests', () => {
     const { ctx, files } = makeNamespacedContext('adrs4ai-docket')
     const result = await addRecommendation(
       ctx,
+      session,
       'adr://v1/repo/ADRs4AI/docket/adr/1',
       'adr-0001-qst-what-is-the-scope',
       'Relay 5',
@@ -908,6 +911,7 @@ describe('Regression tests', () => {
     const { ctx, files } = makeNamespacedContext('adrs4ai-docket')
     const result = await addRecommendation(
       ctx,
+      session,
       'adrs4ai-docket.1',
       'adr-0001-qst-what-is-the-scope',
       'Relay 5',
@@ -919,7 +923,7 @@ describe('Regression tests', () => {
 
   it('a namespace-qualified ref for a genuinely unknown namespace still returns a structured not_found, not a crash', async () => {
     const { ctx } = makeNamespacedContext('adrs4ai-docket')
-    const result = await addRecommendation(ctx, 'wrong-namespace.1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'x')
+    const result = await addRecommendation(ctx, session, 'wrong-namespace.1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'x')
     expect(result).toContain('error: not_found')
   })
 })

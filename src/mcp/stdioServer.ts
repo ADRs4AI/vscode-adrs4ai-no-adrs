@@ -33,8 +33,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import * as path from 'path'
 import * as fs from 'fs'
-import { CompositeIndex } from '../index/compositeIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
+import { DocketSession } from './session'
 import type { BatchOperation } from './writeOps'
 import {
   projectOverview,
@@ -80,23 +80,23 @@ async function main() {
   // to exist on disk.
   const defaultReportAnchorPath = path.join(workspaceRoot, adrDirRel, '.mcp-report-observation-anchor')
 
-  // Scan happens at startup — `composite`/`scannedAt` are mutable so
-  // `refresh_corpus` (below) can rescan and swap them in place. Elenchus
-  // feedback (Gadfly 5, 2026-07-23 "Catch 1", recurring 2026-08-01 as a
-  // write_failed refusal on a QST that verifiably existed on disk — the
-  // corpus staleness this was always about, not a slug-derivation bug,
-  // confirmed by re-deriving that exact slug against today's corpus and
-  // finding it clean): before this, the ONLY fix was restarting the whole
-  // server process. scannedAt still captures *when* the current snapshot
-  // was taken, same purpose as before — now it's just no longer permanent.
-  let composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
-  let scannedAt = new Date().toISOString()
+  // Scan happens at startup, owned by the session (Phase 0 of the docket
+  // extraction, docket repo ADR-0001 QST-SESSION — src/mcp/session.ts's own
+  // header has the full history: dedupe.ts/pathLock.ts's module-level Maps
+  // and this file's own composite/scannedAt closure used to be three
+  // separate singletons, correct for this one long-lived stdio process but
+  // meaningless for a per-invocation CLI mouth that needs fresh state each
+  // call). `refresh_corpus` (below) calls session.refreshCorpus() to rescan
+  // and swap the composite in place — the fix for Gadfly 5's 2026-07-23
+  // "Catch 1" corpus-staleness report, now a session method any adapter can
+  // reach, not a capability stranded in this file's own closure.
+  const session = await DocketSession.create({ workspaceRoot, adrDirRel })
   // CompositeIndex already exposes allAdrs()/allSeeds() aggregated across
   // every discovered root — the adapter's IndexSource shape needs nothing
   // more, so this is a direct pass-through, not a new integration. Built
-  // fresh per call (not cached) so every tool handler sees whatever
-  // `composite` currently points at, including right after a refresh.
-  const ctx = () => createRepositoryContextAdapter(composite)
+  // fresh per call (not cached) so every tool handler sees whatever the
+  // session's composite currently points at, including right after a refresh.
+  const ctx = () => createRepositoryContextAdapter(session.getComposite())
 
   const server = new McpServer({ name: 'adrs-for-ai', version: serverVersion })
 
@@ -107,7 +107,7 @@ async function main() {
       inputSchema: { include_seeds: z.boolean().optional() },
     },
     async ({ include_seeds }) =>
-      text(projectOverview(ctx(), { includeSeeds: include_seeds, scannedAt, serverVersion })),
+      text(projectOverview(ctx(), { includeSeeds: include_seeds, scannedAt: session.getScannedAt(), serverVersion })),
   )
 
   server.registerTool(
@@ -117,9 +117,8 @@ async function main() {
       inputSchema: {},
     },
     async () => {
-      composite = await CompositeIndex.fromWorkspace(workspaceRoot, { adrDirRel })
-      scannedAt = new Date().toISOString()
-      return text(`Corpus rescanned: ${composite.allAdrs().length} ADRs, ${composite.allSeeds().length} seeds. scanned_at: ${scannedAt}`)
+      const result = await session.refreshCorpus()
+      return text(`Corpus rescanned: ${result.adrCount} ADRs, ${result.seedCount} seeds. scanned_at: ${result.scannedAt}`)
     },
   )
 
@@ -181,7 +180,7 @@ async function main() {
       },
     },
     async ({ adr_ref, question_id, answer_text, author, base_checksum, client_msg_id }) =>
-      text(await answerQuestion(ctx(), adr_ref, question_id, answer_text, { author, baseChecksum: base_checksum, clientMsgId: client_msg_id })),
+      text(await answerQuestion(ctx(), session, adr_ref, question_id, answer_text, { author, baseChecksum: base_checksum, clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
@@ -197,7 +196,7 @@ async function main() {
       },
     },
     async ({ adr_ref, question_id, author, text: body, client_msg_id }) =>
-      text(await addRecommendation(ctx(), adr_ref, question_id, author, body, { clientMsgId: client_msg_id })),
+      text(await addRecommendation(ctx(), session, adr_ref, question_id, author, body, { clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
@@ -214,7 +213,7 @@ async function main() {
       },
     },
     async ({ adr_ref, human, ai, outcome, date, client_msg_id }) =>
-      text(await appendIteration(ctx(), adr_ref, { human, ai, outcome, date, clientMsgId: client_msg_id })),
+      text(await appendIteration(ctx(), session, adr_ref, { human, ai, outcome, date, clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
@@ -227,7 +226,7 @@ async function main() {
         note: z.string().optional(),
       },
     },
-    async ({ adr_ref, resolution, note }) => text(await updateResolution(ctx(), adr_ref, resolution, note)),
+    async ({ adr_ref, resolution, note }) => text(await updateResolution(ctx(), session, adr_ref, resolution, note)),
   )
 
   const batchOperationSchema = z.discriminatedUnion('tool', [
@@ -260,7 +259,7 @@ async function main() {
             return { tool: 'update_resolution', resolution: op.resolution, note: op.note }
         }
       })
-      return text(await applyBatch(ctx(), adr_ref, mapped, { clientMsgId: client_msg_id }))
+      return text(await applyBatch(ctx(), session, adr_ref, mapped, { clientMsgId: client_msg_id }))
     },
   )
 
@@ -276,7 +275,7 @@ async function main() {
       },
     },
     async ({ adr_ref, question_match, slug, client_msg_id }) =>
-      text(await blessQstHandle(ctx(), adr_ref, question_match, slug, { clientMsgId: client_msg_id })),
+      text(await blessQstHandle(ctx(), session, adr_ref, question_match, slug, { clientMsgId: client_msg_id })),
   )
 
   server.registerTool(
@@ -291,7 +290,7 @@ async function main() {
       },
     },
     async ({ note, author, adr_ref, context }) =>
-      text(await reportObservation(ctx(), note, defaultReportAnchorPath, { author, adrRef: adr_ref, context, scannedAt, serverVersion })),
+      text(await reportObservation(ctx(), note, defaultReportAnchorPath, { author, adrRef: adr_ref, context, scannedAt: session.getScannedAt(), serverVersion })),
   )
 
   const transport = new StdioServerTransport()

@@ -27,8 +27,7 @@ import {
   type QuestionContainer,
 } from './reference'
 import { applyAnswerQuestion, applyAddRecommendation, applyAppendIteration, applyUpdateResolution, applyBatch as applyBatchOp, applyBlessQstHandle, type BatchOperation } from './writeOps'
-import { getCached, recordSuccess } from './dedupe'
-import { withPathLock } from './pathLock'
+import type { DocketSession } from './session'
 import { appendLedgerRecord, captureDocument } from '../drafts/errorLog'
 
 function bracket(ref: string): string {
@@ -444,6 +443,7 @@ export interface AnswerQuestionOptions {
  */
 export async function answerQuestion(
   ctx: RepositoryContext,
+  session: DocketSession,
   adrRef: string,
   questionId: string,
   answerText: string,
@@ -456,8 +456,8 @@ export async function answerQuestion(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  return withPathLock(resolved.adr.path, async () => {
-    const cached = getCached('answer_question', options.clientMsgId)
+  return session.withPathLock(resolved.adr.path, async () => {
+    const cached = session.getCached('answer_question', options.clientMsgId)
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
@@ -469,7 +469,7 @@ export async function answerQuestion(
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Answered ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
-    recordSuccess('answer_question', options.clientMsgId, confirmation)
+    session.recordSuccess('answer_question', options.clientMsgId, confirmation)
     return confirmation
   })
 }
@@ -482,6 +482,7 @@ export interface AddRecommendationOptions {
 /** add_recommendation — append semantics; recommendations stack, ANS stays singular. Per-path locked, same reasoning as answer_question. */
 export async function addRecommendation(
   ctx: RepositoryContext,
+  session: DocketSession,
   adrRef: string,
   questionId: string,
   author: string,
@@ -495,8 +496,8 @@ export async function addRecommendation(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  return withPathLock(resolved.adr.path, async () => {
-    const cached = getCached('add_recommendation', options.clientMsgId)
+  return session.withPathLock(resolved.adr.path, async () => {
+    const cached = session.getCached('add_recommendation', options.clientMsgId)
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
@@ -505,7 +506,7 @@ export async function addRecommendation(
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Added recommendation (by ${author.trim()}) to ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
-    recordSuccess('add_recommendation', options.clientMsgId, confirmation)
+    session.recordSuccess('add_recommendation', options.clientMsgId, confirmation)
     return confirmation
   })
 }
@@ -527,12 +528,12 @@ export interface AppendIterationEntry {
  * duplicate number) — the exact class of race append_iteration was already
  * meant to close by moving the computation server-side (CATCH 9).
  */
-export async function appendIteration(ctx: RepositoryContext, adrRef: string, entry: AppendIterationEntry = {}): Promise<string> {
+export async function appendIteration(ctx: RepositoryContext, session: DocketSession, adrRef: string, entry: AppendIterationEntry = {}): Promise<string> {
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  return withPathLock(resolved.adr.path, async () => {
-    const cached = getCached('append_iteration', entry.clientMsgId)
+  return session.withPathLock(resolved.adr.path, async () => {
+    const cached = session.getCached('append_iteration', entry.clientMsgId)
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
@@ -546,7 +547,7 @@ export async function appendIteration(ctx: RepositoryContext, adrRef: string, en
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Appended Iteration ${result.iterationNumber} to ${adrRefString(resolved.adr)}\n${result.diff}`
-    recordSuccess('append_iteration', entry.clientMsgId, confirmation)
+    session.recordSuccess('append_iteration', entry.clientMsgId, confirmation)
     return confirmation
   })
 }
@@ -559,6 +560,7 @@ export interface UpdateResolutionOptions {
 /** update_resolution — per ADR-0009; note is required (and server-validated) for fiat/contested. Per-path locked, same reasoning as the other write tools. */
 export async function updateResolution(
   ctx: RepositoryContext,
+  session: DocketSession,
   adrRef: string,
   resolution: string,
   note?: string,
@@ -567,8 +569,8 @@ export async function updateResolution(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  return withPathLock(resolved.adr.path, async () => {
-    const cached = getCached('update_resolution', options.clientMsgId)
+  return session.withPathLock(resolved.adr.path, async () => {
+    const cached = session.getCached('update_resolution', options.clientMsgId)
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
@@ -577,7 +579,7 @@ export async function updateResolution(
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Updated resolution for ${adrRefString(resolved.adr)} to '${resolution}'\n${result.diff}`
-    recordSuccess('update_resolution', options.clientMsgId, confirmation)
+    session.recordSuccess('update_resolution', options.clientMsgId, confirmation)
     return confirmation
   })
 }
@@ -600,6 +602,7 @@ export interface ApplyBatchOptions {
  */
 export async function applyBatch(
   ctx: RepositoryContext,
+  session: DocketSession,
   adrRef: string,
   operations: BatchOperation[],
   options: ApplyBatchOptions = {},
@@ -616,8 +619,8 @@ export async function applyBatch(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  return withPathLock(resolved.adr.path, async () => {
-    const cached = getCached('apply_batch', options.clientMsgId)
+  return session.withPathLock(resolved.adr.path, async () => {
+    const cached = session.getCached('apply_batch', options.clientMsgId)
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
@@ -626,7 +629,7 @@ export async function applyBatch(
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
     const confirmation = `Applied ${operations.length} operation(s) to ${adrRefString(resolved.adr)}\n${result.diff}`
-    recordSuccess('apply_batch', options.clientMsgId, confirmation)
+    session.recordSuccess('apply_batch', options.clientMsgId, confirmation)
     return confirmation
   })
 }
@@ -646,6 +649,7 @@ export interface BlessQstHandleOptions {
  */
 export async function blessQstHandle(
   ctx: RepositoryContext,
+  session: DocketSession,
   adrRef: string,
   questionMatch: string,
   slug: string,
@@ -654,8 +658,8 @@ export async function blessQstHandle(
   const resolved = resolveAdrByRef(ctx, adrRef)
   if (resolved.kind === 'error') return formatRefError(resolved)
 
-  return withPathLock(resolved.adr.path, async () => {
-    const cached = getCached('bless_qst_handle', options.clientMsgId)
+  return session.withPathLock(resolved.adr.path, async () => {
+    const cached = session.getCached('bless_qst_handle', options.clientMsgId)
     if (cached !== undefined) return cached
 
     const currentContent = await ctx.readFile(resolved.adr.path)
@@ -666,7 +670,7 @@ export async function blessQstHandle(
     const confirmation = result.alreadyBlessed
       ? `Already blessed: ${adrRefString(resolved.adr)}#${result.slug} (no change)`
       : `Blessed ${adrRefString(resolved.adr)}#${result.slug} — anchor inserted after line ${result.headingLine}\n${result.diff}`
-    recordSuccess('bless_qst_handle', options.clientMsgId, confirmation)
+    session.recordSuccess('bless_qst_handle', options.clientMsgId, confirmation)
     return confirmation
   })
 }
