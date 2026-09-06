@@ -48,6 +48,38 @@ describe('errorLogPathFor', () => {
     const q = errorLogPathFor('/repo-b/docs/adr/seed-2026-07-18-blocking-docket.md')
     expect(q).toBe('/repo-b/docs/adr/.working/errors.jsonl')
   })
+
+  /**
+   * Real catch (Fixture 5, 2026-09-06, priority-A command-smoke pass —
+   * routed to Gleaner, not fixed here: this is `anchorPathFromCommandArg`'s
+   * design in extension.ts, which Gleaner (Ledger Warden) owns, not this
+   * module's own contract). `errorLogPathFor` unconditionally assumes its
+   * argument IS a file — it strips exactly one path segment via
+   * `path.dirname`. `anchorPathFromCommandArg`'s own fallback chain
+   * (`item?.rootNode?.path ?? ... ?? compositeIndex?.root.path`) can hand it
+   * a DIRECTORY instead (a workspace/root path, not a file inside it) —
+   * every command invoked with no tree-item argument at all (the Command
+   * Palette form of `adrManager.filterQuestions`, `adrManager.expandAll`,
+   * etc.) or with a bare string argument that doesn't carry `.adr`/`.seed`/
+   * `.question` (e.g. `adrManager.openAdr(filePath, line)` — ALWAYS a raw
+   * string, by its own signature, so it ALWAYS falls through to this
+   * branch) hits this. The result: `path.dirname(aDirectory)` strips one
+   * level too many, writing `.working/errors.jsonl` as a SIBLING of the
+   * workspace root, not inside it — verified live during the priority-A
+   * pass: a real command-smoke test run left a stray
+   * `<tmp-parent>/.working/errors.jsonl` on the actual host filesystem,
+   * one level above the test's own temp workspace, until it was manually
+   * cleaned up. In a real install this means `adrManager.openAdr` errors —
+   * and any Command-Palette-invoked command's errors — land OUTSIDE the
+   * project (potentially a sibling of an unrelated repo), or fail silently
+   * if that parent directory isn't writable.
+   */
+  it('CATCH: given a directory (not a file) — the real shape of the rootNode/compositeIndex fallback branches in extension.ts\'s anchorPathFromCommandArg — lands the ledger OUTSIDE the given path, not inside it', () => {
+    const workspaceRoot = '/Users/someone/Programming/some-project'
+    const p = errorLogPathFor(workspaceRoot)
+    expect(p).toBe('/Users/someone/Programming/.working/errors.jsonl') // NOT inside `some-project` at all — a sibling of it
+    expect(p.startsWith(workspaceRoot)).toBe(false)
+  })
 })
 
 describe('buildErrorRecord — the everything-to-rebuild guarantee', () => {

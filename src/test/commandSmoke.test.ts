@@ -25,7 +25,7 @@
  * result doesn't throw.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -43,11 +43,13 @@ import {
   mockWorkspace,
   queueInputBox,
   queueQuickPick,
+  queueWarningMessage,
   setConfigOverride,
   extensions,
   Uri,
   TreeItemCollapsibleState,
 } from './helpers/vscodeMock'
+import { relativeRootPath } from '../index/rootsConfigWriter'
 
 const PACKAGE_JSON = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8'))
 const DECLARED_COMMANDS: string[] = PACKAGE_JSON.contributes.commands.map((c: { command: string }) => c.command)
@@ -158,6 +160,12 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
   const realAdr = () => composite.root.adrs.allAdrs()[0]
   const realSeed = () => composite.root.seeds.allSeeds()[0]
   const realQuestion = () => realAdr().questions[0]
+
+  function readLastLedgerRecord(): { kind: string; message: string; payload: { commandId?: string } } {
+    const ledgerPath = path.join(workspaceRoot, 'docs', 'adr', '.working', 'errors.jsonl')
+    const lines = fs.readFileSync(ledgerPath, 'utf8').trim().split('\n')
+    return JSON.parse(lines.at(-1)!)
+  }
 
   function fixtures() {
     const fakeTour: TourFile = {
@@ -322,6 +330,243 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       expect(record.kind).toBe('command-execution-failed')
       expect(record.payload.commandId).toBe('adrManager.commitAdrs')
       expect(record.message).toContain('simulated: vscode.git extension API failure')
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // Priority-A pass (Fixture 5, 2026-09-06, Jérémie's stated order B, A, C
+  // after the harness itself shipped): "doesn't throw" cannot distinguish
+  // a command that did the right thing from one that silently no-op'd or
+  // wrote the wrong value. These deepen exactly the commands where that
+  // gap is highest-cost — file-writing commands, and one representative
+  // config-toggle pair to prove the pattern generalizes — per Gleaner's
+  // brief's own "grow on demand" discipline, not a blanket conversion of
+  // all 28 shallow commands.
+  // ---------------------------------------------------------------------
+
+  describe('copyPath / copyRelativePath — clipboard gets the CORRECT value, not just any value', () => {
+    it('copyPath writes the real absolute fsPath', async () => {
+      resetInteractionState()
+      const adr = fixtures().adr
+      const handler = getRegisteredCommand('adrManager.copyPath')!
+      await handler(adr)
+      const { env } = await import('./helpers/vscodeMock')
+      expect(vi.mocked(env.clipboard.writeText)).toHaveBeenCalledWith(adr.resourceUri!.fsPath)
+    })
+
+    it('copyRelativePath writes the workspace-relative path, not the absolute one', async () => {
+      resetInteractionState()
+      const adr = fixtures().adr
+      const handler = getRegisteredCommand('adrManager.copyRelativePath')!
+      await handler(adr)
+      const { env } = await import('./helpers/vscodeMock')
+      const written = vi.mocked(env.clipboard.writeText).mock.calls.at(-1)?.[0]
+      expect(written).toBe(relativeRootPath(adr.resourceUri!.fsPath, workspaceRoot))
+      expect(written).not.toBe(adr.resourceUri!.fsPath) // would indicate copyPath's arg leaked into copyRelativePath
+    })
+  })
+
+  describe('createAdr — a real ADR file actually appears on disk, not just a resolved promise', () => {
+    it('writes a new numbered ADR file into the adr directory, with the picked title in its heading', async () => {
+      resetInteractionState()
+      queueQuickPick({ value: 'adr' })
+      queueInputBox('Fixture Priority A Decision')
+      const adrDirPath = path.join(workspaceRoot, 'docs', 'adr')
+      const before = new Set(fs.readdirSync(adrDirPath).filter(f => /^\d{4}-/.test(f)))
+      const handler = getRegisteredCommand('adrManager.createAdr')!
+      await handler(fixtures().root)
+      const created = fs.readdirSync(adrDirPath).filter(f => /^\d{4}-/.test(f) && !before.has(f))
+      expect(created.length, 'expected exactly one new numbered ADR file').toBe(1)
+      const content = fs.readFileSync(path.join(adrDirPath, created[0]), 'utf8')
+      expect(content).toContain('# Fixture Priority A Decision')
+      expect(content).toContain('- **Status**: Draft')
+    })
+
+    it('a cancelled kind picker (Escape) writes no file at all', async () => {
+      resetInteractionState() // no queued quickpick/inputbox — defaults to undefined, same as pressing Escape
+      const adrDirPath = path.join(workspaceRoot, 'docs', 'adr')
+      const before = new Set(fs.readdirSync(adrDirPath))
+      const handler = getRegisteredCommand('adrManager.createAdr')!
+      await handler(fixtures().root)
+      const after = fs.readdirSync(adrDirPath)
+      expect(after).toEqual(Array.from(before))
+    })
+  })
+
+  describe('addSeedThreadTurn — the real seed file is extended, never clobbered (CONVENTIONS §4 hazard class)', () => {
+    it('appends the new turn while preserving every byte of the seed\'s existing content', async () => {
+      resetInteractionState()
+      const seed = fixtures().seed
+      const before = fs.readFileSync(seed.seed!.path, 'utf8')
+      const handler = getRegisteredCommand('adrManager.addSeedThreadTurn')!
+      await handler(seed)
+      const after = fs.readFileSync(seed.seed!.path, 'utf8')
+
+      expect(after.length).toBeGreaterThan(before.length)
+      // Every line that existed before the write still exists after it, in
+      // order — the "never clobber" assertion this command's own history
+      // (Lapidary's founder-escalation dispatch, CONVENTIONS §4's DEBRIEF-001
+      // hazard class) makes non-negotiable for a seed a human may be
+      // mid-iteration on.
+      const beforeLines = before.split('\n')
+      const afterLines = after.split('\n')
+      let cursor = 0
+      for (const line of beforeLines) {
+        cursor = afterLines.indexOf(line, cursor)
+        expect(cursor, `original line dropped or reordered: ${JSON.stringify(line)}`).toBeGreaterThanOrEqual(0)
+        cursor++
+      }
+      // And the new scaffold actually landed — not just "something changed".
+      expect(after).toContain('**Model Response Request:**')
+      expect(after).toContain('- [ ] Chunk this into ADRs')
+    })
+  })
+
+  describe('excludeRoot — the roots.json exclusion actually persists to disk', () => {
+    it('the modal "Exclude" choice writes the root\'s real relative path into the block list', async () => {
+      resetInteractionState()
+      queueWarningMessage('Exclude')
+      const handler = getRegisteredCommand('adrManager.excludeRoot')!
+      await handler(fixtures().root)
+
+      const rootsJsonPath = path.join(workspaceRoot, 'docs', 'adr', '.settings', 'roots.json')
+      expect(fs.existsSync(rootsJsonPath), 'roots.json was never written to disk').toBe(true)
+      const relPath = relativeRootPath(rootNode().path, workspaceRoot)
+      const config = JSON.parse(fs.readFileSync(rootsJsonPath, 'utf8'))
+      expect(config.block).toContain(relPath)
+    })
+
+    it('declining the modal ("Cancel", Escape) writes nothing', async () => {
+      resetInteractionState() // no queued warning-message response — defaults to undefined, same as dismissing the modal
+      const rootsJsonPath = path.join(workspaceRoot, 'docs', 'adr', '.settings', 'roots.json')
+      const existedBefore = fs.existsSync(rootsJsonPath)
+      const beforeContent = existedBefore ? fs.readFileSync(rootsJsonPath, 'utf8') : undefined
+      const handler = getRegisteredCommand('adrManager.excludeRoot')!
+      await handler(fixtures().root)
+      expect(fs.existsSync(rootsJsonPath)).toBe(existedBefore)
+      if (existedBefore) expect(fs.readFileSync(rootsJsonPath, 'utf8')).toBe(beforeContent)
+    })
+  })
+
+  describe('mintTourFromFilter — a real .tour.json file lands on disk with the filtered questions', () => {
+    it('mints a tour containing the currently-visible (unanswered) question, under the given title', async () => {
+      resetInteractionState()
+      queueInputBox('Fixture Mint Test')
+      const toursDir = path.join(workspaceRoot, 'docs', 'adr', 'tours')
+      const before = new Set(fs.existsSync(toursDir) ? fs.readdirSync(toursDir) : [])
+      const handler = getRegisteredCommand('adrManager.mintTourFromFilter')!
+      await handler()
+      const created = fs.readdirSync(toursDir).filter(f => !before.has(f))
+      expect(created.length, 'expected exactly one new tour file').toBe(1)
+      const tour = JSON.parse(fs.readFileSync(path.join(toursDir, created[0]), 'utf8'))
+      expect(tour.title).toBe('Fixture Mint Test')
+      expect(tour.entries.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('hideCompletedTours / showCompletedTours — the config setting actually flips both ways', () => {
+    it('hide sets tours.hideCompleted to true; show sets it back to false', async () => {
+      resetInteractionState()
+      const { workspace } = await import('./helpers/vscodeMock')
+      const hide = getRegisteredCommand('adrManager.hideCompletedTours')!
+      const show = getRegisteredCommand('adrManager.showCompletedTours')!
+
+      await hide()
+      expect(workspace.getConfiguration('adrManager').get('tours.hideCompleted', false)).toBe(true)
+
+      await show()
+      expect(workspace.getConfiguration('adrManager').get('tours.hideCompleted', false)).toBe(false)
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // The priority-A pass's own real catch (2026-09-06): auditing every
+  // non-async handler in this file for the SAME bug class the 2026-09-05
+  // commitAdrs fix claimed to have closed completely ("this was the one
+  // gap") found four more instances — openAdr, createAdr, filterQuestions,
+  // changeStatus, and goToAnswerInFile (sharing openAdrFile with openAdr).
+  // Each is now `async`/`await`ed. These regression tests prove the
+  // rejection actually PROPAGATES (before the fix, `await handler(...)`
+  // resolved to `undefined` instantly — `.rejects` would have failed
+  // outright, exactly like createAdr's original failure surfaced as a
+  // deferred "Unhandled Rejection" instead of a same-tick assertion
+  // failure). They deliberately do NOT also assert a ledger write, unlike
+  // commitAdrs'/changeStatus's own contract tests: openAdr, createAdr (via
+  // a root item), and filterQuestions (no item at all) all resolve their
+  // `anchorPathFromCommandArg` through the `rootNode`/`compositeIndex`
+  // fallback branches — which is a SEPARATE real bug, found and safely
+  // documented (pure, no real disk write) in errorLog.test.ts's new
+  // "CATCH" case, and routed to Gleaner rather than fixed here: those
+  // branches hand `errorLogPathFor` a DIRECTORY, which it treats as a
+  // file and strips one path segment too many, landing the ledger OUTSIDE
+  // the workspace. Exercising that through a real command invocation in
+  // THIS file would repeat the exact live escape it took manual cleanup
+  // to undo during this pass — not a risk worth re-taking just to make
+  // this describe block symmetrical with commitAdrs'.
+  // ---------------------------------------------------------------------
+
+  describe('the priority-A audit\'s four further fixes — the rejection now actually propagates', () => {
+    // openAdr, createAdr (via a root item), and filterQuestions all still
+    // resolve their anchor to `compositeIndex.root.path` (== workspaceRoot)
+    // via the buggy fallback documented above — registerLoggedCommand's
+    // catch block still runs `appendLedgerRecord` against that WRONG,
+    // escaped location on every real run of these three tests, not just
+    // hypothetically. Clean it up after each one so this file's own test
+    // run doesn't leave the exact stray host-filesystem file (one level
+    // above the temp workspace) that this finding is about — computed
+    // precisely from the known anchor, never a blind/wildcard rm.
+    afterEach(() => {
+      const escapedWorkingDir = path.join(path.dirname(workspaceRoot), '.working')
+      fs.rmSync(escapedWorkingDir, { recursive: true, force: true })
+    })
+
+    it('openAdr: a rejected openTextDocument now propagates instead of resolving silently', async () => {
+      resetInteractionState()
+      const { workspace } = await import('./helpers/vscodeMock')
+      vi.mocked(workspace.openTextDocument).mockImplementationOnce(() => { throw new Error('simulated: openTextDocument failure') })
+      const handler = getRegisteredCommand('adrManager.openAdr')!
+      await expect(handler(realAdr().path, 1)).rejects.toThrow('simulated: openTextDocument failure')
+    })
+
+    it('goToAnswerInFile: shares openAdrFile with openAdr — same contract, AND a well-formed anchor reaches the ledger correctly', async () => {
+      resetInteractionState()
+      const { workspace } = await import('./helpers/vscodeMock')
+      vi.mocked(workspace.openTextDocument).mockImplementationOnce(() => { throw new Error('simulated: openTextDocument failure') })
+      const handler = getRegisteredCommand('adrManager.goToAnswerInFile')!
+      await expect(handler(fixtures().question)).rejects.toThrow('simulated: openTextDocument failure')
+      // Unlike openAdr's raw-string argument, a tree item carries `.question.adrPath` —
+      // anchorPathFromCommandArg resolves a real FILE here, so this one's ledger
+      // write lands correctly and is safe to assert on.
+      const record = readLastLedgerRecord()
+      expect(record.kind).toBe('command-execution-failed')
+      expect(record.payload.commandId).toBe('adrManager.goToAnswerInFile')
+    })
+
+    it('createAdr: a rejected kind-picker QuickPick now propagates instead of resolving silently', async () => {
+      resetInteractionState()
+      const { window } = await import('./helpers/vscodeMock')
+      vi.mocked(window.showQuickPick).mockImplementationOnce(() => { throw new Error('simulated: showQuickPick failure') })
+      const handler = getRegisteredCommand('adrManager.createAdr')!
+      await expect(handler(fixtures().root)).rejects.toThrow('simulated: showQuickPick failure')
+    })
+
+    it('filterQuestions: a rejected QuickPick now propagates instead of resolving silently', async () => {
+      resetInteractionState()
+      const { window } = await import('./helpers/vscodeMock')
+      vi.mocked(window.showQuickPick).mockImplementationOnce(() => { throw new Error('simulated: showQuickPick failure') })
+      const handler = getRegisteredCommand('adrManager.filterQuestions')!
+      await expect(handler()).rejects.toThrow('simulated: showQuickPick failure')
+    })
+
+    it('changeStatus: a rejected QuickPick reaches errors.jsonl', async () => {
+      resetInteractionState()
+      const { window } = await import('./helpers/vscodeMock')
+      vi.mocked(window.showQuickPick).mockImplementationOnce(() => { throw new Error('simulated: showQuickPick failure') })
+      const handler = getRegisteredCommand('adrManager.changeStatus')!
+      await expect(handler(fixtures().adr)).rejects.toThrow('simulated: showQuickPick failure')
+      const record = readLastLedgerRecord()
+      expect(record.kind).toBe('command-execution-failed')
+      expect(record.payload.commandId).toBe('adrManager.changeStatus')
     })
   })
 })

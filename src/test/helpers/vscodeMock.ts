@@ -163,7 +163,16 @@ export class CodeAction {
   constructor(public title: string, public kind?: CodeActionKind) {}
 }
 
-/** Records edits rather than applying them to real files — good enough for a handler-doesn't-throw + shape assertion. */
+/**
+ * Records operations; `workspace.applyEdit` below replays them onto the
+ * REAL file on disk — every real call site in extension.ts only ever
+ * builds line-granular edits (`insert` at a line's start, `replace` across
+ * a whole `doc.lineAt(i).range`), so that's the only shape this needs to
+ * support. Needed for real "did the content actually land, and did it not
+ * clobber what was there before" assertions (Fixture 5's priority-A pass,
+ * 2026-09-06) — a purely-recorded, never-applied edit can't tell that
+ * apart from a silent no-op.
+ */
 export class WorkspaceEdit {
   public operations: Array<{ type: 'insert' | 'replace' | 'delete'; uri: { fsPath: string }; range?: Range; position?: Position; text?: string }> = []
   insert(uri: { fsPath: string }, position: Position, text: string): void {
@@ -292,7 +301,37 @@ export const mockWorkspace = {
   workspaceFolders: undefined as Array<{ uri: { fsPath: string } }> | undefined,
   getConfiguration: vi.fn((section = 'adrManager', _scope?: unknown) => makeConfiguration(section)),
   openTextDocument: vi.fn(async (uri: { fsPath: string }) => fakeTextDocument(uri)),
-  applyEdit: vi.fn(async (_edit: WorkspaceEdit) => true),
+  applyEdit: vi.fn(async (edit: WorkspaceEdit) => {
+    try {
+      const byFile = new Map<string, typeof edit.operations>()
+      for (const op of edit.operations) {
+        const arr = byFile.get(op.uri.fsPath) ?? []
+        arr.push(op)
+        byFile.set(op.uri.fsPath, arr)
+      }
+      for (const [fsPath, ops] of byFile) {
+        const lines = fs.readFileSync(fsPath, 'utf8').split('\n')
+        // Apply bottom-to-top so an earlier operation's line-count change
+        // never shifts a later operation's still-untouched line index.
+        const sorted = [...ops].sort((a, b) => (b.position?.line ?? b.range!.start.line) - (a.position?.line ?? a.range!.start.line))
+        for (const op of sorted) {
+          if (op.type === 'insert' && op.position) {
+            const inserted = op.text!.split('\n')
+            if (inserted[inserted.length - 1] === '') inserted.pop() // trailing '' from a text block that itself ends in '\n'
+            lines.splice(op.position.line, 0, ...inserted)
+          } else if (op.type === 'replace' && op.range) {
+            lines.splice(op.range.start.line, op.range.end.line - op.range.start.line + 1, op.text ?? '')
+          } else if (op.type === 'delete' && op.range) {
+            lines.splice(op.range.start.line, op.range.end.line - op.range.start.line + 1)
+          }
+        }
+        fs.writeFileSync(fsPath, lines.join('\n'), 'utf8')
+      }
+      return true
+    } catch {
+      return false
+    }
+  }),
   save: vi.fn(async (_uri: { fsPath: string }) => true),
   onDidChangeTextDocument: vi.fn((_listener: unknown) => ({ dispose: vi.fn() })),
   createFileSystemWatcher: vi.fn((_pattern: unknown) => ({
@@ -301,9 +340,13 @@ export const mockWorkspace = {
     onDidDelete: vi.fn(() => ({ dispose: vi.fn() })),
     dispose: vi.fn(),
   })),
+  // Real disk operations (not recorded-only): excludeRoot and
+  // mintTourFromFilter both write real config/tour files whose actual
+  // on-disk presence and content is exactly what Fixture 5's priority-A
+  // pass (2026-09-06) needs to assert against.
   fs: {
-    createDirectory: vi.fn(async (_uri: { fsPath: string }) => undefined),
-    writeFile: vi.fn(async (_uri: { fsPath: string }, _content: Uint8Array) => undefined),
+    createDirectory: vi.fn(async (uri: { fsPath: string }) => { fs.mkdirSync(uri.fsPath, { recursive: true }) }),
+    writeFile: vi.fn(async (uri: { fsPath: string }, content: Uint8Array) => { fs.writeFileSync(uri.fsPath, content) }),
   },
 }
 
