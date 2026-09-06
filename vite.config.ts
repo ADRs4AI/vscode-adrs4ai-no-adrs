@@ -45,6 +45,19 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/parser/**', 'src/index/**'],
     },
+    // Fixture 5 (2026-09-05, docs/inbox/2026-09-05-2236-gleaner-founding-
+    // brief-menu-command-smoke-test-harness.md): a `vscode`-mocking test
+    // seam, scoped to `test.alias` (NOT the top-level `resolve.alias` below)
+    // so it can never leak into `vite build` — extension.ts's real 'vscode'
+    // import must stay untouched and externalized there. Deliberately does
+    // NOT use the `*.vscode.test.ts` naming the `exclude` glob above
+    // reserves — that lane predates every seat on this crew and its
+    // original intent (a heavier, real-VS-Code-instance suite?) is
+    // undocumented; claiming it as a side effect of this mock would risk
+    // squatting on someone else's future plan. See commandSmoke.test.ts.
+    alias: {
+      vscode: resolve(__dirname, 'src/test/helpers/vscodeMock.ts'),
+    },
   },
   resolve: {
     alias: {
