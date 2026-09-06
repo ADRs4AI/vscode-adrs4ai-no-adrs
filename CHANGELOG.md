@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.110] - 2026-09-06
+
+### Fixed
+- **A real bug in the error-logging safety net itself**: the "Commit ADR changes" command's own registration never awaited its work, so an error inside it became an invisible unhandled rejection instead of reaching `errors.jsonl` — the exact guarantee 0.7.109 shipped to close. Found by a new automated test harness that actually invokes every menu command's real handler (previously, tests could only check the source code's shape, never call the code and see what it does).
+
+### Added
+- **A menu-command smoke-test harness** — every sidebar right-click command is now automatically invoked end-to-end in tests, against a real fixture workspace with a real mixed-case GitHub remote (the exact shape that caused 0.7.108/0.7.109's "Copy Deep Link" crash), catching this class of bug before it ships instead of after.
+
 ## [0.7.109] - 2026-09-05
 
 ### Fixed
