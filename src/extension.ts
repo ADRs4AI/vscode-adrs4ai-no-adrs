@@ -144,17 +144,39 @@ let outputChannel: vscode.OutputChannel | undefined;
  * to any known root at all, means a command invoked from the Command
  * Palette (no tree item) still lands SOMEWHERE rather than being silently
  * unloggable for lack of an owning ledger.
+ *
+ * Fixture 5's catch (2026-09-06, `docs/inbox/2026-09-06-0522-fixture-to-
+ * gleaner-priority-a-command-smoke-deepening-plus-real-catches.md`): a
+ * command like `openAdr(filePath: string, ...)` passes its real, correct
+ * file path as `args[0]` directly — a raw STRING, not an item object — but
+ * this only ever tried reading `.adr`/`.seed`/etc. off it (undefined on a
+ * string, no crash, just silently ignored), falling all the way through to
+ * a bare ROOT DIRECTORY. `errorLogPathFor` assumes a FILE path and takes
+ * its `dirname()` — given a directory instead, that strips one real
+ * segment too many, landing `.working/errors.jsonl` one level ABOVE the
+ * workspace entirely (confirmed live: a stray file on Fixture's own host
+ * filesystem outside any test's temp workspace). Two fixes: (1) a plain
+ * string arg — real callers only ever pass one when it's already the exact
+ * anchor — is used as-is, never routed through the item-shape guesses at
+ * all; (2) the directory-shaped fallbacks (`rootNode.path`/`compositeIndex.
+ * root.path`) are joined with the configured ADR directory and a
+ * placeholder filename BEFORE being returned, so `errorLogPathFor`'s
+ * existing dirname()-based contract lands them in the same `docs/adr/.
+ * working/` every other anchor already uses — not a new, second location
+ * nothing else scans.
  */
 function anchorPathFromCommandArg(arg: unknown): string | undefined {
+  if (typeof arg === 'string') return arg;
   const item = arg as
     | { adr?: { path: string }; seed?: { path: string }; question?: { adrPath: string }; rootNode?: { path: string } }
     | undefined;
-  return item?.adr?.path
-    ?? item?.seed?.path
-    ?? item?.question?.adrPath
-    ?? item?.rootNode?.path
-    ?? vscode.window.activeTextEditor?.document.uri.fsPath
-    ?? compositeIndex?.root.path;
+  const fileShaped = item?.adr?.path ?? item?.seed?.path ?? item?.question?.adrPath
+    ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+  if (fileShaped) return fileShaped;
+  const rootDir = item?.rootNode?.path ?? compositeIndex?.root.path;
+  if (!rootDir) return undefined;
+  const adrDirRel = vscode.workspace.getConfiguration('adrManager').get<string>('adrDirectory', 'docs/adr');
+  return path.join(rootDir, adrDirRel, '.anchor-placeholder');
 }
 
 /**

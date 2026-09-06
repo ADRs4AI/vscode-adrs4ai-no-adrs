@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.112] - 2026-09-06
+
+### Fixed
+- **A logged command error could land one level ABOVE your workspace instead of inside it** — commands whose real argument is a plain file path (like "Open ADR"), or any Command-Palette-invoked command with no tree item at all, could have their error-ledger anchor resolve to the workspace root's own parent directory instead of `docs/adr/.working/`. Found by Fixture 5 while deepening the command smoke-test harness (a stray `errors.jsonl` actually appeared outside a test's temp workspace on their own machine).
+
 ## [0.7.111] - 2026-09-06
 
 ### Fixed

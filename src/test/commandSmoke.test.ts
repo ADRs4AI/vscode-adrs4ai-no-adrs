@@ -331,6 +331,41 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       expect(record.payload.commandId).toBe('adrManager.commitAdrs')
       expect(record.message).toContain('simulated: vscode.git extension API failure')
     })
+
+    // Fixture 5's catch, 2026-09-06 (docs/inbox/2026-09-06-0522-fixture-to-
+    // gleaner-priority-a-command-smoke-deepening-plus-real-catches.md):
+    // openAdr's real signature passes a plain STRING as args[0] (the file
+    // path itself, not an AdrTreeItem) — anchorPathFromCommandArg used to
+    // silently miss that shape entirely, fall through to a bare workspace-
+    // root DIRECTORY, and errorLogPathFor's dirname() then stripped one
+    // level too many — a real stray errors.jsonl landed one level ABOVE
+    // Fixture's own temp workspace during testing, confirmed live, not
+    // theoretical. Fixed in extension.ts's anchorPathFromCommandArg: a
+    // string arg is used as-is. This proves the fix end to end — the
+    // ledger lands INSIDE the workspace's own docs/adr/.working/, not a
+    // sibling of it.
+    it('openAdr surviving a throwing dependency logs INSIDE the workspace, not one level above it', async () => {
+      resetInteractionState()
+      const adrPath = fixtures().adr.resourceUri!.fsPath
+      vi.mocked(mockWorkspace.openTextDocument).mockImplementationOnce(() => {
+        throw new Error('simulated: openTextDocument failure')
+      })
+      const handler = getRegisteredCommand('adrManager.openAdr')!
+      await expect(handler(adrPath)).rejects.toThrow('simulated: openTextDocument failure')
+
+      const ledgerPath = path.join(workspaceRoot, 'docs', 'adr', '.working', 'errors.jsonl')
+      expect(fs.existsSync(ledgerPath)).toBe(true) // not one level above workspaceRoot
+      const lines = fs.readFileSync(ledgerPath, 'utf8').trim().split('\n')
+      const record = JSON.parse(lines.at(-1)!)
+      expect(record.kind).toBe('command-execution-failed')
+      expect(record.payload.commandId).toBe('adrManager.openAdr')
+      expect(record.anchorPath).toBe(adrPath) // the real file path, not a synthetic root placeholder
+
+      // The stray-sibling-file regression, checked directly: nothing named
+      // .working landed as a SIBLING of the workspace root.
+      const strayPath = path.join(path.dirname(workspaceRoot), '.working', 'errors.jsonl')
+      expect(fs.existsSync(strayPath)).toBe(false)
+    })
   })
 
   // ---------------------------------------------------------------------

@@ -64,6 +64,27 @@ describe('extension.ts: anchorPathFromCommandArg — best-effort, never guesses 
     expect(fn).toContain('vscode.window.activeTextEditor?.document.uri.fsPath')
     expect(fn).toContain('compositeIndex?.root.path')
   })
+
+  // Fixture 5's catch, 2026-09-06 (docs/inbox/2026-09-06-0522-fixture-to-
+  // gleaner-priority-a-command-smoke-deepening-plus-real-catches.md): a
+  // plain-string arg (openAdr's real signature — filePath IS args[0])
+  // never matched the item-shape guesses, silently fell through to a bare
+  // root DIRECTORY, and errorLogPathFor's dirname() then stripped one
+  // level too many — a stray errors.jsonl landed OUTSIDE the workspace on
+  // Fixture's own host filesystem during testing. Two fixes verified here:
+  // a string arg is used as-is (never routed through the item guesses at
+  // all), and the directory-shaped fallbacks are turned file-shaped
+  // (joined with the configured ADR directory) before being returned, so
+  // errorLogPathFor's existing dirname()-based contract lands them
+  // correctly instead of needing its own contract changed.
+  it('a plain string argument (openAdr\'s real shape) is used directly, never routed through the item-shape guesses', () => {
+    expect(fn).toMatch(/^\s*if \(typeof arg === 'string'\) return arg;/m)
+  })
+
+  it('the directory-shaped fallbacks are joined with the configured ADR directory before being returned — never a bare root', () => {
+    expect(fn).toContain("get<string>('adrDirectory', 'docs/adr')")
+    expect(fn).toContain('path.join(rootDir, adrDirRel,')
+  })
 })
 
 // The actual answer to "EVERY error" — mechanically verified, not asserted
