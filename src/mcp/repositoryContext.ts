@@ -31,10 +31,23 @@ export interface RepositoryContext {
   getSeed(ref: string): SeedFile | undefined
 
   // --- Raw file system primitives (ADR-0003 portability requirement 2) ---
-  // Paths are relative to the ADR directory root (adrManager.adrDirectory).
-  readFile(relativePath: string): Promise<string>
-  writeFile(relativePath: string, content: string): Promise<void>
-  listFiles(relativeDir: string): Promise<string[]>
+  // FIXED (2026-09-06, docket repo ADR-0001 QST-NODE's survey; owed since
+  // my own ANS there promised it in the same pass as DocketSession):
+  // this used to say paths are relative to the ADR directory root
+  // (adrManager.adrDirectory) — wrong today, confirmed by checking every
+  // real call site, not assumed. `handlers.ts` always passes
+  // `resolved.adr.path` (an absolute path, from `AdrFile.path`) straight
+  // into `readFile`/`writeFile`, and the one real implementation
+  // (`repositoryContextAdapter.ts`) hands that path directly to
+  // `fs.promises.readFile`/`writeFile` with no join against any root —
+  // there is no relative-path contract in effect anywhere in this chain.
+  // A future Forma-5 (remote/GitHub-REST-backed) implementation is free to
+  // interpret these as repo-relative internally, but the CONTRACT this
+  // interface documents is absolute paths, since that's what every current
+  // caller and implementation actually agree on.
+  readFile(absolutePath: string): Promise<string>
+  writeFile(absolutePath: string, content: string): Promise<void>
+  listFiles(absoluteDir: string): Promise<string[]>
 
   /** Optional — not required by any Tier 0/1 read; reserved for a future temporal primitive. */
   getGitLog?(relativePath: string, n?: number): Promise<GitLogEntry[]>
