@@ -51,8 +51,14 @@ describe('extension.ts: commitAdrChanges accepts an optional targetRootPath', ()
     // only pins that a tree-wide invocation (no item at all) still ends
     // up passing targetRootPath/scopeFilter through unchanged (both
     // undefined in that case, via the ternary chains' own fallthrough).
-    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.commitAdrs', (item) => {")
-    expect(EXT_SRC).toContain('commitAdrChanges(adrDir, targetRootPath, scopeFilter);')
+    // Async since Fixture 5's smoke-test-harness catch (2026-09-05): the
+    // handler used to fire commitAdrChanges without awaiting it, which
+    // meant a thrown error became an unhandled rejection that bypassed
+    // registerLoggedCommand's catch-log-rethrow contract entirely. See
+    // src/test/commandSmoke.test.ts's "registerLoggedCommand contract"
+    // describe block for the behavioral regression test.
+    expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.commitAdrs', async (item) => {")
+    expect(EXT_SRC).toContain('await commitAdrChanges(adrDir, targetRootPath, scopeFilter);')
   })
 
   it('when targeted, commits that one root directly — no cross-root QuickPick, matching Jérémie\'s own ask to "circumvent the palette"', () => {

@@ -460,7 +460,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // root (isAdrBasename/isSeedBasename — deliberately excludes the
     // OTHER category's files, tours, and `.working/` bookkeeping); root
     // itself stays whole-root, since "the root" IS the everything-scope.
-    registerLoggedCommand('adrManager.commitAdrs', (item) => {
+    // Fixture 5's smoke-test harness catch (2026-09-05, first run): this
+    // handler used to be a plain (non-async) arrow that called
+    // commitAdrChanges(...) without awaiting or returning it — a real,
+    // reproducible bug that meant any error thrown inside commitAdrChanges
+    // became an UNHANDLED promise rejection, completely bypassing
+    // registerLoggedCommand's catch-log-rethrow contract (the very "EVERY
+    // error must reach the ledger" guarantee this file shipped THIS SAME
+    // DAY, v0.7.109). Every other action-invoking handler in this file
+    // already awaits its async call; this one was the one gap. See
+    // src/test/commandSmoke.test.ts's "registerLoggedCommand contract"
+    // describe block for the regression test (asserted a throwing
+    // dependency still reaches errors.jsonl — failed against the
+    // unawaited version, passes now).
+    registerLoggedCommand('adrManager.commitAdrs', async (item) => {
       const targetRootPath = item?.rootNode?.path
         ?? (item?.kind === 'adr' && item.adr ? compositeIndex?.findRoot(item.adr.path)?.path : undefined)
         ?? (item?.kind === 'seed' && item.seed ? compositeIndex?.findRoot(item.seed.path)?.path : undefined);
@@ -469,7 +482,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         : item?.kind === 'adr-group' ? (p: string) => isAdrBasename(path.basename(p))
         : item?.kind === 'seed-group' ? (p: string) => isSeedBasename(path.basename(p))
         : undefined;
-      commitAdrChanges(adrDir, targetRootPath, scopeFilter);
+      await commitAdrChanges(adrDir, targetRootPath, scopeFilter);
     }),
 
     registerLoggedCommand('adrManager.copyDeepLink', (item) => {
