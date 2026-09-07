@@ -64,3 +64,26 @@ jobs:
           | Tests | ✅ **${PASSED}** passing |
           | Commit | \`${SHA:0:7}\` |
           EOF
+
+      # Coverage (Fixture 5, 2026-09-06): reuses the SAME src/parser/**,
+      # src/index/** scope as `npm run test:coverage` (vite.config.ts's own
+      # `test.coverage.include`) — deliberately not broadened here, to avoid
+      # silently redefining what "coverage" means project-wide as a side
+      # effect of a README badge. Only adds the `lcov` reporter (not in the
+      # provider's default set) so Codecov has something to ingest.
+      - name: Coverage
+        run: npm run test:coverage -- --coverage.reporter=lcov --coverage.reporter=text-summary
+
+      # continue-on-error + fail_ci_if_error:false: this repo is private as
+      # of 2026-09, so Codecov's tokenless upload (public-repo only) will
+      # fail here until CODECOV_TOKEN is added as a secret, or until the repo
+      # goes public (at which point this starts working with zero changes).
+      # Never allowed to fail the required test job either way.
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false

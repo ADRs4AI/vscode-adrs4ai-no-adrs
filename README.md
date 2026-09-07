@@ -2,6 +2,18 @@
 
 *A VS Code extension that keeps your AI's reasoning from evaporating when the chat closes.*
 
+[![CI](https://github.com/ADRs4AI/vscode-adrs4ai/actions/workflows/ci.yml/badge.svg)](https://github.com/ADRs4AI/vscode-adrs4ai/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/ADRs4AI/vscode-adrs4ai/branch/main/graph/badge.svg)](https://codecov.io/gh/ADRs4AI/vscode-adrs4ai)
+
+<!--
+Both badges read from a private repo as of 2026-09, so GitHub/Codecov will
+show "no status"/an unreachable image until this repo goes public — nothing
+further to do at that point, both start working with zero changes. Coverage
+scope matches `npm run test:coverage` (vite.config.ts's own
+`test.coverage.include`: src/parser/**, src/index/** only) — a project-wide
+number would need that scope broadened, a separate, easy follow-up.
+-->
+
 ---
 
 ## Your Tuesday, with this installed
