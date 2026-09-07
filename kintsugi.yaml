@@ -63,6 +63,8 @@ artifacts:
     class: stencil
   .claude/skills/adr-authoring/references/questions-reference.md:
     class: stencil     # NEW at v3.10.0 (the ADR-0032 pairing's landing zone) — row added at assembly per this header's own enumeration doctrine; invisible to the v3.9.2 ls-tree above [Shipwright 5]
+  .claude/skills/adr-authoring/references/freshening.md:
+    class: stencil     # NEW at v3.11.0; row landed upstream at v3.11.2 after the campaign's dry-run catch (Tender 5) — added here post-copy by the fleet manifest heal, 2026-09-07
   .claude/agent.env:
     class: stencil     # asdf-shim boilerplate, template-maintained
   .vscode/vscode-optimization-guide.md:
