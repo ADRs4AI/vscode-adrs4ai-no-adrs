@@ -1,8 +1,8 @@
 # kintsugi.lock — tool-written state; do not hand-edit.
 # What this repo HAS, per artifact (base version + exact canonical blob).
 kintsugi_schema: 1
-canonical_version: 3.11.1
-synced: '2026-09-07T10:55:57Z'
+canonical_version: 3.11.2
+synced: '2026-09-07T11:17:14Z'
 artifacts:
   .claude/skills/adr-authoring/SKILL.md:
     base_version: 3.11.1
@@ -10,6 +10,9 @@ artifacts:
   .claude/skills/adr-authoring/references/depth.md:
     base_version: 3.11.1
     base_blob: 479e7aeaa4fac1c6fed7d2d57077e8c1ef58bca4
+  .claude/skills/adr-authoring/references/freshening.md:
+    base_version: 3.11.2
+    base_blob: 98299f3a5245903dbf251a757ca746e1e96152a0
   .claude/skills/adr-authoring/references/questions-reference.md:
     base_version: 3.10.0
     base_blob: a8b05ae082c0de3016b5c9adecf4211bf301de2b
