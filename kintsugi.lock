@@ -1,15 +1,15 @@
 # kintsugi.lock — tool-written state; do not hand-edit.
 # What this repo HAS, per artifact (base version + exact canonical blob).
 kintsugi_schema: 1
-canonical_version: 3.10.0
-synced: '2026-08-26T08:27:09Z'
+canonical_version: 3.11.1
+synced: '2026-09-07T10:55:57Z'
 artifacts:
   .claude/skills/adr-authoring/SKILL.md:
-    base_version: 3.10.0
-    base_blob: 40d11cf3f00226b9ba362b2757a05764f92691d2
+    base_version: 3.11.1
+    base_blob: a27ac47c847bf509cda7afd66bb0180e6ac6ed74
   .claude/skills/adr-authoring/references/depth.md:
-    base_version: 3.9.2
-    base_blob: d190fe81b8ba194350e94addee02bee4417dbbde
+    base_version: 3.11.1
+    base_blob: 479e7aeaa4fac1c6fed7d2d57077e8c1ef58bca4
   .claude/skills/adr-authoring/references/questions-reference.md:
     base_version: 3.10.0
     base_blob: a8b05ae082c0de3016b5c9adecf4211bf301de2b
@@ -47,8 +47,8 @@ artifacts:
   docs/inbox/ENCODING-MAP.md:
     state_at_adopt: unknown-base
   docs/inbox/INBOX-PROTOCOL.md:
-    base_version: 3.9.2
-    base_blob: f92619469b0d6bb7581aa132f95adf62f04b4b77
+    base_version: 3.11.1
+    base_blob: 53c33cec9e69bbf656b96f01e771aad61ebca8f5
   docs/inbox/ONBOARDING.md:
     state_at_adopt: unknown-base
   justfile:
