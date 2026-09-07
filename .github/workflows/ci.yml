@@ -87,3 +87,98 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
           fail_ci_if_error: false
+
+  # Real VS Code instance tests (Fixture 5, 2026-09-06/07, ADR-0044, Option B
+  # per Jérémie's ANS). Deliberately its own JOB, not a step in `test` above
+  # -- his requirement #2 ("independent from other tests") means it must run
+  # in parallel, never gate or slow the fast job. `xvfb-run` needs no install
+  # step: verified directly against actions/runner-images's own Ubuntu
+  # 24.04 manifest (raw.githubusercontent.com/actions/runner-images/main/
+  # images/ubuntu/Ubuntu2404-Readme.md) that `xvfb` ships preinstalled on
+  # `ubuntu-latest` -- one AI web-search summary claimed the opposite; the
+  # primary source (the manifest itself) is what's trusted here, per this
+  # repo's own "verify against the primary source, not a stale/secondhand
+  # summary" discipline. Command matches VS Code's own official CI docs
+  # (code.visualstudio.com/api/working-with-extensions/continuous-integration)
+  # verbatim: `xvfb-run -a npm test` (here, `npm run test:integration`).
+  #
+  # Non-blocking is enforced TWICE, deliberately (his requirement #1): job-
+  # level `continue-on-error` keeps a failure here from flipping the overall
+  # workflow conclusion; step-level `continue-on-error` on the test step
+  # itself keeps the summary step running afterward too (a step that fails
+  # without its own continue-on-error stops the rest of the job, even inside
+  # a job marked continue-on-error).
+  #
+  # Cancel-when-superseded (his requirement #4) is inherited for free from
+  # this workflow's existing top-level `concurrency` block above -- a
+  # cancelled WORKFLOW RUN cancels every job in it, continue-on-error or not
+  # (cancellation is a run-level event; continue-on-error only changes how a
+  # step/job's *failure* is scored, not whether cancellation reaches it) --
+  # no separate per-job concurrency group needed.
+  #
+  # No schedule/cooldown/rate-limit of any kind (his requirement #5,
+  # explicit YAGNI call, 2026-09-06 ANS) -- every push and PR triggers this
+  # exactly like `test`, same `on:` block, no throttling.
+  test-electron:
+    name: "Real VS Code instance (non-blocking, informational — ADR-0044)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # .vscode-test.mjs pins no VS Code version (tracks "stable" — the most
+      # faithful test of what real users actually have), so a version-keyed
+      # cache isn't meaningful; a weekly key still avoids re-downloading the
+      # ~309 MB binary on every push while re-checking for a new stable
+      # build at most once a week (Jérémie, 2026-09-06 ANS: "GitHub is
+      # generously subsidizing us" — worth being frugal with anyway).
+      - name: Compute cache week
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache VS Code download
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ runner.os }}-${{ steps.week.outputs.week }}
+
+      - name: Real VS Code instance tests
+        id: electron
+        continue-on-error: true
+        run: xvfb-run -a npm run test:integration
+
+      - name: Write step summary
+        if: always()
+        run: |
+          SHA="${{ github.sha }}"
+          OUTCOME="${{ steps.electron.outcome }}"
+          if [ "$OUTCOME" = "success" ]; then
+            RESULT="✅ Passed"
+          else
+            RESULT="⚠️ Failed — non-blocking, does not gate merges (see ADR-0044)"
+          fi
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## 🖥️ CI — Real VS Code instance tests (informational, non-blocking)
+
+          Runs the extension inside an actual VS Code instance (\`@vscode/test-electron\`),
+          catching a fidelity class the fast mock-based suite above structurally
+          cannot reach (manifest/activation-event correctness — see ADR-0044 for
+          the empirical spike that found this gap). Never blocks merges or fails
+          required checks; a failure here is a signal to investigate, not a gate.
+
+          | | Result |
+          |-|--------|
+          | Real VS Code run | ${RESULT} |
+          | Commit | \`${SHA:0:7}\` |
+          EOF
