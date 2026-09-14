@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.113] - 2026-09-14
+
+### Added
+- **`adr:`/`seed:` links now open from outside VS Code, not just from inside it** — a new `vscode://jlumbroso.adrs4ai/open?target=<link>` handler (built for Pigeonhole, the estate's human inbox, but usable by anything that can launch a URL). A link naming a question opens the Open Questions panel navigated to it; a link naming just an ADR or seed reveals it in the sidebar tree — both configurable via the new `adrManager.deepLink.openIn` setting (`question-dialog` | `tree` | `markdown`), which also doubles as the plain-markdown off-switch. A target that can't be shown the preferred way — hidden by an active tree filter, or unresolvable altogether — always falls back to opening the file directly, loudly, never silently.
+
 ## [0.7.112] - 2026-09-06
 
 ### Fixed

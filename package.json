@@ -2,7 +2,7 @@
   "name": "adrs4ai",
   "displayName": "ADRs for AI",
   "description": "Your AI's reasoning stops evaporating: Every open question in your project's deliberation records, in one sidebar—with the options, the recommendation, and the reasons—answered in place, never lost.",
-  "version": "0.7.112",
+  "version": "0.7.113",
   "publisher": "jlumbroso",
   "license": "MIT",
   "icon": "media/adr-icon-pinion-256.png",
@@ -34,7 +34,8 @@
   "homepage": "https://adrs.systems",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "workspaceContains:**/docs/adr/*.md"
+    "workspaceContains:**/docs/adr/*.md",
+    "onUri"
   ],
   "contributes": {
     "viewsContainers": {
@@ -544,6 +545,22 @@
             "Click a question in the sidebar to jump straight to it in the ADR/seed file."
           ],
           "description": "Where clicking a question in the sidebar tree takes you. The panel is answerable in place; file access stays one right-click away either way (\"Go to Answer Field in File\")."
+        },
+        "adrManager.deepLink.openIn": {
+          "type": "string",
+          "scope": "resource",
+          "enum": [
+            "question-dialog",
+            "tree",
+            "markdown"
+          ],
+          "default": "question-dialog",
+          "enumDescriptions": [
+            "A vscode://.../open link naming a question opens the Open Questions panel, navigated to it; a link naming just an ADR/seed (no question) reveals it in the tree instead.",
+            "Always reveal and focus the target in the ADR Explorer tree, including the specific question when the link names one.",
+            "Always open the plain markdown file at the target's line — the off-switch, same as before this handler existed."
+          ],
+          "description": "Where opening a vscode://jlumbroso.adrs4ai/open?target=<adr://...> link (e.g. from Pigeonhole) lands. Falls back to the markdown file whenever the preferred surface can't show the target (hidden by a tree filter, or the link doesn't resolve at all) — never silently does nothing."
         },
         "adrManager.missingAnsBehavior": {
           "type": "string",
