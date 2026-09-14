@@ -84,9 +84,14 @@ export interface LedgerRecord {
    * catches whatever a handler throws and logs it here before VS Code's
    * own generic popup surfaces it — `payload.commandId` names which
    * command, so this one tag covers all of them without a new tag per
-   * command the way 'commit' got one for itself.
+   * command the way 'commit' got one for itself. 'uri-handler'
+   * (2026-09-14): a resolution failure reaching `vscode.window.
+   * registerUriHandler` — genuinely distinct from 'command' (no
+   * `registerCommand` call is involved; the entry point is an external
+   * `vscode://...` open, e.g. pigeonhole's), so it earns its own tag on
+   * the same reasoning as 'commit' and 'treeview' before it.
    */
-  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview' | 'commit' | 'command'
+  source: 'panel' | 'tour-resolver' | 'census' | 'write-fidelity' | 'roots-config' | 'mcp' | 'treeview' | 'commit' | 'command' | 'uri-handler'
   kind: string
   message: string
   /** Any file inside the owning root's docs/adr — decides which ledger this lands in. */

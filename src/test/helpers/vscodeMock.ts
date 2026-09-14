@@ -270,6 +270,7 @@ export const mockWindow = {
     dispose: vi.fn(),
   })),
   registerTerminalLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
+  registerUriHandler: vi.fn(() => ({ dispose: vi.fn() })),
   showTextDocument: vi.fn(async (doc: unknown, _opts?: unknown) => fakeTextEditor(doc as ReturnType<typeof fakeTextDocument>)),
   withProgress: vi.fn(async (_opts: unknown, task: (...a: unknown[]) => unknown) => task({ report: vi.fn() }, { isCancellationRequested: false })),
 }

@@ -39,6 +39,7 @@ import type { RootNode } from './index/compositeIndex'
 import type { Question } from './parser/types'
 import { AdrDocumentLinkProvider, registerOpenDeepLinkCommand } from './views/documentLinkProvider'
 import { registerAdrTerminalLinkProvider } from './views/terminalLinkProvider'
+import { registerDeepLinkUriHandler } from './views/deepLinkUriHandler'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
 import { resolveTourEntries, unresolvedTourRefs } from './index/tourIndex'
 import { resolveReference } from './mcp/reference'
@@ -641,6 +642,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.registerDocumentLinkProvider({ language: 'markdown' }, new AdrDocumentLinkProvider()),
     registerOpenDeepLinkCommand(resolveLink),
     registerAdrTerminalLinkProvider(),
+    registerDeepLinkUriHandler({
+      resolve: resolveLink,
+      treeView,
+      openQuestionDialog: (questionId) => {
+        if (!compositeIndex) return;
+        OpenQuestionsPanel.createOrShow(compositeIndex);
+        OpenQuestionsPanel.navigateTo(questionId);
+      },
+      // Same rootDir+adrDir+placeholder fallback anchorPathFromCommandArg
+      // uses when nothing more specific is known — re-read fresh per call
+      // (compositeIndex/the setting can both change mid-session).
+      defaultAnchorPath: () => {
+        const rootDir = compositeIndex?.root.path;
+        if (!rootDir) return undefined;
+        const adrDirRel = vscode.workspace.getConfiguration('adrManager').get<string>('adrDirectory', 'docs/adr');
+        return path.join(rootDir, adrDirRel, '.anchor-placeholder');
+      },
+    }),
 
     // ADR-0034: tour tree items pass their slug as the first argument
     // ("Walk Tour" command) — the plain sidebar/toolbar invocation passes
