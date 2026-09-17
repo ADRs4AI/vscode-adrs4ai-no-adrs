@@ -55,16 +55,32 @@ function text(value: string) {
   return { content: [{ type: 'text' as const, text: value }] }
 }
 
+// `__BUILD_SHA__` is a build-time constant (vite.mcp-server.config.ts's
+// `define`) — the git SHA this bundle was actually built from, `-dirty`
+// suffixed if the tree had uncommitted changes at build time. Never read at
+// runtime (no `.git` dependency in the portable bundle); baked in once, at
+// build time, which is also the right shape for a future published package
+// (embed at publish time, same as this).
+declare const __BUILD_SHA__: string
+
 // Read from the package alongside this file rather than a bundled JSON
 // import — this file ships as a single portable CJS bundle (dist/mcp-server.js)
 // and the repo's package.json is its only reliable version source at runtime.
 // Falls back to 'unknown' rather than throwing: a missing version stamp is
 // far less harmful than a server that won't start.
+//
+// Build-SHA-qualified (2026-09-16, Gadfly 5's ledger row): the bare semver
+// alone can't distinguish "this server reflects current source" from "this
+// process was spawned from a build made weeks ago and never restarted" —
+// exactly the gap that made two real, already-fixed parser behaviors look
+// like live bugs (docs/inbox/2026-09-10-0318-gadfly-...). The SHA makes that
+// question one `git log` away instead of a guess.
 function readServerVersion(): string {
   try {
     const pkgPath = path.join(__dirname, '..', 'package.json')
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-    return typeof pkg.version === 'string' ? pkg.version : 'unknown'
+    const version = typeof pkg.version === 'string' ? pkg.version : 'unknown'
+    return `${version} (${__BUILD_SHA__})`
   } catch {
     return 'unknown'
   }
