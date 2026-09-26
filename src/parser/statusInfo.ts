@@ -102,6 +102,25 @@ export function normalizeDocumentStatus(status: string | undefined): NormalizedD
 }
 
 /**
+ * ADR-0036's two question-level "not waiting on the human" tokens.
+ * Leading-token match (word boundary), tolerating a trailing annotation —
+ * the SAME tolerance `answered` has always had (ANSWERED_LEADING_TOKEN_RE)
+ * and document-level pause has (`isDocumentPausedStatus`). Found 2026-09-26
+ * from two independent founder Reports in two repos (moreover: "qualification
+ * of 'deferred' intrudes on parsing — is that normal?"; companion etude: "Do
+ * we have deferred? … doesn't it have a different glyph?"): every consumer
+ * compared the WHOLE status text for equality, so the canonical annotated
+ * form — `- Status: deferred — reason`, what the authoring skill itself
+ * teaches — never got the [deferred] tag, the history icon, or the
+ * `deferred.hideFromPanel` setting; only a bare `deferred` did. One
+ * recognizer, three consumers (tree tag, tree icon, panel hide).
+ */
+export function questionStatusToken(statusText: string | undefined): 'unresolved' | 'deferred' | undefined {
+  const m = statusText?.trim().match(/^(unresolved|deferred)\b/i)
+  return m ? (m[1].toLowerCase() as 'unresolved' | 'deferred') : undefined
+}
+
+/**
  * Category-header filter checkboxes (Facet's go-ahead, 2026-08-16, docs/
  * inbox/2026-08-16-facet-to-fitter-category-header-filters-unblocked-
  * plus-two-stuck-items.md — mechanism (a) from my own 2026-08-06 design

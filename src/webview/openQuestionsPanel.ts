@@ -20,6 +20,7 @@ import * as path from 'path'
 import * as os from 'os'
 import type { CompositeIndex } from '../index/compositeIndex'
 import type { AdrFile, SeedFile, Recommendation, Question } from '../parser/types'
+import { questionStatusToken } from '../parser/statusInfo'
 import { parseAdr, isDocumentPausedStatus } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
 import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
@@ -400,7 +401,7 @@ export class OpenQuestionsPanel {
    * invented word) always shows — recall-first, no exceptions.
    */
   private shouldHideFromPanel(q: Question): boolean {
-    const status = q.statusText?.trim().toLowerCase()
+    const status = questionStatusToken(q.statusText)
     if (status === 'unresolved') return vscode.workspace.getConfiguration('adrManager').get<boolean>('unresolved.hideFromPanel', false)
     if (status === 'deferred') return vscode.workspace.getConfiguration('adrManager').get<boolean>('deferred.hideFromPanel', false)
     return false

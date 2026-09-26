@@ -29,6 +29,11 @@ describe('openQuestionsPanel.ts: writeAnswer writes Status: unresolved on reques
 describe('openQuestionsPanel.ts: shouldHideFromPanel (hide-allowlist doctrine)', () => {
   const method = PANEL_SRC.match(/private shouldHideFromPanel\([\s\S]*?\n  \}/)![0]
 
+  it('recognizes the token via the shared leading-token helper, not whole-text equality — an annotated "deferred — reason" must count (2026-09-26, two founder Reports)', () => {
+    expect(method).toContain('questionStatusToken(q.statusText)')
+    expect(method).not.toContain('statusText?.trim().toLowerCase()')
+  })
+
   it('answered questions are already excluded upstream — this only ever gates unresolved/deferred', () => {
     expect(method).toContain("status === 'unresolved'")
     expect(method).toContain("status === 'deferred'")
@@ -58,6 +63,12 @@ describe('adrTreeProvider.ts: unresolved/deferred get their own icon + descripti
     expect(TREE_SRC).toContain("status === 'unresolved'")
     expect(TREE_SRC).toContain("new vscode.ThemeIcon('debug-pause'")
     expect(TREE_SRC).toContain("return '[unresolved]'")
+  })
+
+  it('both the tag and the icon use the shared leading-token helper, so an annotated "deferred — reason" gets them too (2026-09-26)', () => {
+    expect(TREE_SRC).toContain('questionStatusToken(question?.statusText)')
+    expect(TREE_SRC).toContain('questionStatusToken(opts.question.statusText)')
+    expect(TREE_SRC).not.toContain('statusText?.trim().toLowerCase()')
   })
 
   it('deferred: history icon, [deferred] description tag', () => {

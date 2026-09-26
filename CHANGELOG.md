@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.116] - 2026-09-26
+
+### Fixed
+- **A question marked `Status: deferred — <reason>` (or `unresolved — <reason>`) now gets its [deferred] tag, its own icon, and honors the "hide deferred questions from the panel" setting** — previously only a bare `deferred` did, so anyone following the template's annotated status form saw none of it. Reported independently from two different projects.
+
 ## [0.7.115] - 2026-09-26
 
 ### Fixed

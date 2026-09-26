@@ -39,7 +39,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import type { AdrFile, Question, SeedFile } from '../parser/types'
 import type { CompositeIndex, RootNode } from '../index/compositeIndex'
-import { statusEmoji, isSettledAdrStatus } from '../parser/statusInfo'
+import { statusEmoji, isSettledAdrStatus, questionStatusToken } from '../parser/statusInfo'
 import { statusThemeIcon } from './statusIcon'
 import { isDocumentPausedStatus } from '../parser/extractor'
 import { classifySeedAxis1, closedFamilyToken, type SeedAxis1State } from './seedLifecycle'
@@ -94,7 +94,7 @@ type AdrTreeItemOpts = {
  * `[done]` tour tags and ADR status brackets.
  */
 function statusDescriptionTag(question?: Question): string | null {
-  const status = question?.statusText?.trim().toLowerCase()
+  const status = questionStatusToken(question?.statusText)
   if (status === 'unresolved') return '[unresolved]'
   if (status === 'deferred') return '[deferred]'
   return null
@@ -553,7 +553,7 @@ export class AdrTreeItem extends vscode.TreeItem {
       // this ADR's Fitter completion brief) — distinct from the plain
       // open/answered question mark, since neither is really "waiting on
       // the human" the way an ordinary open question is.
-      const status = opts.question.statusText?.trim().toLowerCase()
+      const status = questionStatusToken(opts.question.statusText)
       if (status === 'unresolved') {
         return new vscode.ThemeIcon('debug-pause', new vscode.ThemeColor('charts.purple'))
       }

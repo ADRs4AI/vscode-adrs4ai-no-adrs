@@ -20,6 +20,7 @@ import {
   statusColorToken,
   requiresScopeRemaining,
   isSettledAdrStatus,
+  questionStatusToken,
 } from '../parser/statusInfo'
 
 describe('unknown-status fallback', () => {
@@ -106,5 +107,40 @@ describe('isSettledAdrStatus', () => {
   it('an unrecognized or missing status is NOT settled — recall-first, never hide something we can\'t classify', () => {
     expect(isSettledAdrStatus('Nonstandard')).toBe(false)
     expect(isSettledAdrStatus(undefined)).toBe(false)
+  })
+})
+
+// Two independent founder Reports, 2026-09-26, in two repos: moreover ("qualification of
+// 'deferred' intrudes on parsing — is that normal?") and the companion etude ("Do we have
+// deferred? … doesn't it have a different glyph? And should it be taken out of the round of
+// open questions?"). Same cause in both: the question-level tag, icon and hide-setting all
+// compared the WHOLE status text for equality, so the canonical annotated form the authoring
+// skill teaches — `- Status: deferred — <why>` — never got any of them; only a bare
+// `deferred` did. The status strings below are the two real specimens, verbatim.
+describe('Regression tests: questionStatusToken — annotated deferred/unresolved (2026-09-26)', () => {
+  it('a bare token is recognized (the only form that ever worked)', () => {
+    expect(questionStatusToken('deferred')).toBe('deferred')
+    expect(questionStatusToken('unresolved')).toBe('unresolved')
+  })
+
+  it('the real moreover specimen — "deferred — opened at his request…; revisit if…" — is recognized as deferred', () => {
+    expect(questionStatusToken('deferred — opened at his request in the QST-TRAILER-DEST answer; revisit if adoption brings harness operators who can\'t touch model prompts')).toBe('deferred')
+  })
+
+  it('the real companion-etude specimen — "deferred — transfer-at-fork recommended (2026-09-06 sweep; …)" — is recognized as deferred', () => {
+    expect(questionStatusToken('deferred — transfer-at-fork recommended (2026-09-06 sweep; see final Recommendation)')).toBe('deferred')
+  })
+
+  it('a parenthetical or dated annotation, and any casing, still recognize the token', () => {
+    expect(questionStatusToken('Unresolved (reopened 2026-08-07)')).toBe('unresolved')
+    expect(questionStatusToken('  DEFERRED - later')).toBe('deferred')
+  })
+
+  it('guards — the token must LEAD the value: a mention later in an answered/unanswered status never makes it deferred', () => {
+    expect(questionStatusToken('answered (deferred to ADR-0005)')).toBeUndefined()
+    expect(questionStatusToken('unanswered — routing to Relay 5')).toBeUndefined()
+    expect(questionStatusToken('undeferred')).toBeUndefined()
+    expect(questionStatusToken(undefined)).toBeUndefined()
+    expect(questionStatusToken('')).toBeUndefined()
   })
 })
