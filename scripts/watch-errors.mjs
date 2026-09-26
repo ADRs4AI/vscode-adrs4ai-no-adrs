@@ -32,16 +32,27 @@
  */
 
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { execFile } from 'node:child_process'
+import { findLogs, decideNewLines, loadState, saveState } from './watch-errors-core.mjs'
 
 const args = process.argv.slice(2)
 const pollIdx = args.indexOf('--poll-secs')
 const pollSecs = pollIdx >= 0 ? Number(args[pollIdx + 1]) : 15
 const wakeIdx = args.indexOf('--wake')
 const wakeAlias = wakeIdx >= 0 ? args[wakeIdx + 1] : null
+// 2026-09-26: discovery depth is a parameter (default 6, was a hard 2) — a
+// ledger four levels down (moreover) was invisible; see watch-errors-core.mjs.
+const depthIdx = args.indexOf('--depth')
+const maxDepth = depthIdx >= 0 ? Number(args[depthIdx + 1]) : 6
+// Persisted per-log line counts, so a restart CATCHES UP on what arrived while
+// the watcher was down instead of baselining it away (the 09-20 reboot gap).
+const stateIdx = args.indexOf('--state')
+const stateFile = stateIdx >= 0 ? args[stateIdx + 1] : path.join(os.homedir(), '.cache', 'adrs4ai', 'watch-errors-state.json')
+const startedAtMs = Date.now()
 const roots = args.filter((a, i) =>
-  !a.startsWith('--') && i !== pollIdx + 1 && i !== wakeIdx + 1)
+  !a.startsWith('--') && i !== pollIdx + 1 && i !== wakeIdx + 1 && i !== depthIdx + 1 && i !== stateIdx + 1)
 if (roots.length === 0) roots.push(process.cwd())
 
 // BUG FOUND IN PRODUCTION (2026-08-14, Gleaner self-audit, Jérémie's "you're
@@ -54,22 +65,7 @@ if (roots.length === 0) roots.push(process.cwd())
 // with a real depth-limited walk (matches the doc comment's own promise of
 // "two levels deep," which the old one-level early-return never actually
 // honored either).
-function findLogs(root, maxDepth = 2) {
-  const found = []
-  function walk(dir, depth) {
-    const direct = path.join(dir, 'docs', 'adr', '.working', 'errors.jsonl')
-    if (fs.existsSync(direct)) found.push(direct)
-    if (depth >= maxDepth) return
-    let entries = []
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-    for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
-      walk(path.join(dir, e.name), depth + 1)
-    }
-  }
-  walk(root, 0)
-  return found
-}
+// findLogs lives in watch-errors-core.mjs now (depth-limited walk; see its header).
 
 function describeRecord(r) {
   if (r.schema === 'error-record/2') {
@@ -96,54 +92,68 @@ function wake(alias, message) {
   })
 }
 
-// logPath -> last-seen line count. Established on first sight of each file
-// (whether at startup or a file created mid-run) — that count is the
-// baseline; only lines past it are new.
-const seen = new Map()
+// logPath -> last-seen line count, seeded from the state file so a restart
+// resumes where the last run stopped (catch-up) rather than re-baselining.
+const seen = loadState(stateFile)
 // logPath -> mtimeMs at last read, to skip re-reading unchanged files.
 const lastMtime = new Map()
 
-function lineCount(logPath) {
-  const text = fs.readFileSync(logPath, 'utf8')
-  return text.split('\n').filter(Boolean)
+// Directory walks are the expensive part; rediscover on a slower cadence than
+// the per-log stat, so new hives are still picked up within minutes.
+const DISCOVER_EVERY_MS = 5 * 60 * 1000
+let knownLogs = []
+let lastDiscoveredAt = 0
+function discover() {
+  if (Date.now() - lastDiscoveredAt < DISCOVER_EVERY_MS && knownLogs.length) return knownLogs
+  knownLogs = [...new Set(roots.flatMap((r) => findLogs(path.resolve(r), maxDepth)))]
+  lastDiscoveredAt = Date.now()
+  return knownLogs
+}
+
+function readLines(logPath) {
+  return fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean)
 }
 
 function sweepOnce(isStartup) {
-  for (const root of roots) {
-    for (const logPath of findLogs(path.resolve(root))) {
-      let stat
-      try { stat = fs.statSync(logPath) } catch { continue }
-      if (lastMtime.get(logPath) === stat.mtimeMs) continue
-      lastMtime.set(logPath, stat.mtimeMs)
+  let changed = false
+  const caughtUp = []
+  for (const logPath of discover()) {
+    let stat
+    try { stat = fs.statSync(logPath) } catch { continue }
+    if (lastMtime.get(logPath) === stat.mtimeMs) continue
+    lastMtime.set(logPath, stat.mtimeMs)
 
-      const lines = lineCount(logPath)
-      const baseline = seen.get(logPath)
-      if (baseline === undefined) {
-        seen.set(logPath, lines.length)
-        if (!isStartup) {
-          console.log(`\n🆕 new log discovered: ${logPath} (${lines.length} existing record(s), baseline set, not alerting)`)
-        }
-        continue
-      }
-      if (lines.length <= baseline) { seen.set(logPath, lines.length); continue }
-
-      const newLines = lines.slice(baseline)
-      seen.set(logPath, lines.length)
-      for (const line of newLines) {
-        let r
-        try { r = JSON.parse(line) } catch { console.error(`  ! unparseable new line in ${logPath}`); continue }
-        console.log(`\n📬 ${new Date().toISOString()}  ${logPath}`)
-        console.log(`   ${r.ts}  ${describeRecord(r)}`)
-        if (wakeAlias && r.kind === 'observation') {
-          const shortMsg = `New founder Report in ${path.basename(path.dirname(path.dirname(path.dirname(logPath))))}: "${(r.message ?? '').slice(0, 120)}"`
-          wake(wakeAlias, shortMsg)
-        }
+    const lines = readLines(logPath)
+    const { alertLines, nextSeen, kind } = decideNewLines({
+      lines, savedCount: seen.get(logPath), isStartup, startedAtMs,
+    })
+    if (seen.get(logPath) !== nextSeen) changed = true
+    seen.set(logPath, nextSeen)
+    if (kind === 'discovered') {
+      console.log(`\n🆕 new log discovered: ${logPath} (${lines.length} record(s); ${alertLines.length} stamped after this watcher started, alerting on those)`)
+    }
+    for (const line of alertLines) {
+      let r
+      try { r = JSON.parse(line) } catch { console.error(`  ! unparseable new line in ${logPath}`); continue }
+      console.log(`\n📬 ${new Date().toISOString()}${kind === 'catch-up' ? ' [CATCH-UP: arrived while the watcher was down]' : ''}  ${logPath}`)
+      console.log(`   ${r.ts}  ${describeRecord(r)}`)
+      if (wakeAlias && r.kind === 'observation') {
+        if (kind === 'catch-up') { caughtUp.push({ logPath, r }); continue }
+        const shortMsg = `New founder Report in ${path.basename(path.dirname(path.dirname(path.dirname(logPath))))}: "${(r.message ?? '').slice(0, 120)}"`
+        wake(wakeAlias, shortMsg)
       }
     }
   }
+  // One wake for the whole catch-up, not one per record (a restart after days
+  // down must not become a wake storm).
+  if (wakeAlias && caughtUp.length) {
+    const repos = [...new Set(caughtUp.map(({ logPath }) => path.basename(path.dirname(path.dirname(path.dirname(logPath))))))]
+    wake(wakeAlias, `CATCH-UP: ${caughtUp.length} founder Report(s) filed while the watcher was down, in ${repos.join(', ')} — run harvest-errors or read the watcher digest`)
+  }
+  if (changed) saveState(stateFile, seen)
 }
 
-console.log(`👁  watch-errors: polling ${roots.length} root(s) every ${pollSecs}s${wakeAlias ? ` (waking '${wakeAlias}' on new founder Reports)` : ''}`)
+console.log(`👁  watch-errors: polling ${roots.length} root(s) (depth ${maxDepth}, state ${stateFile}) every ${pollSecs}s${wakeAlias ? ` (waking '${wakeAlias}' on new founder Reports)` : ''}`)
 sweepOnce(true)
 console.log(`   baseline set — ${[...seen.values()].reduce((a, b) => a + b, 0)} existing record(s) across ${seen.size} log(s), not alerted on`)
 setInterval(() => sweepOnce(false), pollSecs * 1000)
