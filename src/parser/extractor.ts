@@ -1651,6 +1651,31 @@ export function extractQuestion(
       const recQualifier = recMatch[1]?.trim();
       let inlineAttribution = recMatch[2]?.trim();
       let firstLine = recMatch[3].trim();
+      // Wrapped attribution (Jérémie's live Report from moreover's ADR
+      // manager, 2026-09-26, QST-VERB-RECUT: "The recommendation after the
+      // 'Recommendation' header seems not to have been parsed correctly
+      // because multiline header?" — his hypothesis was exactly right):
+      // an attribution parenthetical hard-wrapped across lines ("(by Ribbon
+      // 5, Claude Fable 5 — revised same-day;\nthis walks forward … )") never
+      // closed on its first line, so neither REC_ATTRIBUTION_RE nor the
+      // leading-qualifier fallback below could match; the author fell back to
+      // Deciders-inference, the attribution's first line leaked into the rec
+      // body, and — because the block was then read as legacy form, which ends
+      // at the first blank line — the actual recommendation paragraph spilled
+      // into rawBodyPost, outside the styled block. Hard-wrapping a long
+      // attribution is ordinary model output, not a malformation. Join the
+      // continuation lines up to the closing ")" (bounded: no blank line, at
+      // most 6 lines) before recognizing it, exactly as if it had been written
+      // on one line. Not a warning: nothing here is worth nagging about.
+      if (/^\((?:[A-Za-z]+\s+){0,2}(?:by|from)\b/i.test(firstLine) && !firstLine.includes(')')) {
+        let joined = firstLine;
+        for (let k = i + 1; k < lines.length && k <= i + 6; k++) {
+          const next = lines[k].trim();
+          if (next === '') break;
+          joined += ' ' + next;
+          if (next.includes(')')) { firstLine = joined; i = k; break; }
+        }
+      }
       recProtocolForm = REC_ATTRIBUTION_RE.test(firstLine);
       // Fourth attribution position (HQ ADR-0015 QST-7, 2026-07-25):
       // "**Recommendation**: (by Consul 5, Iteration 18, reviewed by

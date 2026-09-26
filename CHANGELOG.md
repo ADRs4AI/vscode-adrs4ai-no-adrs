@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.115] - 2026-09-26
+
+### Fixed
+- **A Recommendation whose "(by …)" attribution wraps across several lines is now recognized whole.** Previously the author was lost, the first attribution line leaked into the recommendation text, and the actual recommendation paragraph spilled out below the styled block. Hard-wrapped attributions are ordinary model output; they now read exactly like single-line ones.
+
 ## [0.7.114] - 2026-09-26
 
 ### Fixed

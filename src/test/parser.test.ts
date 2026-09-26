@@ -2612,6 +2612,64 @@ describe('Open Follow-ups subtype fields (Loftsman/ios-client catch, 2026-07-20)
   })
 })
 
+// Jérémie's live Report from moreover's ADR manager, 2026-09-26 (QST-VERB-RECUT
+// in seed-2026-09-26-the-reporting-pipeline-standard.md): "The recommendation
+// after the 'Recommendation' header seems not to have been parsed correctly
+// because multiline header?" — right on the diagnosis. A Recommendation whose
+// "(by …)" attribution parenthetical is hard-wrapped across lines never
+// closed on its first line, so it was not recognized as an attribution: the
+// author fell back to Deciders-inference, the first attribution line leaked
+// into the recommendation body, and the recommendation paragraph itself
+// spilled out into rawBodyPost (legacy form ends at the first blank line).
+// Reproduced against the real file before the fix (author undefined, rec text
+// starting "(by Ribbon 5…", pick paragraph in rawBodyPost).
+describe('Regression tests: hard-wrapped Recommendation attribution (moreover QST-VERB-RECUT, 2026-09-26)', () => {
+  const wrap = (header: string, tail = '') => [
+    '## Questions', '', '### QST: One verb or two?', '- Status: unanswered', '',
+    header, '',
+    '**C — the census cut.** Because the data says so.', '',
+    ...(tail ? [tail, ''] : []),
+    '**ANS:** (by )', '[Fill this in]', '',
+  ].join('\n')
+
+  it('an attribution wrapped over several lines WITH bold markup inside — the real shape — is recognized whole, and the pick paragraph stays inside the recommendation', () => {
+    const doc = wrap('**Recommendation**: (by Ribbon 5, Claude Fable 5 — revised same-day;\n**this walks forward from A to C** on Gleaner 5\'s census, which fired\nthe naming authority\'s own falsifier: a real corpus named the third kind)')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.recommendations).toHaveLength(1)
+    expect(q.recommendations![0].author).toContain('Ribbon 5, Claude Fable 5')
+    expect(q.recommendations![0].author).toContain('a real corpus named the third kind')
+    expect(q.recommendations![0].text.startsWith('**C — the census cut.**')).toBe(true)
+    expect(q.rawBodyPost).toBeUndefined() // the pick did not spill out of the styled block
+  })
+
+  it('the minimal trigger is the line wrap alone — a two-line plain attribution (no bold) fails the same way without the fix', () => {
+    const doc = wrap('**Recommendation**: (by Ribbon 5, Claude Fable 5 —\nrevised same-day)')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.recommendations![0].author).toBe('Ribbon 5, Claude Fable 5 — revised same-day')
+    expect(q.recommendations![0].text).toBe('**C — the census cut.** Because the data says so.')
+  })
+
+  it('a stacked SECOND recommendation after a wrapped one still parses — consuming the continuation lines must not eat the next block boundary', () => {
+    const doc = [
+      '## Questions', '', '### QST: Q?', '- Status: unanswered', '',
+      '**Recommendation**: (by Ribbon 5,', 'revised same-day)', '', 'First pick.', '',
+      '**Recommendation**: (by Flint 5)', '', 'Second pick.', '',
+      '**ANS:** (by )', '[Fill this in]', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.recommendations).toHaveLength(2)
+    expect(q.recommendations![0].text).toBe('First pick.')
+    expect(q.recommendations![1].author).toBe('Flint 5')
+  })
+
+  it('guard: an unclosed "(by" that hits a blank line before any ")" is NOT stitched across paragraphs — the bound holds', () => {
+    const doc = wrap('**Recommendation**: (by the way, option C is best')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.recommendations).toHaveLength(1)
+    expect(q.recommendations![0].text).not.toContain('census cut') // second paragraph was not swallowed into a fake attribution
+  })
+})
+
 describe('Fourth rec-attribution position + roster-aware Deciders (HQ ADR-0015 QST-7, 2026-07-25)', () => {
   describe('Regression tests', () => {
     it('"**Recommendation**: (by X, Y) content" — attribution AFTER the colon, same line — parses with the whole parenthetical as author, spans paragraphs', () => {
