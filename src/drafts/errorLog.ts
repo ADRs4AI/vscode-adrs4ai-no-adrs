@@ -142,6 +142,25 @@ export function appendLedgerRecord(record: LedgerRecord): string | undefined {
   }
 }
 
+/**
+ * Reporter-facing "where did my filing go" string, for the confirmation toast.
+ * Founder question, moreover, 2026-09-26: "I've been trying to report things
+ * from moreover's ADR manager, but can't figure out where it's filed. I don't
+ * see an error." The reports WERE landing — the only confirmation was a
+ * 3-second "reported" that never said where — and the MCP report_observation
+ * tool already tells a model exactly where its filing landed ("Observation
+ * recorded to <path>"); the human channels didn't. Pure, so the string itself
+ * is unit-tested. With the owning root known: "<root-name>/docs/adr/.working/
+ * errors.jsonl"; without it: the last four path segments.
+ */
+export function describeLedgerLocation(logPath: string, rootPath?: string): string {
+  if (rootPath) {
+    const rel = path.relative(rootPath, logPath)
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return [path.basename(rootPath), ...rel.split(path.sep)].join('/')
+  }
+  return logPath.split(path.sep).slice(-4).join('/')
+}
+
 /** The owning root's error log path for a given ADR/seed file. */
 export function errorLogPathFor(adrPath: string): string {
   return path.join(path.dirname(adrPath), '.working', 'errors.jsonl')

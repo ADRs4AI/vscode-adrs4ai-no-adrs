@@ -30,7 +30,7 @@ import { CompositeIndex } from './index/compositeIndex'
 import { isAdrBasename, isSeedBasename, isDirectChildOf } from './index/fileGuards'
 import { startRootWatcherLifecycle, type RootWatcherLifecycleController } from './watchers/rootWatcherLifecycle'
 import { AdrTreeProvider, captureFullTree, type AdrTreeItem } from './views/adrTreeProvider'
-import { appendLedgerRecord, captureDocument } from './drafts/errorLog'
+import { appendLedgerRecord, captureDocument, describeLedgerLocation } from './drafts/errorLog'
 import { aggregateOpenQuestionCount, QUESTION_SOURCES, type SourceInclusion } from './index/questionSource'
 import { addBlockEntry, removeBlockEntry, relativeRootPath } from './index/rootsConfigWriter'
 import { buildLocalAdrRef, buildLocalSeedRef, buildXProjectAdrRef, buildCanonicalRef, seedSlugFromPath } from './deeplink/protocol'
@@ -2161,7 +2161,7 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
     // reporter" question (docs/inbox/2026-09-26-*-gleaner-to-ribbon-*).
     // registerLoggedCommand already checks this same return value.
     if (written) {
-      vscode.window.setStatusBarMessage('ADR Manager: Tree item reported.', 3000);
+      vscode.window.setStatusBarMessage(`ADR Manager: Tree item reported — saved to ${describeLedgerLocation(written, compositeIndex?.findRoot(anchorPath)?.path)}`, 6000);
     } else {
       outputChannel?.appendLine(`[report] ledger write FAILED for item kind=${item.kind} id=${item.id ?? '(no id)'} anchor=${anchorPath} — reporter was warned`);
       vscode.window.showWarningMessage(`ADR Manager: your report was NOT saved (the error ledger for this project isn't writable) — nothing was recorded.${note ? ` Your note, so it isn't lost: "${note.slice(0, 300)}"` : ''}`);

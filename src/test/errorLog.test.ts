@@ -21,6 +21,7 @@ import {
   captureDocument,
   errorSignature,
   type PanelErrorRecord,
+  describeLedgerLocation,
   type LedgerRecord,
 } from '../drafts/errorLog'
 
@@ -230,5 +231,25 @@ describe('errorSignature — retry-storm dedupe key', () => {
     const withQ = errorSignature('workspace-edit-rejected', '/repo/docs/adr/0028-x.md', 'q-1', 'edit refused')
     expect(withoutQ1).toBe(withoutQ2)
     expect(withoutQ1).not.toBe(withQ)
+  })
+})
+
+// Founder question, moreover, 2026-09-26: "I've been trying to report things from
+// moreover's ADR manager, but can't figure out where it's filed. I don't see an
+// error." The reports WERE landing (four of them sat in moreover's ledger); the
+// only confirmation was a 3-second "reported" that never said where.
+describe('describeLedgerLocation — the reporter-facing "where did my filing go" string', () => {
+  it('with the owning root known: "<root-name>/docs/adr/.working/errors.jsonl" — the real moreover layout', () => {
+    const root = '/Users/x/Programming/lumbroso/lumbroso-hq/subprojects/commons-hq/subprojects/moreover'
+    expect(describeLedgerLocation(`${root}/docs/adr/.working/errors.jsonl`, root)).toBe('moreover/docs/adr/.working/errors.jsonl')
+  })
+
+  it('a custom ADR directory is reflected, not assumed', () => {
+    expect(describeLedgerLocation('/w/proj/decisions/.working/errors.jsonl', '/w/proj')).toBe('proj/decisions/.working/errors.jsonl')
+  })
+
+  it('without a known root (or a root that does not contain the ledger) it falls back to the last four path segments', () => {
+    expect(describeLedgerLocation('/a/b/c/docs/adr/.working/errors.jsonl')).toBe('docs/adr/.working/errors.jsonl')
+    expect(describeLedgerLocation('/a/b/docs/adr/.working/errors.jsonl', '/somewhere/else')).toBe('docs/adr/.working/errors.jsonl')
   })
 })

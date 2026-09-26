@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.118] - 2026-09-26
+
+### Changed
+- **The Report confirmation now says where your report was saved** ("Observation recorded — saved to moreover/docs/adr/.working/errors.jsonl") and stays up for six seconds instead of three. Previously it only said "reported", which left no way to tell where it had gone — or whether it had.
+
 ## [0.7.117] - 2026-09-26
 
 ### Fixed

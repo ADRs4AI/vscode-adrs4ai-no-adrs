@@ -32,7 +32,14 @@ describe('openQuestionsPanel.ts: reportObservation never announces success over 
   })
 
   it('the "recorded" status message is conditional on that return value', () => {
-    expect(fn).toMatch(/if \(written\) \{\s*vscode\.window\.setStatusBarMessage\('ADR Manager: Observation recorded\.'/)
+    expect(fn).toMatch(/if \(written\) \{\s*vscode\.window\.setStatusBarMessage\(`ADR Manager: Observation recorded — saved to \$\{describeLedgerLocation\(written,/)
+  })
+
+  // Founder question, moreover, 2026-09-26: "can't figure out where it's filed.
+  // I don't see an error." The reports were landing; the confirmation never
+  // said where (and lasted 3 seconds). The MCP tool already reports its path.
+  it('the success toast names WHERE the report was saved, not just that it was', () => {
+    expect(fn).toContain('describeLedgerLocation(written, this.composite.findRoot(msg.adrPath)?.path)')
   })
 
   it('the failed-write branch warns the reporter and echoes their note back so it is not lost', () => {

@@ -30,7 +30,7 @@ import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
 import { resolveTourEntries, isTourDone, unresolvedTourRefs, referencedDocumentPaths, tourLedgerAnchor, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
-import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature } from '../drafts/errorLog'
+import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature, describeLedgerLocation } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 import { computeRootCaptions, type RootCaptionMode } from '../views/rootCaption'
 import { OPEN_DEEP_LINK_COMMAND } from '../views/documentLinkProvider'
@@ -774,7 +774,7 @@ export class OpenQuestionsPanel {
       // Found 2026-09-26 answering Ribbon 5's "what must a conforming tool
       // tell the reporter" question; the tree-item Report had the same gap.
       if (written) {
-        vscode.window.setStatusBarMessage('ADR Manager: Observation recorded.', 3000)
+        vscode.window.setStatusBarMessage(`ADR Manager: Observation recorded — saved to ${describeLedgerLocation(written, this.composite.findRoot(msg.adrPath)?.path)}`, 6000)
       } else {
         vscode.window.showWarningMessage(`ADR Manager: your report was NOT saved (the error ledger for this project isn't writable) — nothing was recorded.${note ? ` Your note, so it isn't lost: "${note.slice(0, 300)}"` : ''}`)
       }
