@@ -41,6 +41,7 @@ import {
   resetVscodeMock,
   resetInteractionState,
   mockWorkspace,
+  mockWindow,
   queueInputBox,
   queueQuickPick,
   queueWarningMessage,
@@ -299,6 +300,39 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       expect(record.kind).toBe('observation')
       expect(record.message).toBe('smoke-test observation')
       expect(record.source).toBe('treeview')
+    })
+
+    // Regression (2026-09-26, found answering Ribbon 5's "what must a
+    // conforming tool tell the reporter" question): appendLedgerRecord is
+    // failure-soft — it RETURNS undefined on a failed write rather than
+    // throwing — and reportTreeItem announced "Tree item reported." right
+    // after it without looking at the result. With an unwritable ledger the
+    // reporter was told their report was collected when it went nowhere:
+    // the founding scar (a Report believed collected that was not),
+    // reproduced inside the capture path. Making errors.jsonl a DIRECTORY
+    // is a real, cheap way to make the append fail (EISDIR).
+    it('an unwritable ledger is NOT announced as success — the reporter is warned, with their note echoed so it is not lost', async () => {
+      resetInteractionState()
+      setConfigOverride('adrManager.logging.observations', true)
+      queueInputBox('note that must not be silently lost')
+      const ledgerPath = path.join(workspaceRoot, 'docs', 'adr', '.working', 'errors.jsonl')
+      const backupPath = ledgerPath + '.bak-smoke'
+      const hadLedger = fs.existsSync(ledgerPath)
+      if (hadLedger) fs.renameSync(ledgerPath, backupPath)
+      fs.mkdirSync(ledgerPath, { recursive: true })
+      vi.mocked(mockWindow.setStatusBarMessage).mockClear()
+      vi.mocked(mockWindow.showWarningMessage).mockClear()
+      try {
+        const handler = getRegisteredCommand('adrManager.reportTreeItem')!
+        await handler(fixtures().adr)
+        const statusMessages = vi.mocked(mockWindow.setStatusBarMessage).mock.calls.map(c => String(c[0]))
+        expect(statusMessages.some(m => m.includes('Tree item reported'))).toBe(false)
+        const warnings = vi.mocked(mockWindow.showWarningMessage).mock.calls.map(c => String(c[0]))
+        expect(warnings.some(m => m.includes('NOT saved') && m.includes('note that must not be silently lost'))).toBe(true)
+      } finally {
+        fs.rmSync(ledgerPath, { recursive: true, force: true })
+        if (hadLedger) fs.renameSync(backupPath, ledgerPath)
+      }
     })
   })
 

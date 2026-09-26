@@ -2117,7 +2117,7 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
       ? resolveReportOpenQuestions(filePath)?.map(q => ({ id: q.id, text: q.text, status: q.statusText }))
       : undefined;
 
-    appendLedgerRecord({
+    const written = appendLedgerRecord({
       schema: 'error-record/2',
       ts: new Date().toISOString(),
       extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
@@ -2134,7 +2134,21 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
       },
       documents: doc && filePath ? { [filePath]: doc } : undefined,
     });
-    vscode.window.setStatusBarMessage('ADR Manager: Tree item reported.', 3000);
+    // appendLedgerRecord is failure-soft by contract — it RETURNS undefined
+    // on a failed write instead of throwing. This line used to announce
+    // success unconditionally, so an unwritable ledger produced a false
+    // "Tree item reported." toast over a report that went nowhere: the
+    // founding scar (a Report the reporter believed was collected, that was
+    // not) reproduced inside the capture path itself. Found 2026-09-26
+    // while answering Ribbon 5's "what must a conforming tool tell the
+    // reporter" question (docs/inbox/2026-09-26-*-gleaner-to-ribbon-*).
+    // registerLoggedCommand already checks this same return value.
+    if (written) {
+      vscode.window.setStatusBarMessage('ADR Manager: Tree item reported.', 3000);
+    } else {
+      outputChannel?.appendLine(`[report] ledger write FAILED for item kind=${item.kind} id=${item.id ?? '(no id)'} anchor=${anchorPath} — reporter was warned`);
+      vscode.window.showWarningMessage(`ADR Manager: your report was NOT saved (the error ledger for this project isn't writable) — nothing was recorded.${note ? ` Your note, so it isn't lost: "${note.slice(0, 300)}"` : ''}`);
+    }
   } catch (err) {
     // failure-soft: reporting a problem must never itself become one — but
     // "never itself become one" doesn't mean "leave zero trace." Gleaner's

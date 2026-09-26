@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.114] - 2026-09-26
+
+### Fixed
+- **The Report buttons no longer say "recorded" when nothing was recorded.** Both the panel's Report and the sidebar's Report announced success right after writing to the project's error ledger without checking whether the write actually happened — so an unwritable ledger produced a "reported" confirmation over a report that went nowhere. A failed save now warns you, echoing your note back so you can keep it; and the panel Report's catch-all, which used to swallow any error with no trace, now tells you too.
+
 ## [0.7.113] - 2026-09-14
 
 ### Added

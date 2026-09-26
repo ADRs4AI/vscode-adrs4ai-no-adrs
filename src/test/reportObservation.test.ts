@@ -54,7 +54,7 @@ describe('openQuestionsPanel.ts: reportObservation (ADR-0035 Iteration 3)', () =
   })
 
   it('is wrapped in try/catch — failure-soft, reporting a problem must never itself become one', () => {
-    expect(method).toMatch(/try \{[\s\S]*\} catch \{/)
+    expect(method).toMatch(/try \{[\s\S]*\} catch(?: \(\w+\))? \{/) // `catch (err)` since 2026-09-26: the catch now warns the reporter instead of silently dropping
   })
 
   it('the report button is gated by adrManager.reportButton.enabled, default false', () => {

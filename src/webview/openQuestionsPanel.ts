@@ -756,7 +756,7 @@ export class OpenQuestionsPanel {
     const message = note || 'manual user report from open dialog'
     try {
       const doc = captureDocument(msg.adrPath)
-      appendLedgerRecord({
+      const written = appendLedgerRecord({
         schema: 'error-record/2',
         ts: new Date().toISOString(),
         extensionVersion: vscode.extensions.getExtension('jlumbroso.adrs4ai')?.packageJSON?.version,
@@ -767,9 +767,22 @@ export class OpenQuestionsPanel {
         payload: { questionId: msg.questionId, draftKey: msg.draftKey, note: note || undefined, renderedHtml: msg.renderedHtml },
         documents: doc ? { [msg.adrPath]: doc } : undefined,
       })
-      vscode.window.setStatusBarMessage('ADR Manager: Observation recorded.', 3000)
-    } catch {
-      /* failure-soft: reporting a problem must never itself become one */
+      // appendLedgerRecord RETURNS undefined on a failed write (failure-soft
+      // by contract, never throws) — this used to announce "recorded"
+      // unconditionally, a false success over a report that went nowhere.
+      // Found 2026-09-26 answering Ribbon 5's "what must a conforming tool
+      // tell the reporter" question; the tree-item Report had the same gap.
+      if (written) {
+        vscode.window.setStatusBarMessage('ADR Manager: Observation recorded.', 3000)
+      } else {
+        vscode.window.showWarningMessage(`ADR Manager: your report was NOT saved (the error ledger for this project isn't writable) — nothing was recorded.${note ? ` Your note, so it isn't lost: "${note.slice(0, 300)}"` : ''}`)
+      }
+    } catch (err) {
+      // failure-soft: reporting a problem must never itself become one — but
+      // this catch used to leave literally zero trace (no log line, no
+      // message), the one place in the capture path where a silent drop was
+      // still possible. Tell the reporter, quietly and without throwing.
+      vscode.window.showWarningMessage(`ADR Manager: your report may NOT have been saved (${err instanceof Error ? err.message : String(err)}).`)
     }
   }
 
