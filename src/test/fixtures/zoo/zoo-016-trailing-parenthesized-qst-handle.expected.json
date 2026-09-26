@@ -1,0 +1,106 @@
+{
+  "fixture": "zoo-016-trailing-parenthesized-qst-handle.md",
+  "ruling": "docs/QST-DETECTION-LEDGER.md — trailing (QST-PETNAME) dialect, RULED 2026-09-26 (Riddle 5), A amended, six clauses. Founder Report 2026-09-13 (companion etude).",
+  "binds_every_implementation": "extension parser (src/parser/extractor.ts), MCP write-locator (aliasSlug), HQ qst-lint.py (ADR-0012 lockstep). Hand-verified against the ruling, not generated.",
+  "notes": [
+    "`slug` is the canonical, deterministic id component (Question.id = adr-<NNNN>-<slug>): derived from the heading's BYTES ALONE, never from the alias (clause 1, fossil law). The petname stays inside the long slug.",
+    "`qstId` / `aliasSlug` are set only when the alias BOUND; null otherwise.",
+    "`displayText` is the title with a BOUND trailing alias stripped; an unbound trailing petname stays in the title.",
+    "The canonical `id` slug of an accented heading is the existing slugify() derivation (non-ASCII deleted) — untouched by this ruling; REFKEY-GRAMMAR's transliteration is a separate ratification.",
+    "`warnings` lists parse-warning codes attributed to that heading's line."
+  ],
+  "headings": [
+    {
+      "heading": "QST: Should the Rust service be a gRPC server too? (QST-RUST-GRPC-SERVER)",
+      "slug": "qst-should-the-rust-service-be-a-grpc-server-too-qst-rust-grpc-server",
+      "qstId": "RUST-GRPC-SERVER",
+      "aliasSlug": "qst-rust-grpc-server",
+      "displayText": "Should the Rust service be a gRPC server too?",
+      "warnings": []
+    },
+    {
+      "heading": "QST: Which store do we use? (qst-store)",
+      "slug": "qst-which-store-do-we-use-qst-store",
+      "qstId": "STORE",
+      "aliasSlug": "qst-store",
+      "displayText": "Which store do we use?",
+      "warnings": []
+    },
+    {
+      "heading": "QST-LEAD: Does a leading handle outrank a trailing one? (QST-TRAIL)",
+      "slug": "qst-lead",
+      "qstId": "LEAD",
+      "aliasSlug": null,
+      "displayText": "Does a leading handle outrank a trailing one? (QST-TRAIL)",
+      "warnings": ["ALIAS_HANDLE_COLLISION"]
+    },
+    {
+      "heading": "QST: First claimant of a shared petname? (QST-DUP)",
+      "slug": "qst-first-claimant-of-a-shared-petname-qst-dup",
+      "qstId": null,
+      "aliasSlug": null,
+      "displayText": "First claimant of a shared petname? (QST-DUP)",
+      "warnings": ["ALIAS_HANDLE_COLLISION"]
+    },
+    {
+      "heading": "QST: Second claimant of a shared petname? (QST-DUP)",
+      "slug": "qst-second-claimant-of-a-shared-petname-qst-dup",
+      "qstId": null,
+      "aliasSlug": null,
+      "displayText": "Second claimant of a shared petname? (QST-DUP)",
+      "warnings": ["ALIAS_HANDLE_COLLISION"]
+    },
+    {
+      "heading": "QST: Is a mid-text (QST-MID) parenthetical a handle?",
+      "slug": "qst-is-a-mid-text-qst-mid-parenthetical-a-handle",
+      "qstId": null,
+      "aliasSlug": null,
+      "displayText": "Is a mid-text (QST-MID) parenthetical a handle?",
+      "warnings": []
+    },
+    {
+      "heading": "QST: Is an over-long petname a handle? (QST-THIS-PETNAME-IS-FAR-TOO-LONG-FOR-THE-GRAMMAR)",
+      "slug": "qst-is-an-over-long-petname-a-handle-qst-this-petname-is-far-too-long-for-the-grammar",
+      "qstId": null,
+      "aliasSlug": null,
+      "displayText": "Is an over-long petname a handle? (QST-THIS-PETNAME-IS-FAR-TOO-LONG-FOR-THE-GRAMMAR)",
+      "warnings": []
+    },
+    {
+      "heading": "QST: Does an accented petname fold like a leading one? (QST-JÉRÉMIE)",
+      "slug": "qst-does-an-accented-petname-fold-like-a-leading-one-qst-jrmie",
+      "qstId": "JEREMIE",
+      "aliasSlug": "qst-jeremie",
+      "displayText": "Does an accented petname fold like a leading one?",
+      "warnings": []
+    },
+    {
+      "heading": "QST-OWNED: A question that owns the handle a trailing alias wants?",
+      "slug": "qst-owned",
+      "qstId": "OWNED",
+      "aliasSlug": null,
+      "displayText": "A question that owns the handle a trailing alias wants?",
+      "warnings": []
+    },
+    {
+      "heading": "QST: Can a trailing alias shadow another question's own handle? (QST-OWNED)",
+      "slug": "qst-can-a-trailing-alias-shadow-another-questions-own-handle-qst-owned",
+      "qstId": null,
+      "aliasSlug": null,
+      "displayText": "Can a trailing alias shadow another question's own handle? (QST-OWNED)",
+      "warnings": ["ALIAS_HANDLE_COLLISION"]
+    }
+  ],
+  "exactAnchorsThatMustResolve": {
+    "qst-rust-grpc-server": 0,
+    "qst-should-the-rust-service-be-a-grpc-server-too-qst-rust-grpc-server": 0,
+    "qst-store": 1,
+    "qst-lead": 2,
+    "qst-jeremie": 7,
+    "qst-owned": 8
+  },
+  "anchorsNoQuestionOwns": {
+    "note": "No question's slug or aliasSlug EQUALS these — exact-match resolvers must not bind them. (The MCP resolver's separate, pre-existing case-insensitive SUBSTRING fallback may still land near them, e.g. 'qst-dup' hits both long slugs and returns `ambiguous` — that is that fallback's own honest behavior, not a binding.)",
+    "anchors": ["qst-trail", "qst-dup", "qst-mid"]
+  }
+}

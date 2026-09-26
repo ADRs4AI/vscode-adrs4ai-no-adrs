@@ -75,6 +75,18 @@ export interface ViolationHandler {
   readonly id: string
   /** Handler IDs that must run (and fix) before this handler runs */
   readonly dependsOn?: readonly string[]
+  /**
+   * Whether Coordinator.processAll (and so the bulk "Normalize to adr
+   * format" Quick Fix) may apply this handler's patches. Default true.
+   * `false` = SUGGEST-ONLY: the violation is still detected and shown as a
+   * diagnostic, but its fix is offered per record, one at a time, at the
+   * author's choice — for fixes with a cost the author must weigh, e.g.
+   * D9.8 (migrating a trailing "(QST-PETNAME)" to a leading handle changes
+   * the question's id; ledger ruling 2026-09-26, clause 5: "never bulk").
+   */
+  readonly bulkApply?: boolean
+  /** Title of the per-record Quick Fix offered for a suggest-only handler (`bulkApply === false`). State the cost here if there is one. */
+  readonly quickFixTitle?: string
   /** One-line description of the deviation this handler addresses */
   readonly description: string
 

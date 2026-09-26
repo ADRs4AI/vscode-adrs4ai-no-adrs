@@ -130,7 +130,13 @@ function resolveAnchorInAdr(adr: AdrFile, anchor: string): ResolvedSection | Res
 
   // Exact match on a Question's own slug (always heading-derived — the
   // override lives on the AdrSection, never on the Question object).
-  const questionByOwnSlug = adr.questions.find((q) => q.slug === anchor)
+  // A bound trailing "(QST-PETNAME)" alias (ledger ruling 2026-09-26,
+  // clause 1/4) resolves as `#qst-<petname>` too — exact-match only, and
+  // AFTER the canonical slug, though by construction the parser never
+  // binds an alias equal to any section's slug/anchor, so the two can't
+  // actually conflict.
+  const questionByOwnSlug =
+    adr.questions.find((q) => q.slug === anchor) ?? adr.questions.find((q) => q.aliasSlug === anchor)
 
   // Exact match on a section's *effective* anchor (override-first
   // precedence, per Cairn's catch). If that section is itself a QST node,
@@ -395,7 +401,9 @@ export function resolveReference(ctx: RepositoryContext, rawRef: string): Resolv
     // SeedFile carries `questions` but not `sections`, so a question is the
     // only sub-node the model can currently name.
     if (parsed.anchor) {
-      const question = seed.questions.find((q) => q.slug === parsed.anchor)
+      const question =
+        seed.questions.find((q) => q.slug === parsed.anchor) ??
+        seed.questions.find((q) => q.aliasSlug === parsed.anchor) // bound trailing "(QST-PETNAME)" alias
       if (question) return { kind: 'question', container: { kind: 'seed', seed }, question }
       // A named-but-unmatched anchor is an ERROR, never a silent widening to
       // the whole seed: doctrine 3 promises a visible broken-reference row,

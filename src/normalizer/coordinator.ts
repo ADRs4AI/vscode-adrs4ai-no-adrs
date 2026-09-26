@@ -45,6 +45,10 @@ export class Coordinator {
     const patches: Patch[] = []
 
     for (const handler of ordered) {
+      // Suggest-only handlers (bulkApply === false) are detected by
+      // detectAll() for their diagnostics but NEVER applied in bulk — their
+      // fix has a cost the author must choose (see ViolationHandler.bulkApply).
+      if (handler.bulkApply === false) continue
       const recs = handler.detect(content, parseResult)
       for (const rec of recs) {
         const patch = handler.fix(content, rec)
@@ -55,6 +59,29 @@ export class Coordinator {
 
     const result = applyPatches(content, patches)
     return { result, records, patches }
+  }
+
+  /** Title for a suggest-only handler's per-record Quick Fix (states the cost, when there is one). */
+  quickFixTitle(handlerId: string): string {
+    return this.handlers.find(h => h.id === handlerId)?.quickFixTitle ?? 'Apply this suggested fix'
+  }
+
+  /** IDs of handlers whose fixes are suggest-only (never part of processAll). */
+  suggestOnlyHandlerIds(): ReadonlySet<string> {
+    return new Set(this.handlers.filter(h => h.bulkApply === false).map(h => h.id))
+  }
+
+  /**
+   * The patch for ONE violation of ONE handler, found by its heading/line —
+   * the per-record path a suggest-only fix is offered through. Undefined when
+   * the handler is unknown or no longer detects a violation on that line (a
+   * stale diagnostic must not apply a guess).
+   */
+  processOne(content: string, parseResult: AdrFile, handlerId: string, lineStart: number): Patch | undefined {
+    const handler = this.handlers.find(h => h.id === handlerId)
+    if (!handler) return undefined
+    const record = handler.detect(content, parseResult).find(r => r.lineStart === lineStart)
+    return record ? handler.fix(content, record) : undefined
   }
 
   /** Topological sort of handlers by dependsOn. */

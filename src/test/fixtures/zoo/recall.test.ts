@@ -142,6 +142,14 @@ const CORPUS: Record<string, SpecimenTruth> = {
   // (stripInlineEmphasis at every keyword site): both questions read
   // answered → 0 open, and that IS the ground truth.
   'zoo-015-emphasized-status-value.md': { groundTruth: 0, baselineToday: 0 },
+  // Trailing "(QST-PETNAME)" alias dialect (founder Report 2026-09-13; 167
+  // wild headings; ledger ruling 2026-09-26): ten real `### QST:` headings,
+  // all genuinely open — recall was never the gap here (the headings were
+  // always recognized), the gap was the petname being unaddressable; the
+  // binding rules are asserted in trailingAliasHandle.test.ts against this
+  // same file's .expected.json, which is also the cross-surface fixture
+  // (MCP locator + qst-lint.py). Ground truth and baseline agree at 10.
+  'zoo-016-trailing-parenthesized-qst-handle.md': { groundTruth: 10, baselineToday: 10 },
 }
 
 function listSpecimens(): string[] {

@@ -25,7 +25,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import type { SeedFile, SeedThreadEntry, SeedRequest, DerivedAdr, Question, AdrSection, ParseWarning } from './types'
 import { tokenize, extractRawSections, type Token } from './tokenizer'
-import { buildSection, extractQuestion, stripInlineEmphasis } from './extractor'
+import { buildSection, extractQuestion, resolveAliasHandles, stripInlineEmphasis } from './extractor'
 
 // ---------------------------------------------------------------------------
 // Regex patterns
@@ -244,10 +244,15 @@ function extractSeedQuestions(content: string, filePath: string): { questions: Q
   const slugOccurrences = new Map<string, number>()
   const seedSlug = path.basename(filePath, '.md')
 
-  for (const raw of rawSections) {
-    const section = buildSection(raw, allSlugs, warnings, slugOccurrences)
-    collectQstSections([section], filePath, seedSlug, questions, warnings)
-  }
+  const sections = rawSections.map(raw => buildSection(raw, allSlugs, warnings, slugOccurrences))
+
+  // Trailing "(QST-PETNAME)" aliases (ledger ruling 2026-09-26): seed
+  // questions get exactly the ADR-side recognition and collision law — one
+  // substrate, two container kinds — resolved file-wide before questions
+  // are read off the sections.
+  resolveAliasHandles(sections, warnings)
+
+  collectQstSections(sections, filePath, seedSlug, questions, warnings)
 
   return { questions, warnings }
 }

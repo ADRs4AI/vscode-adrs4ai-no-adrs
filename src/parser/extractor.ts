@@ -153,6 +153,52 @@ function foldQstId(raw: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// Trailing alias handle — "### QST: Should the Rust service be a gRPC
+// server too? (QST-RUST-GRPC-SERVER)" (founder Report, companion etude,
+// 2026-09-13: "I am curious whether the QST petnames in parenthesis at the
+// end are parsed and part of the metadata?" — answer was no; 167 wild
+// headings across 4 repos). Ruled A-amended by Riddle 5, 2026-09-26 (ledger
+// row, six clauses); this is clause 3's grammar: `\(QST-<handle charset,
+// 1–24>\)` at END OF LINE only — a mid-text "(QST-…)" parenthetical stays
+// content. The capture is deliberately liberal (\p{M} admits NFD combining
+// marks, so an NFD-typed "é" still reads); ALIAS_HANDLE_GRAMMAR_RE then
+// validates the NFC-normalized id against the SAME charset/bounds as the
+// leading QST_HANDLE_RE, and foldQstId is the SAME fold — one fold, no
+// second recognition path. Case-insensitive read ("(qst-foo)").
+const TRAILING_ALIAS_HANDLE_RE = /\s*\(QST-([\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}-]{0,63})\)\s*$/iu;
+const ALIAS_HANDLE_GRAMMAR_RE = /^[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,22}[\p{L}\p{N}])?$/u;
+
+interface TrailingAliasHandle {
+  /** Author-typed id, NFC-normalized (for diagnostics). */
+  rawId: string;
+  /** foldQstId(rawId) — the same fold a leading handle gets. */
+  folded: string;
+  /** Anchor the alias resolves by: "qst-" + lowercase(folded). */
+  aliasSlug: string;
+  /** The heading text with the trailing "(QST-…)" removed (display text). */
+  stripped: string;
+}
+
+/**
+ * Pure function of the heading text's bytes — no document state, so the
+ * result can never depend on edit history (clause 1's deterministic-id
+ * rule). Null for anything outside the grammar (over-long, boundary hyphen,
+ * bad characters, an id that folds to nothing, or a heading that would be
+ * left with no text): those stay content, exactly as before this dialect
+ * was recognized.
+ */
+function extractTrailingAliasHandle(text: string): TrailingAliasHandle | null {
+  const m = TRAILING_ALIAS_HANDLE_RE.exec(text);
+  if (!m) return null;
+  const rawId = m[1].normalize('NFC');
+  if (!ALIAS_HANDLE_GRAMMAR_RE.test(rawId)) return null;
+  const folded = foldQstId(rawId);
+  if (!folded) return null;
+  const stripped = text.slice(0, m.index).trimEnd();
+  if (stripped.trim() === '') return null;
+  return { rawId, folded, aliasSlug: `qst-${folded.toLowerCase()}`, stripped };
+}
+
 export function detectFormat(tokens: ReturnType<typeof tokenize>): FormatDetectionResult {
   const headings = tokens
     .filter((t): t is ReturnType<typeof tokenize>[number] & { kind: 'heading' } => t.kind === 'heading')
@@ -555,6 +601,24 @@ export function buildSection(
   const match = resolveNavHeadingIdentity(heading);
   const qstId = match?.qstId;
 
+  // Ledger ruling 2026-09-26, clause 2 (local half): a LEADING handle always
+  // outranks a trailing "(QST-…)" on the same heading — the leading one
+  // binds (it already did, via `qstId` above), the trailing one is ignored
+  // and says so. Everything else about trailing aliases (binding, cross-
+  // question collisions, display stripping) needs the whole document, so it
+  // lives in resolveAliasHandles(), run by the callers once every section
+  // exists — buildSection() never sets aliasSlug itself.
+  if (match?.code === 'QST' && match.qstId !== undefined) {
+    const shadowed = extractTrailingAliasHandle(match.text);
+    if (shadowed) {
+      warnings.push({
+        code: 'ALIAS_HANDLE_COLLISION',
+        message: `Heading "${heading}" carries a leading handle (QST-${match.qstId}) AND a trailing "(QST-${shadowed.rawId})". The leading handle binds (a leading handle always outranks a trailing alias); the trailing one is ignored and stays part of the title text. SUGGESTED: remove "(QST-${shadowed.rawId})" from the heading.`,
+        line: raw.heading.line,
+      });
+    }
+  }
+
   if (match?.deviation) {
     const d = match.deviation;
     switch (d.kind) {
@@ -706,6 +770,90 @@ export function buildSection(
     headingRaw: raw.heading.raw,
     bodyRaw,
   };
+}
+
+function flattenAllSections(sections: AdrSection[]): AdrSection[] {
+  const out: AdrSection[] = [];
+  for (const s of sections) {
+    out.push(s, ...flattenAllSections(s.children));
+  }
+  return out;
+}
+
+/**
+ * Trailing "(QST-PETNAME)" alias binding — the document-level half of the
+ * ledger ruling (Riddle 5, 2026-09-26; founder Report 09-13, 167 wild
+ * headings). Run by parseAdr() and extractSeedQuestions() after every
+ * section is built and BEFORE questions are extracted from them, because
+ * whether a petname binds depends on the whole file:
+ *
+ *  - Clause 1 (deterministic id): binding NEVER touches `slug` — the long
+ *    slug (and so `Question.id`) stays what the heading's bytes alone
+ *    derive, so a file's ids can't depend on which other questions exist or
+ *    on edit history. A bound alias only ADDS `aliasSlug` (+ `qstId`) and
+ *    strips the "(QST-…)" from the DISPLAY text (`navCodeText`); `heading`
+ *    and `headingRaw` are untouched.
+ *  - Clause 2 (collision law): a petname claimed by two questions binds
+ *    NEITHER; one that equals another section's own slug or `@adr-anchor`
+ *    (a leading handle's `qst-<id>` included — "leading outranks trailing")
+ *    doesn't bind. Each refused claimant gets a loud ALIAS_HANDLE_COLLISION
+ *    and keeps its title text intact — ambiguity refuses, never last-wins.
+ *
+ * Only headings WITHOUT a leading handle are candidates (the leading-vs-
+ * trailing-on-one-heading case is warned in buildSection()).
+ */
+export function resolveAliasHandles(sections: AdrSection[], warnings: ParseWarning[]): void {
+  const all = flattenAllSections(sections);
+
+  const candidates: Array<{ section: AdrSection; alias: TrailingAliasHandle }> = [];
+  for (const s of all) {
+    if (s.navCode !== 'QST' || s.qstId !== undefined || s.navCodeText === undefined) continue;
+    const alias = extractTrailingAliasHandle(s.navCodeText);
+    if (alias) candidates.push({ section: s, alias });
+  }
+  if (candidates.length === 0) return;
+
+  // Everything an alias must not shadow: every section's own slug and
+  // effective anchor (@adr-anchor override). Candidates' own long slugs are
+  // in here too — harmless, an alias slug can't equal its own long slug.
+  const reserved = new Set<string>();
+  for (const s of all) {
+    reserved.add(s.slug);
+    if (s.anchorOverride) reserved.add(s.anchorOverride);
+  }
+
+  const byAlias = new Map<string, typeof candidates>();
+  for (const c of candidates) {
+    const group = byAlias.get(c.alias.aliasSlug) ?? [];
+    group.push(c);
+    byAlias.set(c.alias.aliasSlug, group);
+  }
+
+  for (const [aliasSlug, group] of byAlias) {
+    if (group.length > 1) {
+      const lines = group.map(c => c.section.lineStart).join(', ');
+      for (const c of group) {
+        warnings.push({
+          code: 'ALIAS_HANDLE_COLLISION',
+          message: `${group.length} questions in this file (lines ${lines}) claim the trailing handle "(QST-${c.alias.rawId})" — ambiguity refuses: NONE of them binds "#${aliasSlug}" (never last-wins). Each keeps its title text and its own auto-derived id. SUGGESTED: give each question a distinct petname.`,
+          line: c.section.lineStart,
+        });
+      }
+      continue;
+    }
+    const { section, alias } = group[0];
+    if (reserved.has(aliasSlug)) {
+      warnings.push({
+        code: 'ALIAS_HANDLE_COLLISION',
+        message: `The trailing handle "(QST-${alias.rawId})" would bind "#${aliasSlug}", but that is already another heading's own anchor in this file (a leading handle or @adr-anchor always outranks a trailing alias). It does NOT bind; the heading keeps its title text and its own auto-derived id.`,
+        line: section.lineStart,
+      });
+      continue;
+    }
+    section.aliasSlug = aliasSlug;
+    section.qstId = alias.folded;
+    section.navCodeText = alias.stripped.trim();
+  }
 }
 
 /**
@@ -1995,6 +2143,7 @@ export function extractQuestion(
     adrPath,
     lineStart: section.lineStart,
     qstId: section.qstId,
+    aliasSlug: section.aliasSlug,
     statusRange,
   };
 }
@@ -2158,6 +2307,16 @@ function buildDeepLinks(sections: AdrSection[], questions: Question[]): DeepLink
       lineNumber: q.lineStart,
       type: 'question',
     });
+    if (q.aliasSlug) {
+      // Bound trailing "(QST-PETNAME)" alias — a second addressable anchor
+      // for the same question; `slug` above stays the canonical one.
+      links.push({
+        slug: q.aliasSlug,
+        displayText: q.text,
+        lineNumber: q.lineStart,
+        type: 'question',
+      });
+    }
     if (q.answer) {
       links.push({
         slug: `${q.slug}-answer`,
@@ -2228,6 +2387,11 @@ export function parseAdr(content: string, filePath: string, options: ParseOption
   const sections: AdrSection[] = rawSections.map(raw =>
     buildSection(raw, allSlugs, warnings, slugOccurrences)
   );
+
+  // Trailing "(QST-PETNAME)" aliases: bound (or refused) file-wide BEFORE
+  // questions are read off the sections, so Question.text/qstId/aliasSlug
+  // reflect the outcome (ledger ruling 2026-09-26).
+  resolveAliasHandles(sections, warnings);
 
   // Extract questions (QST sections + their children)
   const adrNumber = extractAdrNumber(filePath);

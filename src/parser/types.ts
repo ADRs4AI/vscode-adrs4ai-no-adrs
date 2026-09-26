@@ -149,8 +149,26 @@ export interface AdrSection {
    * HQ-paired; accents stripped — "QST-JÉRÉMIE" → "JEREMIE"). Undefined for
    * plain "### QST: text" headings (positional, no explicit handle) and for
    * non-QST nav codes (only questions get this grammar).
+   *
+   * Also set (2026-09-26, ledger ruling on the trailing "(QST-PETNAME)"
+   * wild dialect, clause 1) when a CONFIRMED trailing alias handle binds —
+   * see `aliasSlug`. In that case `slug` (the deterministic id) is NOT
+   * derived from it.
    */
   qstId?: string;
+  /**
+   * Trailing-alias handle (ledger ruling, Riddle 5, 2026-09-26 — the 167-heading
+   * wild dialect "### QST: text (QST-PETNAME)", founder Report 09-13): the
+   * ADDITIONAL anchor "qst-" + lowercase(folded petname), by which
+   * `#qst-<petname>` resolves. `slug` (and therefore `Question.id`) is NEVER
+   * re-derived from the alias — the long slug stays, computed from the
+   * heading's bytes alone (fossil law: emitted ids are never re-stamped).
+   * Undefined unless the alias BOUND: a leading handle outranks a trailing one
+   * (clause 2), and a petname claimed by two questions in one file, or by
+   * another question's own slug/anchor, binds NOTHING (ambiguity refuses,
+   * never last-wins) — see ALIAS_HANDLE_COLLISION.
+   */
+  aliasSlug?: string;
   children: AdrSection[]; // nested sub-sections
   /**
    * ADR-0039 §2 (round-trip gate, Tier 1): the exact original heading line,
@@ -307,8 +325,17 @@ export interface Question {
    * undefined for a plain "### QST: text" heading. Mirrors
    * AdrSection.qstId — the default anchor is "qst-" + lowercase(qstId),
    * already reflected in `slug`; `@adr-anchor` still overrides both.
+   * Also set when a trailing "(QST-PETNAME)" alias binds (see `aliasSlug`)
+   * — `slug`/`id` are then NOT derived from it.
    */
   qstId?: string;
+  /**
+   * Mirrors AdrSection.aliasSlug: the additional `#qst-<petname>` anchor a
+   * bound trailing "(QST-PETNAME)" alias resolves by. Resolvers accept
+   * `id || slug || aliasSlug` (ledger ruling 2026-09-26, clause 4); the
+   * canonical `id`/`slug` are unchanged by the alias.
+   */
+  aliasSlug?: string;
   /**
    * ADR-0039 §3 (SourceRange, first slice — single-line write-target
    * fields): the exact character span of the Status VALUE (e.g.
@@ -424,6 +451,7 @@ export type ParseWarningCode =
   | 'MALFORMED_QST_HANDLE_ID'        // handle-shaped heading ("### QST-<id>:") whose id fails the grammar — recognized as a question anyway, never silently dropped (ADR-0032 QST-IDCHARSET)
   | 'EMPHASIZED_STATUS_VALUE'        // status keyword wrapped in Markdown emphasis ("**answered**", "_accepted_") — recognized via stripInlineEmphasis, never defeats token matching (ADR-0052 specimen, 2026-07-22)
   | 'ANS_BYLINE_SCAFFOLD'            // ANS slot's entire content is a bare parenthetical ("(Name)") with no author already captured — read as an unfilled byline scaffold, not an answer (Herald's second tour, prefill noise, 2026-07-28)
+  | 'ALIAS_HANDLE_COLLISION'         // a trailing "(QST-PETNAME)" alias did NOT bind — outranked by a leading handle on the same heading, claimed by two questions in one file, or colliding with another question's own slug/anchor; ambiguity refuses, never last-wins (ledger ruling 2026-09-26, clause 2)
   | 'IMPLAUSIBLE_TURN_DATE';         // a seed's header Date or a Thread turn heading date is in the future relative to parse time — excluded from lastActivityDate rather than trusted (ADR-0041 item 4, corpus:003975's 2027 year-typo fixture)
 
 export interface ParseWarning {

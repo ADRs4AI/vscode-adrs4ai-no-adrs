@@ -58,6 +58,7 @@ import { D96NoncanonicalNavCodeHeadingHandler } from './normalizer/handlers/d9-6
 import { D95MissingRecommendationHandler } from './normalizer/handlers/d9-5-missing-recommendation'
 import { D94NonstandardFillPlaceholderHandler } from './normalizer/handlers/d9-4-nonstandard-fill-placeholder'
 import { D97RecommendationBulletFormHandler } from './normalizer/handlers/d9-7-recommendation-bullet-form'
+import { D98TrailingAliasHandleHandler } from './normalizer/handlers/d9-8-trailing-alias-handle'
 import { buildAdrCommitMessage, type ChangedFile } from './commit/commitMessage'
 import { isNewGitStatus, groupChangesByOwningRoot, refreshRepositories } from './commit/repositoryResolution'
 import { findReferencedUntrackedFiles, type UntrackedReferencesMode } from './commit/untrackedReferences'
@@ -80,6 +81,9 @@ const normalizerCoordinator = new Coordinator([
   new D95MissingRecommendationHandler(),
   new D94NonstandardFillPlaceholderHandler(),
   new D97RecommendationBulletFormHandler(),
+  // Suggest-only (bulkApply = false): shown as a diagnostic, fixed per
+  // question via its own Quick Fix — never part of "Normalize to adr format".
+  new D98TrailingAliasHandleHandler(),
 ])
 
 // ---------------------------------------------------------------------------
@@ -795,12 +799,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (!adr) return [];
 
           const content = document.getText();
+          const actions: vscode.CodeAction[] = [];
+
+          // Suggest-only handlers (bulkApply === false — e.g. D9.8, whose
+          // migration changes a question's id): one Quick Fix per
+          // diagnostic, offered at the author's choice and NEVER folded into
+          // the bulk action below (ledger ruling 2026-09-26, clause 5).
+          const suggestOnly = normalizerCoordinator.suggestOnlyHandlerIds();
+          for (const diag of normDiags) {
+            const handlerId = String(diag.code);
+            if (!suggestOnly.has(handlerId)) continue;
+            const patch = normalizerCoordinator.processOne(content, adr, handlerId, diag.range.start.line + 1);
+            if (!patch) continue; // stale diagnostic — never apply a guess
+            const one = new vscode.CodeAction(normalizerCoordinator.quickFixTitle(handlerId), vscode.CodeActionKind.QuickFix);
+            one.diagnostics = [diag];
+            one.isPreferred = false;
+            one.edit = new vscode.WorkspaceEdit();
+            const endLine = patch.lineEnd - 1;
+            one.edit.replace(
+              document.uri,
+              new vscode.Range(
+                new vscode.Position(patch.lineStart - 1, 0),
+                new vscode.Position(endLine, document.lineAt(Math.min(endLine, document.lineCount - 1)).text.length),
+              ),
+              patch.replacement,
+            );
+            actions.push(one);
+          }
+
           const { patches } = normalizerCoordinator.processAll(content, adr);
-          if (patches.length === 0) return [];
+          if (patches.length === 0) return actions;
 
           const label = `Normalize to adr format (${patches.length} fix${patches.length > 1 ? 'es' : ''})`;
           const action = new vscode.CodeAction(label, vscode.CodeActionKind.QuickFix);
-          action.diagnostics = normDiags;
+          action.diagnostics = normDiags.filter(d => !suggestOnly.has(String(d.code)));
           action.isPreferred = false;
           action.edit = new vscode.WorkspaceEdit();
 
@@ -814,7 +846,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             action.edit.replace(document.uri, new vscode.Range(startPos, endPos), patch.replacement);
           }
 
-          return [action];
+          return [...actions, action];
         },
       },
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
