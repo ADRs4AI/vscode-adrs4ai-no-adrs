@@ -27,6 +27,27 @@ export type WriteResult =
   | { ok: true; newContent: string; diff: string }
   | { ok: false; error: string }
 
+/**
+ * Locate a question by the id a caller supplies — accepting BOTH `Question.id`
+ * (the full `adr-{NNNN}-{slug}` form) and `Question.slug` (the bare form).
+ *
+ * FIXED (2026-08-21 report, 2026-09-17 fix — QST-DETECTION-LEDGER, Cicerone
+ * 5's self-report via HQ, root-caused against a real HQ file): every read
+ * tool (`list_open_questions`, `get_outline`, `lookup`) advertises a
+ * question's ref using its bare `slug` (`handlers.ts:160,275,395` all build
+ * `#ref` from `.slug`, never `.id`) — but this file's two id-locating write
+ * paths accepted only the full `id` form, with no fallback. A caller doing
+ * exactly what the read tools show it — passing back the ref it was just
+ * given — got `write_failed: Could not locate question` on every single
+ * question, not a specific heading grammar (confirmed live against
+ * `scripts/ephemeral/2026-08-21-probe-mcp-write-locator-id-vs-slug-mismatch.ts`
+ * before this fix, and again after). Read wide, write canonical: the write
+ * path must accept what its own sibling read tools actually emit.
+ */
+function findQuestionByIdOrSlug(questions: Question[], questionId: string): Question | undefined {
+  return questions.find((q) => q.id === questionId || q.slug === questionId)
+}
+
 // ---------------------------------------------------------------------------
 // Write-fidelity check — ADR-0021 Iteration 8 doctrine, step 4: "parse
 // fresh → anchor on extents → splice only → reparse and verify the delta."
@@ -187,7 +208,7 @@ export function applyAnswerQuestion(
   author: string,
 ): WriteResult {
   const freshAdr = parseAdr(currentContent, adrPath)
-  const question = freshAdr.questions.find((q) => q.id === questionId)
+  const question = findQuestionByIdOrSlug(freshAdr.questions, questionId)
   if (!question) {
     return { ok: false, error: `Could not locate question "${questionId}" in the current file content — it may have been edited or removed since last read.` }
   }
@@ -246,7 +267,7 @@ export function applyAnswerQuestion(
   const diff = `- ${beforeSnippet.replace(/\n/g, '\\n')}\n+ ${afterSnippet.replace(/\n/g, '\\n')}`
 
   const newContent = newLines.join('\n')
-  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set([questionId]))
+  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set([question.id]))
   if (!fidelity.ok) return { ok: false, error: fidelity.error }
 
   return { ok: true, newContent, diff }
@@ -262,7 +283,7 @@ export function applyAddRecommendation(
   date: string,
 ): WriteResult {
   const freshAdr = parseAdr(currentContent, adrPath)
-  const question = freshAdr.questions.find((q) => q.id === questionId)
+  const question = findQuestionByIdOrSlug(freshAdr.questions, questionId)
   if (!question) {
     return { ok: false, error: `Could not locate question "${questionId}" in the current file content — it may have been edited or removed since last read.` }
   }
@@ -295,7 +316,7 @@ export function applyAddRecommendation(
   const diff = `+ ${block.join('\\n')}`
 
   const newContent = newLines.join('\n')
-  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set([questionId]))
+  const fidelity = verifyNoCollateralQuestionChanges(freshAdr, newContent, adrPath, new Set([question.id]))
   if (!fidelity.ok) return { ok: false, error: fidelity.error }
 
   return { ok: true, newContent, diff }

@@ -926,4 +926,59 @@ describe('Regression tests', () => {
     const result = await addRecommendation(ctx, session, 'wrong-namespace.1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'x')
     expect(result).toContain('error: not_found')
   })
+
+  // Bug (Cicerone 5, HQ, 2026-08-21, self-report via report_observation;
+  // re-verified still-open by Gleaner 5, 2026-09-18): every read tool
+  // (list_open_questions, get_outline, lookup) advertises a question by its
+  // bare slug ("qst-what-is-the-scope"), but the write locator matched only
+  // the full id ("adr-0001-qst-what-is-the-scope") — so a caller passing back
+  // exactly what it was just shown got "Could not locate question" on EVERY
+  // question. Two halves, both real: (1) the locator lacked a slug fallback;
+  // (2) after fixing that, the write-fidelity check was still keyed on the
+  // caller's raw string, so the intended edit was rejected as "collateral" —
+  // only caught by running the fix against the real HQ file, not by the
+  // locator-level unit view alone. Fixed 2026-09-26: findQuestionByIdOrSlug
+  // + the fidelity check keyed on the resolved question's canonical id.
+  describe('write tools accept the bare slug the read tools advertise', () => {
+    const BARE = 'qst-what-is-the-scope'
+
+    it('answer_question locates a question by its bare slug', async () => {
+      const { ctx, files } = makeContext(FIXTURE)
+      const result = await answerQuestion(ctx, session, '1', BARE, 'The scope is X.', { author: 'Relay 5' })
+      expect(result).toContain('Answered')
+      expect(files.get(ADR_PATH)).toContain('The scope is X.')
+    })
+
+    it('add_recommendation locates a question by its bare slug', async () => {
+      const { ctx, files } = makeContext(FIXTURE)
+      const result = await addRecommendation(ctx, session, '1', BARE, 'Relay 5', 'Ship it.')
+      expect(result).not.toContain('error:')
+      expect(files.get(ADR_PATH)).toContain('Ship it.')
+    })
+
+    it('apply_batch operations accept the bare slug too (it reuses the same two locators)', async () => {
+      const { ctx, files } = makeContext(FIXTURE)
+      const ops: BatchOperation[] = [
+        { tool: 'add_recommendation', questionId: BARE, author: 'Relay 5', text: 'Batch rec.', date: '2026-09-26' },
+        { tool: 'answer_question', questionId: BARE, answerText: 'Batch answer.', author: 'Relay 5' },
+      ]
+      const result = await applyBatch(ctx, session, '1', ops)
+      expect(result).not.toContain('error:')
+      expect(files.get(ADR_PATH)).toContain('Batch rec.')
+      expect(files.get(ADR_PATH)).toContain('Batch answer.')
+    })
+
+    it('the full id form still works (backward compatible)', async () => {
+      const { ctx } = makeContext(FIXTURE)
+      const result = await addRecommendation(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'Ship it.')
+      expect(result).not.toContain('error:')
+    })
+
+    it('an id matching neither form still returns the structured not-found refusal', async () => {
+      const { ctx, writeCount } = makeContext(FIXTURE)
+      const result = await answerQuestion(ctx, session, '1', 'qst-does-not-exist', 'X', { author: 'Relay 5' })
+      expect(result).toContain('error: write_failed')
+      expect(writeCount()).toBe(0)
+    })
+  })
 })
