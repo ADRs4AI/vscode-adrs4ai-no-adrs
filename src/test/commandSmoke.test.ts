@@ -42,6 +42,7 @@ import {
   resetInteractionState,
   mockWorkspace,
   mockWindow,
+  setExtension,
   queueInputBox,
   queueQuickPick,
   queueWarningMessage,
@@ -219,6 +220,7 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       'adrManager.configureMcpServer': [],
       'adrManager.openAdr': [realAdr().path, 3],
       'adrManager.commitAdrs': [f.adr],
+      'adrManager.commitAllAdrs': [f.adr], // VS Code passes the focused tree node to view/title commands; it must be ignored
       'adrManager.copyDeepLink': [f.adr],
       'adrManager.copyPath': [f.adr],
       'adrManager.copyRelativePath': [f.adr],
@@ -345,6 +347,62 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       // applyEdit is the mock's own vi.fn — confirms the write path actually ran, not just the read path.
       const { workspace } = await import('./helpers/vscodeMock')
       expect(vi.mocked(workspace.applyEdit)).toHaveBeenCalled()
+    })
+  })
+
+  // Regression (founder Report, companion etude, 2026-09-13: "When I click the
+  // commit button at the top of the treeview, it acts in accordance to where
+  // my cursor is instead of being a global one"; the 08-30 and 09-01 "commit
+  // doesn't seem to work" Reports fit the same cause). VS Code passes the
+  // FOCUSED TREE NODE as the first argument to every `view/title` command
+  // (release notes v1.72), so the toolbar button was invoking
+  // `adrManager.commitAdrs` with whatever ADR happened to be focused, and that
+  // handler — correctly, for right-click menus — scopes the commit to the
+  // item. The toolbar now has its own command that cannot read an item. A fake
+  // git repository with changes in TWO files makes the difference observable:
+  // the same focused-item argument scopes the context-menu command to one file
+  // and must not scope the toolbar command at all.
+  describe('the toolbar commit button is GLOBAL — a focused tree node passed by VS Code must not scope it', () => {
+    function withTwoChangedFiles() {
+      const adrPath = realAdr().path
+      const seedPath = realSeed().path
+      const change = (fsPath: string) => ({ uri: { fsPath }, status: 5 /* MODIFIED */ })
+      const repo = {
+        state: { workingTreeChanges: [change(adrPath), change(seedPath)], indexChanges: [] },
+        status: vi.fn(async () => undefined),
+        add: vi.fn(async (_paths: string[]) => undefined),
+        commit: vi.fn(async (_message: string) => undefined),
+      }
+      setExtension('vscode.git', { isActive: true, exports: { getAPI: () => ({ repositories: [repo] }) } })
+      return { repo, adrPath, seedPath }
+    }
+
+    it('commitAllAdrs (the toolbar command), invoked with a focused ADR like VS Code does, stages BOTH changed files', async () => {
+      resetInteractionState()
+      const { repo, adrPath, seedPath } = withTwoChangedFiles()
+      queueInputBox('toolbar commit')
+      await getRegisteredCommand('adrManager.commitAllAdrs')!(fixtures().adr)
+      expect(repo.add).toHaveBeenCalledTimes(1)
+      const staged = repo.add.mock.calls[0][0]
+      expect(staged).toContain(adrPath)
+      expect(staged).toContain(seedPath)
+    })
+
+    it('contrast, by design: commitAdrs (the right-click command) given that same focused ADR scopes to that one file', async () => {
+      resetInteractionState()
+      const { repo, adrPath, seedPath } = withTwoChangedFiles()
+      queueInputBox('context-menu commit')
+      await getRegisteredCommand('adrManager.commitAdrs')!(fixtures().adr)
+      const staged = repo.add.mock.calls[0][0]
+      expect(staged).toContain(adrPath)
+      expect(staged).not.toContain(seedPath)
+    })
+
+    it('package.json wires the toolbar (view/title) entry to the global command, and only context menus to the item-scoped one', () => {
+      const menus = PACKAGE_JSON.contributes.menus
+      const titleCmds = menus['view/title'].map((m: { command: string }) => m.command)
+      expect(titleCmds).toContain('adrManager.commitAllAdrs')
+      expect(titleCmds).not.toContain('adrManager.commitAdrs')
     })
   })
 

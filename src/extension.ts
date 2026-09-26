@@ -510,6 +510,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // describe block for the regression test (asserted a throwing
     // dependency still reaches errors.jsonl — failed against the
     // unawaited version, passes now).
+    // The toolbar button's own command — deliberately ignores its arguments.
+    // Founder Report (companion etude, 2026-09-13): "When I click the commit
+    // button at the top of the treeview, it acts in accordance to where my
+    // cursor is instead of being a global one." Cause, confirmed in VS Code's
+    // own release notes (v1.72, docs/research/vscode-docs/release-notes/
+    // v1_72.md): commands contributed to `view/title` receive the FOCUSED TREE
+    // NODE as their first argument — so the toolbar button was invoking
+    // `adrManager.commitAdrs` with whatever item happened to be focused, and
+    // that handler (correctly, for context menus) scoped the commit to that
+    // item's file/category/root. A focused ADR with no changes → "no changes"
+    // (the 08-30 and 09-01 "commit doesn't seem to work" Reports fit this).
+    // The context-menu entries keep `commitAdrs`, which reads its item; the
+    // toolbar gets this one, which cannot.
+    registerLoggedCommand('adrManager.commitAllAdrs', async () => {
+      await commitAdrChanges(adrDir);
+    }),
+
     registerLoggedCommand('adrManager.commitAdrs', async (item) => {
       const targetRootPath = item?.rootNode?.path
         ?? (item?.kind === 'adr' && item.adr ? compositeIndex?.findRoot(item.adr.path)?.path : undefined)

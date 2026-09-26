@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.117] - 2026-09-26
+
+### Fixed
+- **The Commit button at the top of the sidebar now always commits every project's ADR changes, wherever your cursor is.** VS Code hands the currently focused tree item to toolbar buttons, and the button was treating it as "commit just this item" — so with an ADR focused that had no changes, it reported "no changes" even when other files did. Right-click Commit on an item still commits just that item.
+
 ## [0.7.116] - 2026-09-26
 
 ### Fixed
