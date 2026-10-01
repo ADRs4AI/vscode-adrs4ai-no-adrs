@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.119] - 2026-10-01
+
+### Fixed
+- **A seed whose Thread turn headings carry a trailing note — `### Name - 2026-09-08 (what happened)` — now correctly contributes that date to its freshness, instead of being read as having no date at all.** Previously the date was only recognized when nothing followed it on the same line, so a seed could show as stale/dormant for weeks after real, dated turns because every one of those turns' dates was silently invisible.
+
 ## [0.7.118] - 2026-09-26
 
 ### Changed

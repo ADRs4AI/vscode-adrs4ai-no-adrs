@@ -1359,6 +1359,42 @@ Typo: should have been 2026-03-08.
     expect(seed.brainDump).toContain('JWT or session tokens')
   })
 
+  // Founder Report, pneumatic, 2026-10-01: "why is the wrench gray, we just
+  // iteratd?" The real specimen (seed-2026-09-07-pneumatic-operator.md, all
+  // 7 Thread turns): "### Plenum 5 (Claude Fable 5) - 2026-09-08 (the
+  // memwatcher excavation — prior art read, synthesis)". Every turn had a
+  // trailing parenthetical after its date; THREAD_ENTRY_DATE_RE's end-anchor
+  // meant NONE of them matched, so `date` was undefined for all 7 and
+  // lastActivityDate fell back to the header field alone — three weeks stale
+  // by report time despite real, dated, attributed turns since.
+  it('a Thread turn heading with a trailing annotation after the date still extracts the date (real pneumatic specimen)', () => {
+    const seed = parseSeed(
+      [
+        '# SEED: Pneumatic Operator',
+        '',
+        '- **Date**: 2026-09-07',
+        '- **From**: Jérémie Lumbroso',
+        '',
+        '## Thread',
+        '',
+        '### Plenum 5 (Claude Fable 5) - 2026-09-07',
+        '',
+        'First turn, same day as the header date.',
+        '',
+        '### Plenum 5 (Claude Fable 5) - 2026-09-08 (the memwatcher excavation — prior art read, synthesis)',
+        '',
+        'Second turn, a day later, with a trailing annotation after the date.',
+        '',
+      ].join('\n'),
+      '/fake/docs/adr/seed-2026-09-07-pneumatic-operator.md',
+    )
+    expect(seed.threadEntries).toHaveLength(2)
+    expect(seed.threadEntries[0].author).toBe('Plenum 5 (Claude Fable 5)')
+    expect(seed.threadEntries[1].author).toBe('Plenum 5 (Claude Fable 5)')
+    expect(seed.threadEntries[1].date).toBe('2026-09-08') // not undefined, and not polluted by the trailing text
+    expect(seed.lastActivityDate).toBe('2026-09-08') // the real turn date, not the header's 2026-09-07
+  })
+
   it('should parse thread entries with authors and dates', () => {
     // Real scenario: human and AI both contribute to a seed thread
     const seed = parseSeed(NEW_FORMAT_SEED, '/fake/docs/adr/seed-2026-03-07-auth.md')

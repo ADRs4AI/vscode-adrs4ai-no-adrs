@@ -37,8 +37,23 @@ const DATE_RE = /^-\s+\*\*Date\*\*:\s+(.+)$/
 const FROM_RE = /^-\s+\*\*From\*\*:\s+(.+)$/
 /** Matches "- **Status**: ..." (ADR-0041 item 2's seed-scoped declared status) */
 const SEED_STATUS_RE = /^-\s+\*\*Status\*\*:\s+(.+)$/
-/** Matches "Author Name - Date" (text after ### has been stripped); date group is optional */
-const THREAD_ENTRY_DATE_RE = /^(.+?)\s+-\s+(\d{4}-\d{2}-\d{2})$/
+/**
+ * Matches "Author Name - Date" (text after ### has been stripped); date
+ * group is optional. Founder Report, pneumatic, 2026-10-01 ("why is the
+ * wrench gray, we just iteratd?"): the end-anchor (`$`) meant a Thread turn
+ * heading with a trailing parenthetical — "### Plenum 5 - 2026-09-08 (the
+ * memwatcher excavation)" — never matched at all, so `date` came back
+ * undefined for EVERY turn carrying one. In the real specimen, all 7 of the
+ * seed's turns had this shape, so `lastActivityDate` fell back all the way
+ * to the header `- **Date**:` field (2026-09-07) — three weeks stale by the
+ * time of the report — even though real, dated, attributed edits had landed
+ * since. Same "declare the date, tolerate a trailing annotation" tolerance
+ * this codebase already gives `- **Date**:` header fields (adrTitle.ts) and
+ * `- Status:` values (ANSWERED_LEADING_TOKEN_RE, isDocumentPausedStatus) —
+ * just never extended to Thread turn headings. Word-boundary after the date
+ * (not `$`) so a trailing annotation is tolerated without being captured.
+ */
+const THREAD_ENTRY_DATE_RE = /^(.+?)\s+-\s+(\d{4}-\d{2}-\d{2})\b/
 /**
  * ADR-0041 item 3 (recall-first Derived-Into): the ADR NUMBER is the
  * load-bearing signal (feeds the axis-2 rollup); a real ADR link must
