@@ -118,17 +118,44 @@ describe('Regression tests: canonical adr://v1 parser (ADR-0008 Scope Remaining,
     await seedIndex.indexDirectory(FIXTURE_DIR)
     ctx = createRepositoryContextAdapter({ allAdrs: () => adrIndex.allAdrs(), allSeeds: () => seedIndex.allSeeds() })
   })
-  it('canonical URI resolves to the same target as its short form (delegated, one resolution)', () => {
-    const short = resolveReference(ctx, 'adr:0001#qst-session-cookies-or-jwt')
-    const canon = resolveReference(ctx, 'adr://v1/repo/jlumbroso/fixture/adr/0001#qst-session-cookies-or-jwt')
+  // POSTURE CHANGE (2026-10-01, founder live-hit via Plenum's brief): scope
+  // now FILTERS instead of decorating. The original 08-26 behavior — a URI
+  // naming a foreign repo that "still resolves locally" — was the exact bug
+  // that fanned a fully-scoped pneumatic ref across 4 roots and refused it
+  // as ambiguous. These two tests previously encoded that superseded
+  // posture (a made-up scope resolving against local fixtures); they now
+  // pin scope identity hermetically via a declared listRootScopes view,
+  // never the checkout's real remote (forks/CI must not change results).
+  const scoped = (remote: string, namespace?: string) => ({
+    ...ctx,
+    listRootScopes: () => [{ rootPath: FIXTURE_DIR, namespace, remote }],
+  })
+  it('canonical URI resolves to the same target as its short form (delegated once, within the scope-matched root)', () => {
+    const view = scoped('git@github.com:jlumbroso/fixture.git')
+    const short = resolveReference(view, 'adr:0001#qst-session-cookies-or-jwt')
+    const canon = resolveReference(view, 'adr://v1/repo/jlumbroso/fixture/adr/0001#qst-session-cookies-or-jwt')
     expect(short.kind).toBe('question')
     expect(canon.kind).toBe('question')
     if (short.kind === 'question' && canon.kind === 'question') {
       expect(canon.question.id).toBe(short.question.id)
     }
   })
-  it('project-scoped form parses and delegates', () => {
-    expect(resolveReference(ctx, 'adr://v1/project/fixture/adr/0001').kind).toBe('adr')
+  it('project-scoped form binds by namespace and delegates', () => {
+    expect(resolveReference(scoped('git@github.com:jlumbroso/fixture.git', 'fixture'), 'adr://v1/project/fixture/adr/0001').kind).toBe('adr')
+  })
+  it('the real adapter exposes listRootScopes with this root and some identity (shape only — never asserts the checkout remote)', () => {
+    const roots = ctx.listRootScopes?.()
+    expect(roots).toBeDefined()
+    expect(roots!.length).toBeGreaterThanOrEqual(1)
+    expect(roots!.some((r) => FIXTURE_DIR.startsWith(r.rootPath))).toBe(true)
+  })
+  it('a scope matching no root fails as not-found naming the scope — never ambiguous (the 2026-10-01 invariant)', () => {
+    const r = resolveReference(scoped('git@github.com:jlumbroso/fixture.git'), 'adr://v1/repo/jlumbroso/elsewhere/adr/0001')
+    expect(r.kind).toBe('error')
+    if (r.kind === 'error') {
+      expect(r.error).toBe('not_found')
+      expect(r.message).toContain('repo/jlumbroso/elsewhere')
+    }
   })
   it('unsupported version + malformed refs fail LOUDLY with grammar named', () => {
     const v2 = resolveReference(ctx, 'adr://v2/repo/o/r/adr/0001')

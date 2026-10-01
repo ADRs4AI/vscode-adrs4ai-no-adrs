@@ -19,11 +19,56 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type { AdrFile, SeedFile } from '../parser/types'
-import type { RepositoryContext } from '../mcp/repositoryContext'
+import type { RepositoryContext, RootScope } from '../mcp/repositoryContext'
 
 export interface IndexSource {
   allAdrs(): AdrFile[]
   allSeeds(): SeedFile[]
+}
+
+/** Walk up from a directory to the nearest entry containing `.git` (dir OR file — submodules use a gitdir pointer file). */
+function findGitRoot(startDir: string): string | undefined {
+  let dir = startDir
+  for (;;) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
+/** Read a git root's origin remote URL (first remote as fallback); handles submodule `.git` pointer files. */
+function readRemoteUrl(gitRoot: string): string | undefined {
+  try {
+    const dotGit = path.join(gitRoot, '.git')
+    let configPath: string
+    if (fs.statSync(dotGit).isFile()) {
+      const pointer = fs.readFileSync(dotGit, 'utf-8').match(/^gitdir:\s*(.+)\s*$/m)
+      if (!pointer) return undefined
+      configPath = path.join(path.isAbsolute(pointer[1]) ? pointer[1] : path.resolve(gitRoot, pointer[1]), 'config')
+    } else {
+      configPath = path.join(dotGit, 'config')
+    }
+    const config = fs.readFileSync(configPath, 'utf-8')
+    return parseRemoteUrlFromConfig(config)
+  } catch {
+    return undefined
+  }
+}
+
+/** Exported for tests: origin's url, else the first remote's url, from raw git-config text. */
+export function parseRemoteUrlFromConfig(config: string): string | undefined {
+  const sections = config.split(/^(?=\[)/m)
+  let firstUrl: string | undefined
+  for (const section of sections) {
+    const header = section.match(/^\[remote "([^"]+)"\]/)
+    if (!header) continue
+    const url = section.match(/^\s*url\s*=\s*(.+)\s*$/m)?.[1]?.trim()
+    if (!url) continue
+    if (header[1] === 'origin') return url
+    firstUrl ??= url
+  }
+  return firstUrl
 }
 
 export function createRepositoryContextAdapter(source: IndexSource): RepositoryContext {
@@ -52,5 +97,30 @@ export function createRepositoryContextAdapter(source: IndexSource): RepositoryC
     readFile: async (filePath: string) => fs.promises.readFile(filePath, 'utf-8'),
     writeFile: async (filePath: string, content: string) => fs.promises.writeFile(filePath, content, 'utf-8'),
     listFiles: async (dir: string) => fs.promises.readdir(dir),
+    // Scope identities for canonical-ref filtering (2026-10-01 fix: scope
+    // dropped at the delegation seam — the founder's live-hit specimen).
+    // Derived per call, lazily, by grouping indexed files under their
+    // nearest git root and reading each root's remote once: an
+    // availability-class machine fact, read at runtime, never cached in
+    // module state (the DocketSession lesson: no new singletons).
+    listRootScopes: (): RootScope[] => {
+      const dirToRoot = new Map<string, string | undefined>()
+      const rootInfo = new Map<string, RootScope>()
+      const visit = (filePath: string, namespace?: string) => {
+        const dir = path.dirname(filePath)
+        if (!dirToRoot.has(dir)) dirToRoot.set(dir, findGitRoot(dir))
+        const root = dirToRoot.get(dir)
+        if (!root) return
+        const existing = rootInfo.get(root)
+        if (existing) {
+          existing.namespace ??= namespace
+        } else {
+          rootInfo.set(root, { rootPath: root, namespace, remote: readRemoteUrl(root) })
+        }
+      }
+      for (const a of source.allAdrs()) visit(a.path, a.namespace)
+      for (const s of source.allSeeds()) visit(s.path, (s as { namespace?: string }).namespace)
+      return Array.from(rootInfo.values())
+    },
   }
 }

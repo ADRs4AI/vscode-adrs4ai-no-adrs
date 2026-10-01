@@ -19,6 +19,25 @@ export interface GitLogEntry {
   author: string
 }
 
+/**
+ * One workspace root as the scope-resolution machinery sees it (2026-10-01,
+ * the founder's live-hit specimen: a fully-scoped `adr://…/repo/ADRs4AI/
+ * pneumatic/…` ref declared "ambiguous across 4 roots" because the scope was
+ * parsed, echoed in the error, and then dropped at the canonical→short-ref
+ * delegation). `remote` is the root's git origin URL — an availability-class
+ * machine fact read at runtime, never committed (ADR-0025 D3 doctrine); it is
+ * the IDENTITY a `repo/<owner>/<repo>` scope binds against, until the hive
+ * census's committed self-declaration supersedes it as the principled source.
+ */
+export interface RootScope {
+  /** Absolute path of the root (the directory whose files belong to it). */
+  rootPath: string
+  /** The namespace label this root's ADRs carry, if any. */
+  namespace?: string
+  /** The root's git remote URL (origin preferred), if resolvable. */
+  remote?: string
+}
+
 export interface RepositoryContext {
   /** All parsed ADRs currently known to the index. */
   listAdrs(): AdrFile[]
@@ -51,4 +70,12 @@ export interface RepositoryContext {
 
   /** Optional — not required by any Tier 0/1 read; reserved for a future temporal primitive. */
   getGitLog?(relativePath: string, n?: number): Promise<GitLogEntry[]>
+
+  /**
+   * Optional — the roots this context aggregates, with their git-remote
+   * identities, so a scoped canonical ref can FILTER instead of fanning out.
+   * Absent (older adapters, minimal test contexts): canonical refs delegate
+   * unscoped, exactly the pre-2026-10-01 behavior.
+   */
+  listRootScopes?(): RootScope[]
 }

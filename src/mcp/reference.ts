@@ -13,7 +13,7 @@
  */
 
 import type { AdrFile, AdrSection, Question, SeedFile } from '../parser/types'
-import type { RepositoryContext } from './repositoryContext'
+import type { RepositoryContext, RootScope } from './repositoryContext'
 import { parseDeepLinkRef } from '../deeplink/protocol'
 
 /**
@@ -230,6 +230,63 @@ function isRefError<T>(x: T | RefError): x is RefError {
 }
 
 /**
+ * Extract a lowercased "owner/repo" identity from a git remote URL, across
+ * the forms that actually occur in the wild: `git@host:Owner/Repo.git`,
+ * `https://host/Owner/Repo(.git)`, `ssh://git@host/Owner/Repo.git`, with or
+ * without a trailing slash. Returns undefined for URLs it can't read —
+ * an unreadable remote means that root simply never matches a repo/ scope
+ * (it can still match a project/ scope by namespace).
+ */
+export function extractOwnerRepo(remoteUrl: string): string | undefined {
+  const cleaned = remoteUrl.trim().replace(/\/+$/, '').replace(/\.git$/i, '')
+  // scp-like: git@host:owner/repo
+  const scp = cleaned.match(/^[^@/]+@[^:/]+:(.+)$/)
+  const pathPart = scp ? scp[1] : cleaned.replace(/^[a-z+]+:\/\/[^/]+\//i, '')
+  const segments = pathPart.split('/').filter(Boolean)
+  if (segments.length < 2) return undefined
+  return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`.toLowerCase()
+}
+
+/** Roots whose identity matches a canonical scope (`repo/<owner>/<repo>` by remote, `project/<ns>` by namespace). */
+function matchScopeToRoots(scope: string, roots: RootScope[]): RootScope[] {
+  if (scope.startsWith('repo/')) {
+    const want = scope.slice('repo/'.length).toLowerCase()
+    return roots.filter((r) => r.remote && extractOwnerRepo(r.remote) === want)
+  }
+  const ns = scope.slice('project/'.length).toLowerCase()
+  return roots.filter((r) => r.namespace?.toLowerCase() === ns)
+}
+
+/**
+ * A read-view of the context restricted to the given roots (by rootPath
+ * prefix — robust where namespace is undefined). Write/fs primitives pass
+ * through untouched: scope filters RESOLUTION, never file access.
+ */
+function scopedContext(ctx: RepositoryContext, roots: RootScope[]): RepositoryContext {
+  const inScope = (filePath: string) => roots.some((r) => filePath === r.rootPath || filePath.startsWith(r.rootPath.endsWith('/') ? r.rootPath : `${r.rootPath}/`))
+  return {
+    ...ctx,
+    listAdrs: () => ctx.listAdrs().filter((a) => inScope(a.path)),
+    getAdr: (ref: string) => {
+      const hit = ctx.getAdr(ref)
+      return hit && inScope(hit.path) ? hit : ctx.listAdrs().find((a) => inScope(a.path) && a.number === parseInt(ref.replace(/^adr:/, ''), 10))
+    },
+    listSeeds: () => ctx.listSeeds().filter((s) => inScope(s.path)),
+    getSeed: (ref: string) => {
+      const hit = ctx.getSeed(ref)
+      if (hit && inScope(hit.path)) return hit
+      const slug = ref.replace(/^seed:/, '')
+      return ctx.listSeeds().find((s) => {
+        if (!inScope(s.path)) return false
+        const name = s.path.split('/').pop()?.replace(/\.md$/, '')
+        return name === slug || name === `seed-${slug}`
+      })
+    },
+    listRootScopes: () => roots,
+  }
+}
+
+/**
  * Resolve a bare ADR number against every root in the live index — never
  * `ctx.getAdr`'s first-match semantics directly, because with a genuine
  * multi-root composite (CompositeIndex.fromWorkspace, 2026-07-14) two roots
@@ -319,18 +376,48 @@ export function resolveReference(ctx: RepositoryContext, rawRef: string): Resolv
   // Canonical adr://v1/ URIs (ADR-0008 grammar; the Scope Remaining 🔲 item,
   // built 2026-08-26 on direct founder demand — "couldn't they eventually be
   // clickable?"). Strategy: parse scope + artifact, DELEGATE the artifact to
-  // the short-ref grammar below (one resolution, never a second), and be
-  // honest about scope: this resolver serves ONE workspace — a URI naming a
-  // foreign project/repo that still resolves locally is reported as resolved
-  // (the artifact was found here); one that doesn't resolve gets an error
-  // that NAMES the scope, so "not found" and "wrong workspace" are
-  // distinguishable at the call site.
+  // the short-ref grammar below (one resolution, never a second).
+  //
+  // SCOPE NOW FILTERS (2026-10-01, the founder's live-hit specimen, routed by
+  // Plenum: a fully-scoped ref to pneumatic's 0026 was declared "ambiguous
+  // across 4 roots" from an HQ-shaped window — the scope was parsed, echoed
+  // back in the error text, and then dropped right here at the delegation
+  // call). The invariant, Plenum's phrasing kept: **a scoped canonical ref
+  // can never be legitimately ambiguous** — it binds to the root(s) whose
+  // identity matches the scope, or it fails as not-found NAMING the scope;
+  // "ambiguous" is only ever a truthful answer for genuinely bare refs (or
+  // for one repo genuinely mounted at two roots). Mechanism: match the scope
+  // against each root's git remote (`repo/<owner>/<repo>`) or namespace
+  // (`project/<ns>`), then delegate against a VIEW of the context filtered
+  // to the matching root(s) — one resolver, no second grammar; every
+  // artifact kind, fragment, and tolerance inherits the filtering for free.
+  // A context without `listRootScopes` (minimal tests, older adapters)
+  // keeps the pre-fix behavior: delegate unscoped, annotate errors.
   if (/^adr:\/\//.test(ref)) {
     const m = ref.match(/^adr:\/\/(v\d+)\/(project\/[^/]+|repo\/[^/]+\/[^/]+)\/(adr|seed)\/([^?#]+)(\?[^#]*)?(#.*)?$/)
     if (!m) return { kind: 'error', error: 'unrecognized_reference', message: `Not a valid canonical reference: "${ref}" — expected adr://v1/{project/<ns>|repo/<owner>/<repo>}/{adr/<locator>|seed/<slug>}[#anchor] (ADR-0008 §canonical_ref)` }
     const [, version, scope, artifact, locator, , fragment] = m
     if (version !== 'v1') return { kind: 'error', error: 'unsupported_reference', message: `Canonical reference version "${version}" is not supported (this resolver speaks v1); ref: "${ref}"` }
     const shortRef = `${artifact}:${locator}${fragment ?? ''}`
+
+    const roots = ctx.listRootScopes?.()
+    if (roots && roots.length > 0) {
+      const matched = matchScopeToRoots(scope, roots)
+      if (matched.length === 0) {
+        const checked = roots.filter((r) => (scope.startsWith('repo/') ? r.remote : r.namespace)).length
+        return {
+          kind: 'error',
+          error: 'not_found',
+          message: `No workspace root matches the scope "${scope}" (checked ${checked} of ${roots.length} roots' ${scope.startsWith('repo/') ? 'git remotes' : 'namespaces'}) — if that scope names a different workspace, open it there`,
+        }
+      }
+      const result = resolveReference(scopedContext(ctx, matched), shortRef)
+      if (result.kind === 'error') {
+        return { ...result, message: `${result.message} (scoped to ${scope}, which bound ${matched.length === 1 ? `root "${matched[0].namespace ?? matched[0].rootPath}"` : `${matched.length} roots mounting the same repo`})` }
+      }
+      return result
+    }
+
     const result = resolveReference(ctx, shortRef)
     if (result.kind === 'error') {
       return { ...result, message: `${result.message} (canonical ref scoped to ${scope} — if that names a different workspace, open it there)` }
