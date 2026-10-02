@@ -43,9 +43,25 @@ export type WriteResult =
  * `scripts/ephemeral/2026-08-21-probe-mcp-write-locator-id-vs-slug-mismatch.ts`
  * before this fix, and again after). Read wide, write canonical: the write
  * path must accept what its own sibling read tools actually emit.
+ *
+ * Third form, `Question.aliasSlug` (2026-09-26, Flint 5's parser half,
+ * `0888ecf`; ledger ruling on the trailing "(QST-PETNAME)" dialect, clause 4
+ * — "the write-locator's `id || slug || aliasSlug`"): a bound petname is a
+ * second anchor the read side already resolves (reference.ts), so a caller
+ * holding `#qst-petname` must be able to write through it too. Precedence
+ * mirrors reference.ts: canonical id/slug first, alias only as a fallback —
+ * never one combined `find`, which could let one question's alias shadow
+ * another's slug. (The parser's collision law already refuses an alias that
+ * equals another question's slug, so this is belt-and-braces, not load-
+ * bearing.) The alias never changes `Question.id`, so callers that go on to
+ * key anything by id (the write-fidelity check) must use the RESOLVED
+ * question's `.id`, not the string they were handed.
  */
-function findQuestionByIdOrSlug(questions: Question[], questionId: string): Question | undefined {
-  return questions.find((q) => q.id === questionId || q.slug === questionId)
+export function findQuestionByIdSlugOrAlias(questions: Question[], questionId: string): Question | undefined {
+  return (
+    questions.find((q) => q.id === questionId || q.slug === questionId) ??
+    questions.find((q) => q.aliasSlug !== undefined && q.aliasSlug === questionId)
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +224,7 @@ export function applyAnswerQuestion(
   author: string,
 ): WriteResult {
   const freshAdr = parseAdr(currentContent, adrPath)
-  const question = findQuestionByIdOrSlug(freshAdr.questions, questionId)
+  const question = findQuestionByIdSlugOrAlias(freshAdr.questions, questionId)
   if (!question) {
     return { ok: false, error: `Could not locate question "${questionId}" in the current file content — it may have been edited or removed since last read.` }
   }
@@ -283,7 +299,7 @@ export function applyAddRecommendation(
   date: string,
 ): WriteResult {
   const freshAdr = parseAdr(currentContent, adrPath)
-  const question = findQuestionByIdOrSlug(freshAdr.questions, questionId)
+  const question = findQuestionByIdSlugOrAlias(freshAdr.questions, questionId)
   if (!question) {
     return { ok: false, error: `Could not locate question "${questionId}" in the current file content — it may have been edited or removed since last read.` }
   }

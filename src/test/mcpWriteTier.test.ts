@@ -14,7 +14,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { createHash } from 'crypto'
 import type { RepositoryContext } from '../mcp/repositoryContext'
 import { answerQuestion, addRecommendation, appendIteration, updateResolution, applyBatch, blessQstHandle } from '../mcp/handlers'
-import { verifyNoCollateralQuestionChanges, type BatchOperation } from '../mcp/writeOps'
+import { verifyNoCollateralQuestionChanges, findQuestionByIdSlugOrAlias, type BatchOperation } from '../mcp/writeOps'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { parseAdr } from '../parser/extractor'
 import { DocketSession } from '../mcp/session'
 
@@ -937,7 +939,7 @@ describe('Regression tests', () => {
   // (2) after fixing that, the write-fidelity check was still keyed on the
   // caller's raw string, so the intended edit was rejected as "collateral" —
   // only caught by running the fix against the real HQ file, not by the
-  // locator-level unit view alone. Fixed 2026-09-26: findQuestionByIdOrSlug
+  // locator-level unit view alone. Fixed 2026-09-26: findQuestionByIdSlugOrAlias
   // + the fidelity check keyed on the resolved question's canonical id.
   describe('write tools accept the bare slug the read tools advertise', () => {
     const BARE = 'qst-what-is-the-scope'
@@ -972,6 +974,42 @@ describe('Regression tests', () => {
       const { ctx } = makeContext(FIXTURE)
       const result = await addRecommendation(ctx, session, '1', 'adr-0001-qst-what-is-the-scope', 'Relay 5', 'Ship it.')
       expect(result).not.toContain('error:')
+    })
+
+    // Trailing "(QST-PETNAME)" alias (2026-09-26 ledger ruling, clause 4 —
+    // Flint 5's parser half `0888ecf`, founder Report 2026-09-13): a bound
+    // petname is a second anchor the READ side already resolves, so the write
+    // locator must accept it too. zoo-016 is the cross-surface fixture every
+    // implementation of this rule must agree with — this is the MCP locator's
+    // half of that contract, run against Flint's hand-verified expectations
+    // rather than a private restatement of them.
+    describe('trailing (QST-PETNAME) alias — zoo-016 cross-surface conformance', () => {
+      const zooDir = resolve(__dirname, 'fixtures/zoo')
+      const md = readFileSync(resolve(zooDir, 'zoo-016-trailing-parenthesized-qst-handle.md'), 'utf8')
+      const expected = JSON.parse(readFileSync(resolve(zooDir, 'zoo-016-trailing-parenthesized-qst-handle.expected.json'), 'utf8'))
+      const questions = parseAdr(md, '/fake/docs/adr/0016-zoo.md').questions
+
+      it('every anchor the fixture says must resolve, resolves to the expected question', () => {
+        for (const [anchor, index] of Object.entries<number>(expected.exactAnchorsThatMustResolve)) {
+          expect(findQuestionByIdSlugOrAlias(questions, anchor), `anchor ${anchor}`).toBe(questions[index])
+        }
+      })
+
+      it('anchors no question owns (unbound/refused petnames, mid-text) do NOT resolve — a refused alias must not become a write target', () => {
+        for (const anchor of expected.anchorsNoQuestionOwns.anchors as string[]) {
+          expect(findQuestionByIdSlugOrAlias(questions, anchor), `anchor ${anchor}`).toBeUndefined()
+        }
+      })
+
+      it('answer_question through a bound alias writes, and the write-fidelity check keys on the canonical id (the alias never changes Question.id)', async () => {
+        const adr = `# ADR-0004: Alias write\n\n- **Date**: 2026-09-26\n- **Iteration**: 1\n- **Status**: Draft\n- **Deciders**: Test\n\n---\n\n## Questions\n\n### QST: Which store do we use? (QST-STORE)\n- Status: unanswered\n\n**ANS:** (by nobody)\n[Fill this in]\n\n---\n\n## Links\n`
+        const { ctx, files } = makeContext(adr)
+        const canonicalId = parseAdr(adr, ADR_PATH).questions[0].id
+        expect(canonicalId).toContain('which-store-do-we-use') // long slug: alias never touched the id
+        const result = await answerQuestion(ctx, session, '1', 'qst-store', 'The alias route works.', { author: 'Relay 5' })
+        expect(result).toContain('Answered')
+        expect(files.get(ADR_PATH)).toContain('The alias route works.')
+      })
     })
 
     it('an id matching neither form still returns the structured not-found refusal', async () => {
