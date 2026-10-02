@@ -46,6 +46,7 @@ import {
   queueInputBox,
   queueQuickPick,
   queueWarningMessage,
+  queueInformationMessage,
   setConfigOverride,
   extensions,
   Uri,
@@ -237,6 +238,7 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       'adrManager.copyRelativePath': [f.adr],
       'adrManager.reportTreeItem': [f.adr],
       'adrManager.excludeRoot': [f.root],
+      'adrManager.retireTour': [f.tour],
       'adrManager.mintTourFromFilter': [],
       'adrManager.hideCompletedTours': [],
       'adrManager.showCompletedTours': [],
@@ -638,6 +640,73 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       // block; it must not reach a walk. The genuinely-open one must.
       expect(refs.some(r => r.includes('qst-was-this-already-settled'))).toBe(false)
       expect(refs.some(r => r.includes('qst-does-this-work'))).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // RETIRE (ADR-0034 iter-16; docket ADR-0002 It-8's Phase-0 dispensation).
+  // The gesture that did not exist until 2026-10-02. The schema carried
+  // `"retired": false` from v1 and the tree already rendered `[retired]`, so
+  // the flag was honored everywhere except in a way a human could reach —
+  // retiring meant hand-editing JSON, and nobody did. caring-form still holds
+  // a tour minted 2026-07-29: clean, 4 of 8 stops awaiting, 65+ days old,
+  // indistinguishable in the tree from one minted this morning.
+  // ---------------------------------------------------------------------
+  describe('retireTour — the lifecycle gesture that lets a stale tour stop asking', () => {
+    function writeTour(name: string, body: Record<string, unknown>): string {
+      const dir = path.join(workspaceRoot, 'docs', 'adr', 'tours')
+      fs.mkdirSync(dir, { recursive: true })
+      const p = path.join(dir, name)
+      fs.writeFileSync(p, JSON.stringify(body, null, 2) + '\n', 'utf8')
+      return p
+    }
+    const tourItem = async (p: string) => {
+      const { AdrTreeItem } = await import('../views/adrTreeProvider')
+      const { parseTourFile } = await import('../index/tourIndex')
+      const tour = parseTourFile(p, fs.readFileSync(p, 'utf8'))!
+      return new AdrTreeItem({ kind: 'tour', tour, done: false })
+    }
+
+    it('flips retired to true on disk', async () => {
+      resetInteractionState()
+      const p = writeTour('retire-me.tour.json', {
+        schema: 'question-tour/1', title: 'Retire me', author: { name: 'Commodore' },
+        minted_at: '2026-07-29T00:00:00Z', retired: false, entries: [],
+      })
+      await getRegisteredCommand('adrManager.retireTour')!(await tourItem(p))
+      expect(JSON.parse(fs.readFileSync(p, 'utf8')).retired).toBe(true)
+    })
+
+    // A lifecycle flip must never be the thing that silently drops fields the
+    // command does not model — real tours carry theme, minted_commit, and
+    // author.session, none of which this code knows about.
+    it('preserves fields the command does not model', async () => {
+      resetInteractionState()
+      const p = writeTour('rich.tour.json', {
+        schema: 'question-tour/1', title: 'Rich', author: { name: 'Commodore', session: 'abc123' },
+        minted_at: '2026-07-29T00:00:00Z', minted_commit: 'deadbee', retired: false,
+        theme: { background: '#556B2F', foreground: '#F5F5F0' }, entries: [],
+      })
+      await getRegisteredCommand('adrManager.retireTour')!(await tourItem(p))
+      const after = JSON.parse(fs.readFileSync(p, 'utf8'))
+      expect(after.retired).toBe(true)
+      expect(after.theme).toEqual({ background: '#556B2F', foreground: '#F5F5F0' })
+      expect(after.minted_commit).toBe('deadbee')
+      expect(after.author.session).toBe('abc123')
+    })
+
+    // Reversibility is what lets this be a one-click gesture with no
+    // confirmation modal — a gate here would re-create the friction that let
+    // stale tours pile up in the first place.
+    it('Undo on the toast puts it back', async () => {
+      resetInteractionState()
+      const p = writeTour('undo-me.tour.json', {
+        schema: 'question-tour/1', title: 'Undo me', author: { name: 'Commodore' },
+        minted_at: '2026-07-29T00:00:00Z', retired: false, entries: [],
+      })
+      queueInformationMessage('Undo')
+      await getRegisteredCommand('adrManager.retireTour')!(await tourItem(p))
+      expect(JSON.parse(fs.readFileSync(p, 'utf8')).retired).toBe(false)
     })
   })
 

@@ -582,6 +582,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // for a Settings-UI edit but would make a dedicated TOGGLE COMMAND read
     // as silently broken: click it, nothing visibly happens until some
     // other event happens to redraw the tree.
+    // ADR-0034 Iteration 16's lifecycle verb, built under docket ADR-0002
+    // Iteration 8's Phase-0 dispensation ("tour retire is urgent... Docent
+    // builds it in your repo now; it rides the move").
+    //
+    // The gesture that did not exist until today. The schema has carried
+    // `"retired": false` since v1 and the tree already renders `[retired]`
+    // with an archive icon — the field was honored, only the gesture was
+    // missing, so retiring a tour meant hand-editing JSON and nobody did it.
+    // Consequence, measured in caring-form: a tour minted 2026-07-29 still
+    // sits in the tree, mechanically clean, 4 of 8 stops awaiting, 65+ days
+    // old and visually identical to one minted this morning. Jérémie:
+    // "those QuestionTours took weeks to get working, to the point that
+    // nobody remembered what any of the tours was for."
+    //
+    // No confirmation modal, deliberately: this must be cheap enough to do on
+    // a whim, which is the whole point of the feature. Reversibility comes
+    // from an Undo on the toast instead — a gate here would re-create the
+    // friction that let stale tours accumulate.
+    registerLoggedCommand('adrManager.retireTour', async (item?: import('./views/adrTreeProvider').AdrTreeItem) => {
+      const tourPath = item?.tour?.path
+      if (!tourPath) {
+        vscode.window.showErrorMessage('ADR Manager: Retire Tour works on a tour in the sidebar — right-click one.')
+        return
+      }
+      const setRetired = async (value: boolean): Promise<boolean> => {
+        try {
+          const raw = await fs.promises.readFile(tourPath, 'utf-8')
+          const parsed = JSON.parse(raw) as Record<string, unknown>
+          if (parsed.retired === value) return false
+          parsed.retired = value
+          // Re-stringify the WHOLE parsed object rather than rebuilding from a
+          // typed shape: a real tour may carry fields this code does not model
+          // (theme, minted_commit, author.session), and a lifecycle flip must
+          // never be the thing that silently drops them.
+          await fs.promises.writeFile(tourPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
+          return true
+        } catch (err) {
+          vscode.window.showErrorMessage(`ADR Manager: could not ${value ? 'retire' : 'restore'} the tour — ${err instanceof Error ? err.message : String(err)}`)
+          return false
+        }
+      }
+
+      const title = item?.tour?.title ?? path.basename(tourPath)
+      if (!(await setRetired(true))) {
+        vscode.window.showInformationMessage(`"${title}" is already retired.`)
+        return
+      }
+      treeProvider?.refresh()
+      if (watcherLifecycle) void watcherLifecycle.requestRefresh()
+      const undo = await vscode.window.showInformationMessage(`Retired "${title}" — it no longer asks for your attention.`, 'Undo')
+      if (undo === 'Undo' && await setRetired(false)) {
+        treeProvider?.refresh()
+        if (watcherLifecycle) void watcherLifecycle.requestRefresh()
+      }
+    }),
     registerLoggedCommand('adrManager.hideCompletedTours', async () => {
       await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', true);
       treeProvider?.refresh();

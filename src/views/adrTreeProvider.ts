@@ -1006,8 +1006,21 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
       const resolved = resolveTourEntries(tour, ctx)
       return { tour, resolved, done: isTourDone(resolved) }
     })
+    // ADR-0034 iter-16: the setting hides tours that are no longer LIVE, which
+    // is two states, not one — `done` (every must_respond entry answered) and
+    // `retired` (the author said stop presenting this). Retired was honored in
+    // the label and icon but never in visibility, so the only tours the setting
+    // could hide were the ones that had resolved themselves. A stale tour is by
+    // definition NOT done — it is the exact case that needed hiding and the one
+    // case this filter could not touch. Jérémie's words for the result: "those
+    // QuestionTours took weeks to get working, to the point that nobody
+    // remembered what any of the tours was for."
+    //
+    // Widening only ever hides MORE, and only what an author explicitly marked
+    // — so no tour disappears that someone did not deliberately retire. Turn
+    // the setting off and everything returns, labelled `[retired]`.
     const hideCompleted = vscode.workspace.getConfiguration('adrManager').get<boolean>('tours.hideCompleted', true)
-    return hideCompleted ? all.filter(t => !t.done) : all
+    return hideCompleted ? all.filter(t => !t.done && !t.tour.retired) : all
   }
 
   /**

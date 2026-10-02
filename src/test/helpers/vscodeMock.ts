@@ -63,6 +63,7 @@ export function resetInteractionState(): void {
   quickPickQueue.length = 0
   inputBoxQueue.length = 0
   warningMessageQueue.length = 0
+  informationMessageQueue.length = 0
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +197,7 @@ export class WorkspaceEdit {
 const quickPickQueue: unknown[] = []
 const inputBoxQueue: (string | undefined)[] = []
 const warningMessageQueue: (string | undefined)[] = []
+const informationMessageQueue: (string | undefined)[] = []
 
 /** Test-only: script the next N showQuickPick resolutions (FIFO). */
 export function queueQuickPick(value: unknown): void { quickPickQueue.push(value) }
@@ -203,6 +205,15 @@ export function queueQuickPick(value: unknown): void { quickPickQueue.push(value
 export function queueInputBox(value: string | undefined): void { inputBoxQueue.push(value) }
 /** Test-only: script the next N showWarningMessage resolutions (FIFO) — for modal confirm dialogs like excludeRoot's. */
 export function queueWarningMessage(value: string | undefined): void { warningMessageQueue.push(value) }
+/**
+ * Test-only: script the next N showInformationMessage resolutions (FIFO).
+ * Added 2026-10-02 for retireTour's Undo affordance — an info toast whose
+ * ACTION is load-bearing, not decoration: retire ships with no confirmation
+ * modal (it must be cheap enough to use on a whim), so Undo is the entire
+ * safety story and had to be testable. Default stays `undefined`, i.e. the
+ * toast dismissed, so every existing caller is unaffected.
+ */
+export function queueInformationMessage(value: string | undefined): void { informationMessageQueue.push(value) }
 
 function fakeTextEditor(doc: ReturnType<typeof fakeTextDocument>) {
   return {
@@ -230,7 +241,7 @@ function fakeTextDocument(uri: { fsPath: string }) {
 
 export const mockWindow = {
   activeTextEditor: undefined as ReturnType<typeof fakeTextEditor> | undefined,
-  showInformationMessage: vi.fn(async (..._args: unknown[]) => undefined),
+  showInformationMessage: vi.fn(async (..._args: unknown[]) => informationMessageQueue.shift()),
   showErrorMessage: vi.fn(async (..._args: unknown[]) => undefined),
   showWarningMessage: vi.fn(async (..._args: unknown[]) => warningMessageQueue.shift()),
   showQuickPick: vi.fn(async (..._args: unknown[]) => quickPickQueue.shift()),

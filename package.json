@@ -2,7 +2,7 @@
   "name": "adrs4ai",
   "displayName": "ADRs for AI",
   "description": "Your AI's reasoning stops evaporating: Every open question in your project's deliberation records, in one sidebar—with the options, the recommendation, and the reasons—answered in place, never lost.",
-  "version": "0.7.120",
+  "version": "0.7.121",
   "publisher": "jlumbroso",
   "license": "MIT",
   "icon": "media/adr-icon-pinion-256.png",
@@ -146,6 +146,12 @@
         "command": "adrManager.mintTourFromFilter",
         "title": "Mint Tour from Current Filter",
         "category": "ADR Manager"
+      },
+      {
+        "command": "adrManager.retireTour",
+        "title": "Retire Tour",
+        "category": "ADR Manager",
+        "icon": "$(archive)"
       },
       {
         "command": "adrManager.hideCompletedTours",
@@ -447,6 +453,11 @@
           "command": "adrManager.reportTreeItem",
           "when": "view == adrExplorer && config.adrManager.logging.observations",
           "group": "9_report@1"
+        },
+        {
+          "command": "adrManager.retireTour",
+          "when": "view == adrExplorer && viewItem == tour",
+          "group": "1_actions@1"
         }
       ]
     },
