@@ -2,7 +2,7 @@
   "name": "adrs4ai",
   "displayName": "ADRs for AI",
   "description": "Your AI's reasoning stops evaporating: Every open question in your project's deliberation records, in one sidebar—with the options, the recommendation, and the reasons—answered in place, never lost.",
-  "version": "0.7.119",
+  "version": "0.7.120",
   "publisher": "jlumbroso",
   "license": "MIT",
   "icon": "media/adr-icon-pinion-256.png",
