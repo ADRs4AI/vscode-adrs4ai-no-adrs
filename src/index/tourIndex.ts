@@ -171,7 +171,13 @@ export interface ResolvedTourEntry {
 }
 
 /** Doctrine 1: facts are read live, every time — never cached alongside the claim. */
-export function resolveTourEntries(tour: TourFile, ctx: RepositoryContext): ResolvedTourEntry[] {
+// Takes only what it reads — the entry list — rather than a whole parsed
+// TourFile (widened 2026-10-02 for the mint gate). The gate must assess a tour
+// that does not exist on disk yet, and `buildTourJson`'s serialization shape is
+// a different type from the parser's. Narrowing the parameter to the one field
+// this function actually touches lets both callers in without a cast, and makes
+// the dependency honest: resolution needs entries, never a file.
+export function resolveTourEntries(tour: Pick<TourFile, 'entries'>, ctx: RepositoryContext): ResolvedTourEntry[] {
   return tour.entries.map(e => ({
     ref: e.ref,
     mustRespond: e.must_respond !== false,

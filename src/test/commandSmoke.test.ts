@@ -91,6 +91,17 @@ function buildFixtureWorkspace(): string {
       '- Why asking: smoke-test fixture',
       '- Need: yes/no',
       '',
+      // Stale-answered: declares unanswered while carrying a real ANS block.
+      // This is the 2026-08-24 incident shape — the class that walked the
+      // founder to two questions he had already settled. The mint gate needs a
+      // real specimen of it, not a synthetic one.
+      '### QST: Was this already settled?',
+      '- Status: unanswered',
+      '- Why asking: stale-status fixture for the mint gate',
+      '',
+      '**ANS:** (by Test Human)',
+      'Yes — answered weeks ago; the status line was never flipped.',
+      '',
     ].join('\n'),
     'utf8',
   )
@@ -579,6 +590,10 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
     it('mints a tour containing the currently-visible (unanswered) question, under the given title', async () => {
       resetInteractionState()
       queueInputBox('Fixture Mint Test')
+      // The mint gate (2026-10-02) now stands between the title prompt and the
+      // write: the fixture's questions have no recommendation, so it warns and
+      // waits. "Mint anyway" is the explicit consent this test now gives.
+      queueWarningMessage('Mint anyway')
       const toursDir = path.join(workspaceRoot, 'docs', 'adr', 'tours')
       const before = new Set(fs.existsSync(toursDir) ? fs.readdirSync(toursDir) : [])
       const handler = getRegisteredCommand('adrManager.mintTourFromFilter')!
@@ -588,6 +603,41 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       const tour = JSON.parse(fs.readFileSync(path.join(toursDir, created[0]), 'utf8'))
       expect(tour.title).toBe('Fixture Mint Test')
       expect(tour.entries.length).toBeGreaterThan(0)
+    })
+
+    // ---------------------------------------------------------------------
+    // THE MINT GATE (ADR-0034 iter-11 item 3). This command is the code path
+    // that produced both founder incidents: 2026-08-14's blank-wall stops and
+    // 2026-08-24's two stops he had already answered under stale status lines.
+    // Before this gate it wrote whatever the filter held, silently.
+    // ---------------------------------------------------------------------
+    it('refuses to mint when the warning is dismissed — cancel is the default and the safe one', async () => {
+      resetInteractionState()
+      queueInputBox('Cancelled Mint')
+      // Nothing queued => showWarningMessage resolves undefined, i.e. the user
+      // dismissed the modal. No file may appear.
+      const toursDir = path.join(workspaceRoot, 'docs', 'adr', 'tours')
+      const before = new Set(fs.existsSync(toursDir) ? fs.readdirSync(toursDir) : [])
+      await getRegisteredCommand('adrManager.mintTourFromFilter')!()
+      const after = new Set(fs.existsSync(toursDir) ? fs.readdirSync(toursDir) : [])
+      expect([...after].filter(f => !before.has(f)), 'a dismissed gate must write nothing').toEqual([])
+    })
+
+    it('drops the stale-answered stop on request — the 2026-08-24 incident, made one click', async () => {
+      resetInteractionState()
+      queueInputBox('Dropped Stale Mint')
+      queueWarningMessage('Drop the answered stops')
+      const toursDir = path.join(workspaceRoot, 'docs', 'adr', 'tours')
+      const before = new Set(fs.existsSync(toursDir) ? fs.readdirSync(toursDir) : [])
+      await getRegisteredCommand('adrManager.mintTourFromFilter')!()
+      const created = fs.readdirSync(toursDir).filter(f => !before.has(f))
+      expect(created.length).toBe(1)
+      const tour = JSON.parse(fs.readFileSync(path.join(toursDir, created[0]), 'utf8'))
+      const refs: string[] = tour.entries.map((e: { ref: string }) => e.ref)
+      // The fixture's stale question declares `unanswered` but carries an ANS
+      // block; it must not reach a walk. The genuinely-open one must.
+      expect(refs.some(r => r.includes('qst-was-this-already-settled'))).toBe(false)
+      expect(refs.some(r => r.includes('qst-does-this-work'))).toBe(true)
     })
   })
 

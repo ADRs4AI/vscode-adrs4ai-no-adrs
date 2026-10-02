@@ -42,6 +42,7 @@ import { registerAdrTerminalLinkProvider } from './views/terminalLinkProvider'
 import { registerDeepLinkUriHandler } from './views/deepLinkUriHandler'
 import { createRepositoryContextAdapter } from './index/repositoryContextAdapter'
 import { resolveTourEntries, unresolvedTourRefs } from './index/tourIndex'
+import { assessTour } from './index/tourReadiness'
 import { resolveReference } from './mcp/reference'
 import { OpenQuestionsPanel } from './webview/openQuestionsPanel'
 import { ADR_STATUSES } from './parser/statusInfo'
@@ -2314,12 +2315,60 @@ async function mintTourFromFilter(treeProvider: import('./views/adrTreeProvider'
   const mintedAt = new Date().toISOString()
   const mintedCommit = tryGitRevParseHead(workspaceRoot)
 
+  // ---------------------------------------------------------------------
+  // THE MINT GATE (ADR-0034 iter-11 item 3; doctrine 8's branch (b)).
+  //
+  // This is the code path that produced the founder's worst tours. Until now
+  // it wrote whatever the sidebar filter happened to contain, silently. Two
+  // incidents came through here:
+  //   - 2026-08-14: stops with no recommendation, rendering as blank walls
+  //     ("is this citing the question, or creating a new one?").
+  //   - 2026-08-24: two stops he had ANSWERED on 08-08, under stale Status
+  //     lines — a booked deep-focus slot spent on settled work.
+  //
+  // `assessTour` is the same predicate `tour-walk` calls, so the surfaces
+  // cannot drift into separate definitions of "ready". It never blocks on a
+  // judgment a machine cannot make: `staleAnswered` and `unprepared` are
+  // stated OUT LOUD and the human decides. That is doctrine 8's branch (b)
+  // exactly — "the mint must say so out loud" — not a weaker form of it.
+  // ---------------------------------------------------------------------
+  let mintRefs = refs
+  const draft = buildTourJson({ title, authorName: humanName, mintedAt, mintedCommit, entries: refs.map(ref => ({ ref })) })
+  const assessed = assessTour(resolveTourEntries(draft, createRepositoryContextAdapter(composite)))
+
+  const staleCount = assessed.staleAnswered.length
+  const unpreparedCount = assessed.unprepared.length
+  if (staleCount > 0 || unpreparedCount > 0) {
+    const detail: string[] = []
+    // Stale leads, and gets the one-click remedy: it is the only class that
+    // costs a booked slot rather than merely reading poorly.
+    if (staleCount > 0) detail.push(`${staleCount} stop${staleCount === 1 ? '' : 's'} already carry an answer under an "unanswered" status line — walking these spends your attention on settled work.`)
+    if (unpreparedCount > 0) detail.push(`${unpreparedCount} stop${unpreparedCount === 1 ? '' : 's'} have no recommendation in the source document.`)
+    detail.push('', 'A tour is ready when someone has walked it and found nothing wrong.')
+
+    const actions = staleCount > 0 ? ['Drop the answered stops', 'Mint anyway'] : ['Mint anyway']
+    const choice = await vscode.window.showWarningMessage(
+      `"${title}" will render ${staleCount > 0 ? 'settled work and ' : ''}unprepared stops.`,
+      { modal: true, detail: detail.join('\n') },
+      ...actions,
+    )
+    if (!choice) return // cancelled — the default, and the safe one
+    if (choice === 'Drop the answered stops') {
+      const staleRefs = new Set(assessed.stops.filter(s => s.assessment.staleAnswered).map(s => s.entry.ref))
+      mintRefs = refs.filter(r => !staleRefs.has(r))
+      if (mintRefs.length === 0) {
+        vscode.window.showInformationMessage('Every stop was already answered — nothing left to mint.')
+        return
+      }
+    }
+  }
+
   const tour = buildTourJson({
     title,
     authorName: humanName,
     mintedAt,
     mintedCommit,
-    entries: refs.map(ref => ({ ref })),
+    entries: mintRefs.map(ref => ({ ref })),
   })
   const filename = tourFilename(title, mintedAt.slice(0, 10))
   const filePath = tourFilePath(path.join(workspaceRoot, adrDirRel), filename)
@@ -2328,7 +2377,7 @@ async function mintTourFromFilter(treeProvider: import('./views/adrTreeProvider'
   await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), Buffer.from(serializeTourJson(tour), 'utf-8'))
   if (watcherLifecycle) void watcherLifecycle.requestRefresh();
 
-  const openNow = await vscode.window.showInformationMessage(`Minted "${title}" (${refs.length} entries) to ${adrDirRel}/tours/${filename}.`, 'Walk it now')
+  const openNow = await vscode.window.showInformationMessage(`Minted "${title}" (${mintRefs.length} entries) to ${adrDirRel}/tours/${filename}.`, 'Walk it now')
   if (openNow === 'Walk it now') OpenQuestionsPanel.createOrShow(composite, filename.replace(/\.tour\.json$/, ''))
 }
 
