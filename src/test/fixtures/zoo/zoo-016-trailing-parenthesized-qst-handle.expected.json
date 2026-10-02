@@ -1,6 +1,6 @@
 {
   "fixture": "zoo-016-trailing-parenthesized-qst-handle.md",
-  "ruling": "docs/QST-DETECTION-LEDGER.md — trailing (QST-PETNAME) dialect, RULED 2026-09-26 (Riddle 5), A amended, six clauses. Founder Report 2026-09-13 (companion etude).",
+  "ruling": "docs/QST-DETECTION-LEDGER.md — trailing (QST-PETNAME) dialect, RULED 2026-09-26 (Riddle 5), A amended, six clauses; clause 2 AMENDED same-day on the etude-0058 specimen (a leading handle always owns identity, but a trailing petname on the SAME heading is now ALWAYS ALSO a secondary alias — refusal survives only against ANOTHER heading's own identity). Founder Report 2026-09-13 (companion etude).",
   "binds_every_implementation": "extension parser (src/parser/extractor.ts), MCP write-locator (aliasSlug), HQ qst-lint.py (ADR-0012 lockstep). Hand-verified against the ruling, not generated.",
   "notes": [
     "`slug` is the canonical, deterministic id component (Question.id = adr-<NNNN>-<slug>): derived from the heading's BYTES ALONE, never from the alias (clause 1, fossil law). The petname stays inside the long slug.",
@@ -30,9 +30,10 @@
       "heading": "QST-LEAD: Does a leading handle outrank a trailing one? (QST-TRAIL)",
       "slug": "qst-lead",
       "qstId": "LEAD",
-      "aliasSlug": null,
-      "displayText": "Does a leading handle outrank a trailing one? (QST-TRAIL)",
-      "warnings": ["ALIAS_HANDLE_COLLISION"]
+      "aliasSlug": "qst-trail",
+      "displayText": "Does a leading handle outrank a trailing one?",
+      "warnings": [],
+      "note": "Clause 2 AMENDED 2026-09-26 (etude-0058 specimen): a leading handle owns qstId/id, but the trailing petname on the SAME heading is now ALWAYS ALSO a secondary alias — binds cleanly, no diagnostic."
     },
     {
       "heading": "QST: First claimant of a shared petname? (QST-DUP)",
@@ -96,11 +97,12 @@
     "qst-should-the-rust-service-be-a-grpc-server-too-qst-rust-grpc-server": 0,
     "qst-store": 1,
     "qst-lead": 2,
+    "qst-trail": 2,
     "qst-jeremie": 7,
     "qst-owned": 8
   },
   "anchorsNoQuestionOwns": {
     "note": "No question's slug or aliasSlug EQUALS these — exact-match resolvers must not bind them. (The MCP resolver's separate, pre-existing case-insensitive SUBSTRING fallback may still land near them, e.g. 'qst-dup' hits both long slugs and returns `ambiguous` — that is that fallback's own honest behavior, not a binding.)",
-    "anchors": ["qst-trail", "qst-dup", "qst-mid"]
+    "anchors": ["qst-dup", "qst-mid"]
   }
 }

@@ -146,15 +146,17 @@ describe('Regression tests: trailing (QST-PETNAME) alias handles (founder Report
     })
   })
 
-  describe('clause 2 — collision law', () => {
-    it('a leading handle outranks a trailing one: the leading binds, the trailing is ignored with a diagnostic and stays in the title', () => {
+  describe('clause 2 — collision law (AMENDED 2026-09-26 on the real etude-0058 specimen: a leading handle always owns identity, but a trailing petname on the SAME heading is now ALWAYS ALSO a secondary alias — refusal survives only against ANOTHER heading\'s own identity)', () => {
+    it('a leading handle keeps owning qstId/id, AND a trailing petname on the same heading binds as a secondary alias — cleanly, no diagnostic (the real specimen this amendment was ruled for: "### QST-1: … (QST-PEEK-TASKFIT)")', () => {
       const adr = parseAdr(adrWith(['### QST-A: Which one wins? (QST-B)']), '/fake/docs/adr/9001-x.md')
       const q = adr.questions[0]
-      expect(q.qstId).toBe('A')
-      expect(q.slug).toBe('qst-a')
-      expect(q.aliasSlug).toBeUndefined()
-      expect(q.text).toBe('Which one wins? (QST-B)')
-      expect(adr.parseWarnings.some(w => w.code === 'ALIAS_HANDLE_COLLISION' && /leading handle/.test(w.message))).toBe(true)
+      expect(q.qstId).toBe('A') // leading handle still owns identity
+      expect(q.slug).toBe('qst-a') // id still unchanged by the petname
+      expect(q.aliasSlug).toBe('qst-b') // AND the petname binds as a secondary alias
+      expect(q.text).toBe('Which one wins?') // stripped from display, same as any other bound alias
+      expect(adr.parseWarnings.filter(w => w.code === 'ALIAS_HANDLE_COLLISION')).toHaveLength(0)
+      const r = resolveReference(ctxFor(adr), 'adr:9001#qst-b')
+      expect(r.kind === 'question' && r.question.id === q.id).toBe(true)
     })
 
     it('two questions claiming one petname bind NEITHER — loud on both, never last-wins', () => {

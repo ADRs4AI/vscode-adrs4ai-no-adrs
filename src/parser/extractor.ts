@@ -601,23 +601,12 @@ export function buildSection(
   const match = resolveNavHeadingIdentity(heading);
   const qstId = match?.qstId;
 
-  // Ledger ruling 2026-09-26, clause 2 (local half): a LEADING handle always
-  // outranks a trailing "(QST-…)" on the same heading — the leading one
-  // binds (it already did, via `qstId` above), the trailing one is ignored
-  // and says so. Everything else about trailing aliases (binding, cross-
-  // question collisions, display stripping) needs the whole document, so it
-  // lives in resolveAliasHandles(), run by the callers once every section
-  // exists — buildSection() never sets aliasSlug itself.
-  if (match?.code === 'QST' && match.qstId !== undefined) {
-    const shadowed = extractTrailingAliasHandle(match.text);
-    if (shadowed) {
-      warnings.push({
-        code: 'ALIAS_HANDLE_COLLISION',
-        message: `Heading "${heading}" carries a leading handle (QST-${match.qstId}) AND a trailing "(QST-${shadowed.rawId})". The leading handle binds (a leading handle always outranks a trailing alias); the trailing one is ignored and stays part of the title text. SUGGESTED: remove "(QST-${shadowed.rawId})" from the heading.`,
-        line: raw.heading.line,
-      });
-    }
-  }
+  // Trailing "(QST-PETNAME)" aliases are NOT handled here: whether one binds
+  // depends on the whole document (cross-question collisions), so it lives
+  // in resolveAliasHandles(), run by the callers once every section exists
+  // — buildSection() never sets aliasSlug itself. (Ledger ruling
+  // 2026-09-26, clause 2 as AMENDED: a leading handle owns identity, but no
+  // longer refuses a trailing petname on the same heading — see there.)
 
   if (match?.deviation) {
     const d = match.deviation;
@@ -782,44 +771,51 @@ function flattenAllSections(sections: AdrSection[]): AdrSection[] {
 
 /**
  * Trailing "(QST-PETNAME)" alias binding — the document-level half of the
- * ledger ruling (Riddle 5, 2026-09-26; founder Report 09-13, 167 wild
- * headings). Run by parseAdr() and extractSeedQuestions() after every
- * section is built and BEFORE questions are extracted from them, because
- * whether a petname binds depends on the whole file:
+ * ledger ruling (Riddle 5, 2026-09-26, clause 2 AMENDED same-day on the
+ * etude-0058 specimen; founder Report 09-13, 167 wild headings). Run by
+ * parseAdr() and extractSeedQuestions() after every section is built and
+ * BEFORE questions are extracted from them, because whether a petname binds
+ * depends on the whole file:
  *
  *  - Clause 1 (deterministic id): binding NEVER touches `slug` — the long
  *    slug (and so `Question.id`) stays what the heading's bytes alone
  *    derive, so a file's ids can't depend on which other questions exist or
- *    on edit history. A bound alias only ADDS `aliasSlug` (+ `qstId`) and
- *    strips the "(QST-…)" from the DISPLAY text (`navCodeText`); `heading`
- *    and `headingRaw` are untouched.
- *  - Clause 2 (collision law): a petname claimed by two questions binds
- *    NEITHER; one that equals another section's own slug or `@adr-anchor`
- *    (a leading handle's `qst-<id>` included — "leading outranks trailing")
- *    doesn't bind. Each refused claimant gets a loud ALIAS_HANDLE_COLLISION
- *    and keeps its title text intact — ambiguity refuses, never last-wins.
- *
- * Only headings WITHOUT a leading handle are candidates (the leading-vs-
- * trailing-on-one-heading case is warned in buildSection()).
+ *    on edit history. A bound alias only ADDS `aliasSlug` and strips the
+ *    "(QST-…)" from the DISPLAY text (`navCodeText`); `heading`/`headingRaw`
+ *    are untouched. `qstId` is set from the alias ONLY when the heading had
+ *    no handle of its own — a leading handle keeps its own `qstId`.
+ *  - Clause 2, AMENDED (identity vs. addressability): the job is settling
+ *    WHICH handle owns identity, never killing the durable name. A leading
+ *    handle always owns `qstId`/`id` (unchanged) — but a trailing petname on
+ *    the SAME heading is now ALWAYS ALSO a secondary alias (resolves,
+ *    strips from display): `### QST-1: text (QST-PEEK-TASKFIT)` binds BOTH.
+ *    Refusal survives only for a petname aimed at ANOTHER heading's own
+ *    identity: two questions claiming one petname bind NEITHER (ambiguity
+ *    refuses, never last-wins); a petname equal to a DIFFERENT section's own
+ *    slug/`@adr-anchor` doesn't bind either — downgraded from a hard
+ *    collision to a SUGGESTED fold-into-leading hint, since the petname
+ *    never competed for identity in the first place.
  */
 export function resolveAliasHandles(sections: AdrSection[], warnings: ParseWarning[]): void {
   const all = flattenAllSections(sections);
 
   const candidates: Array<{ section: AdrSection; alias: TrailingAliasHandle }> = [];
   for (const s of all) {
-    if (s.navCode !== 'QST' || s.qstId !== undefined || s.navCodeText === undefined) continue;
+    if (s.navCode !== 'QST' || s.navCodeText === undefined) continue;
     const alias = extractTrailingAliasHandle(s.navCodeText);
     if (alias) candidates.push({ section: s, alias });
   }
   if (candidates.length === 0) return;
 
-  // Everything an alias must not shadow: every section's own slug and
-  // effective anchor (@adr-anchor override). Candidates' own long slugs are
-  // in here too — harmless, an alias slug can't equal its own long slug.
-  const reserved = new Set<string>();
+  // Anchor OWNERSHIP, not a bare reserved set: a petname aimed at a
+  // heading's OWN slug/anchor (the same-heading leading+trailing case,
+  // or the degenerate "(QST-STORE)" on the heading that already IS
+  // qst-store) is a no-op/self-reference, never a collision — only a
+  // petname matching ANOTHER section's identity is refused.
+  const ownerOf = new Map<string, AdrSection>();
   for (const s of all) {
-    reserved.add(s.slug);
-    if (s.anchorOverride) reserved.add(s.anchorOverride);
+    ownerOf.set(s.slug, s);
+    if (s.anchorOverride) ownerOf.set(s.anchorOverride, s);
   }
 
   const byAlias = new Map<string, typeof candidates>();
@@ -835,23 +831,24 @@ export function resolveAliasHandles(sections: AdrSection[], warnings: ParseWarni
       for (const c of group) {
         warnings.push({
           code: 'ALIAS_HANDLE_COLLISION',
-          message: `${group.length} questions in this file (lines ${lines}) claim the trailing handle "(QST-${c.alias.rawId})" — ambiguity refuses: NONE of them binds "#${aliasSlug}" (never last-wins). Each keeps its title text and its own auto-derived id. SUGGESTED: give each question a distinct petname.`,
+          message: `${group.length} questions in this file (lines ${lines}) claim the trailing handle "(QST-${c.alias.rawId})" — ambiguity refuses: NONE of them binds "#${aliasSlug}" (never last-wins). Each keeps its title text and its own id unchanged. SUGGESTED: give each question a distinct petname.`,
           line: c.section.lineStart,
         });
       }
       continue;
     }
     const { section, alias } = group[0];
-    if (reserved.has(aliasSlug)) {
+    const owner = ownerOf.get(aliasSlug);
+    if (owner && owner !== section) {
       warnings.push({
         code: 'ALIAS_HANDLE_COLLISION',
-        message: `The trailing handle "(QST-${alias.rawId})" would bind "#${aliasSlug}", but that is already another heading's own anchor in this file (a leading handle or @adr-anchor always outranks a trailing alias). It does NOT bind; the heading keeps its title text and its own auto-derived id.`,
+        message: `The trailing handle "(QST-${alias.rawId})" would bind "#${aliasSlug}", but that is already another heading's own identity in this file (its leading handle or @adr-anchor). It does NOT bind; the heading keeps its title text and its own id unchanged. SUGGESTED: fold this petname into that heading's own leading handle instead, or pick a distinct one.`,
         line: section.lineStart,
       });
       continue;
     }
     section.aliasSlug = aliasSlug;
-    section.qstId = alias.folded;
+    if (section.qstId === undefined) section.qstId = alias.folded; // a leading handle keeps owning identity
     section.navCodeText = alias.stripped.trim();
   }
 }
