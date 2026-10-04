@@ -749,9 +749,15 @@ export class OpenQuestionsPanel {
     // an empty field ('' — "log it, I just have nothing to add"); the
     // original bug (a bare falsy check on the returned string) treated both
     // the same, silently dropping the no-comment case entirely.
+    // Founder Report, moreover, 2026-10-04: a focus-stealing alert
+    // clobbered an in-progress draft in "this palette" — VS Code's
+    // documented default dismisses showInputBox (resolving undefined,
+    // byte-identical to Escape) on any focus loss unless ignoreFocusOut
+    // is set. Fixed here and in every showInputBox in extension.ts.
     const note = await vscode.window.showInputBox({
       prompt: 'Report an observation about this question/ADR (optional comment) — saved for later review, does not affect your answer',
       placeHolder: 'What did you notice? (leave blank to just mark this moment)',
+      ignoreFocusOut: true,
     })
     if (note === undefined) return // Escape/cancel — nothing recorded
     const message = note || 'manual user report from open dialog'

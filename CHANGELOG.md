@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.122] - 2026-10-04
+
+### Fixed
+- **A typed draft in any input box — a Report comment, an ADR/seed title, a commit message, a tour title — could be silently discarded by an unrelated event you had no control over.** VS Code dismisses an input box the instant it loses focus for any reason (a notification popping up, another window, a dialog) unless the extension explicitly says not to. None of this extension's five input boxes said so; all five now do, so a focus-stealing alert no longer costs you what you were typing.
+
+## [0.7.121] - 2026-10-02
+
+### Added
+- **Retire a tour.** Tours could be marked retired in the data model and the tree already rendered a retired tour with an archive icon, but nothing in the UI could actually set that flag — so a tour that had run its course just sat in the list indefinitely, indistinguishable from one minted that morning. Right-click a tour to retire it, with an Undo action in the confirmation toast.
+
+## [0.7.120] - 2026-10-02
+
+### Fixed
+- **Minting a tour from the sidebar filter can no longer silently produce a bad one.** The two real incidents this caused — stops with no recommendation rendering as blank walls, and stops that were already answered days earlier eating a booked focus slot — now surface out loud in a confirmation before the tour is written, with a one-click fix for the already-answered case. Cancelling mints nothing; that's the default.
+
 ## [0.7.119] - 2026-10-01
 
 ### Fixed

@@ -1363,6 +1363,7 @@ async function createNewAdr(adrDirRel: string, opts?: { targetRoot?: RootNode; f
   const title = await vscode.window.showInputBox({
     prompt: promptLabel,
     placeHolder: kind.value === 'adr' ? 'Decision title' : 'Topic',
+    ignoreFocusOut: true,
   });
 
   if (!title) return;
@@ -1714,6 +1715,7 @@ async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boole
       prompt: 'Commit message for ADR changes',
       value: generated,
       placeHolder: 'docs: commit message',
+      ignoreFocusOut: true,
     });
   }
   if (!message) return false;
@@ -2197,9 +2199,18 @@ async function reportTreeItem(item: import('./views/adrTreeProvider').AdrTreeIte
     vscode.window.setStatusBarMessage('ADR Manager: Observation logging is turned off (adrManager.logging.observations).', 4000);
     return;
   }
+  // Founder Report, moreover, 2026-10-04: "I was just typing something,
+  // then there was an alert that took my focus and my draft in this
+  // palette WAS CLOBBERED." VS Code's own documented default for
+  // showInputBox: the box is dismissed (resolving to undefined, byte-
+  // identical to Escape) the moment focus moves away from it — a
+  // notification popping up, a window losing focus, anything — unless
+  // `ignoreFocusOut: true` is set. Every showInputBox in this file and the
+  // panel's own Report comment box had this gap; fixed in all of them.
   const note = await vscode.window.showInputBox({
     prompt: 'Report this tree item (optional comment) — captures the whole tree hierarchy, this item\'s file, and its open questions',
     placeHolder: 'What did you notice? (leave blank to just mark this moment)',
+    ignoreFocusOut: true,
   });
   if (note === undefined) return; // Escape/cancel — nothing recorded
 
@@ -2360,6 +2371,7 @@ async function mintTourFromFilter(treeProvider: import('./views/adrTreeProvider'
   const title = await vscode.window.showInputBox({
     prompt: `Mint a tour from ${refs.length} currently-visible question${refs.length === 1 ? '' : 's'} (filter: ${filterMode})`,
     placeHolder: 'Tour title (e.g., "Morning brief — the four things waiting on you")',
+    ignoreFocusOut: true,
   })
   if (!title) return
 
