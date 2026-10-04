@@ -235,7 +235,7 @@ async function main() {
   server.registerTool(
     'update_resolution',
     {
-      description: "Set an ADR's Resolution field (consensus|fiat|unresolved|forked|contested). A note is required for fiat/contested.",
+      description: "Set an ADR's Resolution field — NOT the same thing as a question's Status (answered/unanswered, set by answer_question). Resolution is a whole-ADR decision-disposition axis (ADR-0009): consensus|fiat|unresolved|forked|contested. To mark one QST as answered, use answer_question, not this tool. A note is required for fiat/contested.",
       inputSchema: {
         adr_ref: z.string(),
         resolution: z.enum(['consensus', 'fiat', 'unresolved', 'forked', 'contested']),
