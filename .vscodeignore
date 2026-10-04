@@ -12,6 +12,11 @@ scripts/**
 fixture-workspace/**
 temp/**
 releases/**
+coverage/**
+.nyc_output/**
+out/**
+out-integration/**
+__pycache__/**
 CLAUDE.md
 QUICK-START.md
 TEMPLATE-UPDATES.md
@@ -22,8 +27,10 @@ kintsugi.lock
 .gitignore
 .gitattributes
 .eslintrc.json
-tsconfig.json
+tsconfig*.json
+.vscode-test.mjs
 vite.config.ts
+vite.mcp-server.config.ts
 package-lock.json
 **/*.map
 **/*.ts
