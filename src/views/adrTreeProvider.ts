@@ -628,6 +628,32 @@ export class AdrTreeItem extends vscode.TreeItem {
 
 export type QuestionFilter = 'open' | 'all' | 'answered';
 
+/**
+ * Is this tour hidden while `tours.hideCompleted` is on? Pure, exported, and
+ * tested — because the rule it encodes was got wrong once, invisibly.
+ *
+ * - `retired`: the author said stop presenting this. Always hidden.
+ * - `done && askedSomething`: required work was asked and finished. Hidden.
+ * - `done && !askedSomething`: **VACUOUSLY done — never hidden.**
+ *
+ * That last line is the founder's 2026-10-09 Report ("It is not showing up as a
+ * tour in the sidebar"). `isTourDone` returns true for a tour with zero
+ * `must_respond` entries — deliberately, per Commodore's Iteration-5 ruling, so
+ * that open FYI stops cannot hold a tour at half-done forever. The rule is
+ * right. The consequence nobody traced is that a tour whose every stop is
+ * optional is **done at birth**, so Concertmaster's 3-stop trial tour — three
+ * genuinely unanswered questions, every stop marked `must_respond: false` out
+ * of modesty — was hidden as "completed" before any human saw it.
+ *
+ * "Completed" must mean work was asked and finished, never that nothing was
+ * ever asked. An unasked tour is unasked, not complete; `retire` is the gesture
+ * for ending it.
+ */
+export function isTourHidden(t: { done: boolean; retired: boolean; askedSomething: boolean }): boolean {
+  if (t.retired) return true
+  return t.done && t.askedSomething
+}
+
 export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<AdrTreeItem | undefined | null | void>()
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event
@@ -1019,8 +1045,30 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     // Widening only ever hides MORE, and only what an author explicitly marked
     // — so no tour disappears that someone did not deliberately retire. Turn
     // the setting off and everything returns, labelled `[retired]`.
+    // VACUOUS DONENESS MUST NOT HIDE A TOUR (founder Report, 2026-10-09:
+    // "It is not showing up as a tour in the sidebar").
+    //
+    // `isTourDone` returns true when a tour has ZERO `must_respond` entries —
+    // deliberately, per Commodore's Iteration-5 ruling: if open FYI stops held
+    // a tour at half-done forever, `retired` would become the escape hatch and
+    // doneness would stop meaning anything. That rule is right and stands.
+    //
+    // What nobody noticed is the degenerate case it creates. Concertmaster
+    // minted a 3-stop trial tour with every stop `must_respond: false` — being
+    // modest, not blocking him — which made it **vacuously done at birth** and
+    // therefore invisible before any human saw it. Three unanswered questions,
+    // hidden as "completed". I widened this very filter on 2026-10-02 to also
+    // hide `retired` and walked straight past the case.
+    //
+    // "Completed" must mean work was asked and finished, never that nothing was
+    // ever asked. A tour with no required stops is UNASKED, not complete — so
+    // it never auto-hides, and `retire` is the author's gesture for ending it,
+    // which is exactly what `retired` is for.
     const hideCompleted = vscode.workspace.getConfiguration('adrManager').get<boolean>('tours.hideCompleted', true)
-    return hideCompleted ? all.filter(t => !t.done && !t.tour.retired) : all
+    if (!hideCompleted) return all
+    return all.filter(t =>
+      !isTourHidden({ done: t.done, retired: t.tour.retired, askedSomething: t.resolved.some(e => e.mustRespond) }),
+    )
   }
 
   /**

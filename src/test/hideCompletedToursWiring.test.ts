@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
+import { isTourHidden } from '../views/adrTreeProvider'
 
 const TREE_SRC = readFileSync(resolve(__dirname, '../views/adrTreeProvider.ts'), 'utf8')
 const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8')
@@ -34,6 +35,48 @@ describe('adrTreeProvider.ts: visibleTours() — one shared filter, no per-tour 
     expect(groupChildrenFn).toContain('this.visibleTours(node)')
     const containerFn = TREE_SRC.match(/private getContainerChildren\(node: RootNode\): AdrTreeItem\[\] \{[\s\S]*?\n  \}/)![0]
     expect(containerFn).toContain('const tourCount = this.visibleTours(node).length')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Regression tests — the founder's 2026-10-09 Report: "I don't understand wth
+// this is ... It is not showing up as a tour in the sidebar."
+//
+// Concertmaster minted a 3-stop trial tour with every stop `must_respond:
+// false` (being modest — not blocking him). `isTourDone` returns true for a
+// tour with zero required entries, deliberately, per Commodore's Iteration-5
+// ruling: if open FYI stops held a tour at half-done forever, `retired` would
+// become the escape hatch and doneness would stop meaning anything. That rule
+// is right and untouched. The consequence nobody traced is that such a tour is
+// VACUOUSLY done at birth — so three genuinely unanswered questions were hidden
+// as "completed" before any human saw them. Docent widened this same filter on
+// 2026-10-02 (to also hide `retired`) and walked straight past the case.
+// ---------------------------------------------------------------------------
+describe('Regression tests: vacuous doneness must not hide a tour', () => {
+  it('does NOT hide a tour whose every stop is optional, even though it is "done"', () => {
+    // The exact shape of 2026-10-09-alpha-gate.
+    expect(isTourHidden({ done: true, retired: false, askedSomething: false })).toBe(false)
+  })
+
+  it('still hides a tour that genuinely asked and finished', () => {
+    expect(isTourHidden({ done: true, retired: false, askedSomething: true })).toBe(true)
+  })
+
+  it('still hides a retired tour regardless of doneness', () => {
+    expect(isTourHidden({ done: false, retired: true, askedSomething: true })).toBe(true)
+    expect(isTourHidden({ done: true, retired: true, askedSomething: false })).toBe(true)
+  })
+
+  it('shows an ordinary in-progress tour', () => {
+    expect(isTourHidden({ done: false, retired: false, askedSomething: true })).toBe(false)
+  })
+
+  // The filter must route through the pure predicate rather than re-deriving
+  // the rule inline — that inline duplication is how the case got missed.
+  it('visibleTours delegates to isTourHidden instead of inlining the rule', () => {
+    const fn = TREE_SRC.match(/private visibleTours\(node: RootNode\)[\s\S]*?\n  \}/)![0]
+    expect(fn).toContain('isTourHidden(')
+    expect(fn).toContain('askedSomething')
   })
 })
 
