@@ -138,6 +138,25 @@ interface WebviewTourMeta {
    * the same evening the tree hit it from the presentation side.
    */
   askedSomething: boolean
+  /**
+   * Why this tour's walk is empty, when it is. Added 2026-10-10 after Gleaner
+   * logged a SECOND specimen of the founder clicking a tour-entry and getting
+   * "All caught up" — this time on a `must_respond: true` tour, so NOT the
+   * vacuous-doneness class v0.7.122/123 closed.
+   *
+   * `buildTourQuestions` did `if (!found) return []`, so a tour the index
+   * cannot see renders as *the ordinary walk with nothing in it* — the silent
+   * lie this whole program exists to abolish, in the one path I never audited.
+   * Worse, "All caught up" told him his work was DONE.
+   *
+   * These two causes were indistinguishable in the report, so the next
+   * specimen is now decisive rather than ambiguous:
+   *   'tour-not-found'  — the index has no such tour (Gleaner's staleness
+   *                       hypothesis: a watcher-miss on a git-COMMITTED file,
+   *                       a documented VS Code caveat, still unreproduced)
+   *   'no-walkable'     — the tour exists and not one entry resolved
+   */
+  emptyReason?: 'tour-not-found' | 'no-walkable'
   /** Doctrine 3: entries that failed to resolve — surfaced as a visible list, never silently dropped. */
   brokenRefs: string[]
 }
@@ -660,7 +679,16 @@ export class OpenQuestionsPanel {
   /** Doctrine 3 (broken refs are visible, never silent): brokenRefs collects every entry that failed to resolve, for the header — computed fresh from the live substrate on every push, same as doneness. */
   private buildTourMeta(slug: string): WebviewTourMeta | null {
     const found = this.composite.findTour(slug)
-    if (!found) return null
+    // A tour the index cannot see is a VISIBLE failure, never silence. Before
+    // 2026-10-10 this returned null, which dropped the tour header too — so
+    // the panel looked exactly like an ordinary walk that had nothing left.
+    if (!found) {
+      return {
+        slug, title: slug, author: { name: 'unknown' }, mintedAt: '',
+        retired: false, done: false, askedSomething: false,
+        emptyReason: 'tour-not-found', brokenRefs: [],
+      }
+    }
     const resolved = resolveTourEntries(found.tour, createRepositoryContextAdapter(this.composite))
     this.logTourUnresolvedIfNeeded(found.tour, resolved)
     return {
@@ -672,6 +700,9 @@ export class OpenQuestionsPanel {
       retired: found.tour.retired,
       done: isTourDone(resolved),
       askedSomething: resolved.some(e => e.mustRespond),
+      // Found, but not one entry resolved to a question — distinct from
+      // not-found, and the distinction is what makes the next report decisive.
+      emptyReason: resolved.some(e => e.resolution.kind === 'question') ? undefined : 'no-walkable',
       brokenRefs: resolved.filter(e => e.resolution.kind === 'error').map(e => e.ref),
     }
   }
@@ -1947,9 +1978,9 @@ textarea.expanded{min-height:70vh;height:70vh}
 <div class="offscreen-toast" id="offscreen-toast" style="display:none" role="button">↓ Requires your attention — press ⌘Enter to continue ↓</div>
 
 <div id="empty">
-  <div class="icon">✓</div>
-  <div style="font-size:16px;font-weight:600">All caught up</div>
-  <div style="font-size:13px">No open questions across your ADRs.</div>
+  <div class="icon" id="empty-icon">✓</div>
+  <div id="empty-title" style="font-size:16px;font-weight:600">All caught up</div>
+  <div id="empty-detail" style="font-size:13px">No open questions across your ADRs.</div>
 </div>
 
 <!-- ADR-0034: tour-mode header — provenance first, per doctrine 2. Hidden entirely outside tour mode. -->
@@ -3122,6 +3153,23 @@ function render() {
     // navigation/terminal transitions (click-to-panel's focus event is
     // exactly that shape), never as a side effect of "the array is empty
     // right now."
+    // A TOUR walk that renders nothing is a failure, not an achievement.
+    // "All caught up" told the founder his work was done when the panel simply
+    // could not see his tour (Gleaner's two specimens, 2026-10-09/10). Name
+    // which failure it is, and give him the one action that helps.
+    if (activeTour && activeTour.emptyReason) {
+      $id('empty-title').textContent = activeTour.emptyReason === 'tour-not-found'
+        ? 'This tour could not be found'
+        : 'This tour has no walkable stops';
+      $id('empty-detail').textContent = activeTour.emptyReason === 'tour-not-found'
+        ? 'The index has no tour "' + activeTour.slug + '". If it was just committed, the window may be a beat behind the file — reload the window. If it persists, the tour is a real broken reference.'
+        : 'Every entry failed to resolve to a question. Run just tour-walk for the per-entry reasons.';
+      $id('empty-icon').textContent = '!';
+    } else {
+      $id('empty-title').textContent = 'All caught up';
+      $id('empty-detail').textContent = 'No open questions across your ADRs.';
+      $id('empty-icon').textContent = '✓';
+    }
     $id('empty').style.display = 'flex';
     $id('card').style.display = 'none';
     return;

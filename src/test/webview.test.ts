@@ -1157,6 +1157,46 @@ describe('Tour-mode skin (ADR-0034)', () => {
     expect(h.element('tour-header').style.color).toBe('#F5F5F0')
   })
 
+  // Regression — Gleaner's TWO specimens (2026-10-09 dechrome-residue,
+  // 2026-10-10 map-details with must_respond: true, so NOT the vacuous-
+  // doneness class v0.7.122/123 closed): the founder clicks a tour-entry on a
+  // just-committed tour and the panel says "All caught up". buildTourQuestions
+  // did `if (!found) return []`, so a tour the index cannot see rendered as the
+  // ordinary walk with nothing left — the silent lie this program exists to
+  // abolish, in the one path never audited, and it told him his work was DONE.
+  describe('Regression tests: an empty TOUR walk is a failure, never "All caught up"', () => {
+    it('names a tour the index cannot find, and offers the one action that helps', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({
+        type: 'questions', generation: 0, questions: [],
+        tour: { ...TOUR, emptyReason: 'tour-not-found', slug: 'just-committed' },
+      })
+      expect(h.element('empty-title').textContent).toContain('could not be found')
+      expect(h.element('empty-title').textContent).not.toContain('All caught up')
+      expect(h.element('empty-detail').textContent).toContain('just-committed')
+      expect(h.element('empty-detail').textContent).toContain('reload the window')
+    })
+
+    it('distinguishes found-but-nothing-walkable from not-found, so the next report is decisive', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({
+        type: 'questions', generation: 0, questions: [],
+        tour: { ...TOUR, emptyReason: 'no-walkable' },
+      })
+      expect(h.element('empty-title').textContent).toContain('no walkable stops')
+      expect(h.element('empty-detail').textContent).toContain('tour-walk')
+    })
+
+    // The ordinary walk must keep its genuine achievement message — this fix
+    // must not turn "you are done" into an error for everyone else.
+    it('still says "All caught up" on the ordinary walk with nothing open', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [], tour: null })
+      expect(h.element('empty-title').textContent).toBe('All caught up')
+      expect(h.element('empty-icon').textContent).toBe('✓')
+    })
+  })
+
   it('a done tour is labeled [done] in the title, a retired one [retired] instead', () => {
     const h = createWebviewHarness()
     // askedSomething: a tour that genuinely asked and finished (2026-10-10).
