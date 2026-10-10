@@ -1159,12 +1159,27 @@ describe('Tour-mode skin (ADR-0034)', () => {
 
   it('a done tour is labeled [done] in the title, a retired one [retired] instead', () => {
     const h = createWebviewHarness()
-    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, done: true } })
+    // askedSomething: a tour that genuinely asked and finished (2026-10-10).
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, done: true, askedSomething: true } })
     expect(h.element('tour-header-title').textContent).toContain('[done]')
 
-    h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, retired: true, done: true } })
+    h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, retired: true, done: true, askedSomething: true } })
     expect(h.element('tour-header-title').textContent).toContain('[retired]')
     expect(h.element('tour-header-title').textContent).not.toContain('[done]')
+  })
+
+  // Regression (Concertmaster's 2026-10-09 trial + the founder's same-evening
+  // Report): a tour with no must_respond stop is VACUOUSLY done under
+  // Commodore's It-5 ruling. Labelling that [done] tells the human work was
+  // finished when none was ever asked — the same lie staleAnswered's old
+  // "already answered" message told, in the same week. The label must name the
+  // real state, which also tells the minter their tour asks for nothing.
+  it('a vacuously-done tour (no must_respond stop) is NOT labeled [done]', () => {
+    const h = createWebviewHarness()
+    h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, done: true, askedSomething: false } })
+    const label = h.element('tour-header-title').textContent
+    expect(label).not.toContain('[done]')
+    expect(label).toContain('[nothing required]')
   })
 
   it('doctrine 3: broken references render as a visible list, not silently dropped', () => {

@@ -130,6 +130,14 @@ interface WebviewTourMeta {
   theme?: { background?: string; foreground?: string }
   retired: boolean
   done: boolean
+  /**
+   * Does this tour ask for anything at all — i.e. has it any `must_respond`
+   * stop? A tour with none is VACUOUSLY done (Commodore's It-5 ruling), and
+   * labelling that `[done]` tells the human work was finished when none was
+   * ever asked. Concertmaster's 2026-10-09 trial hit this from the data side
+   * the same evening the tree hit it from the presentation side.
+   */
+  askedSomething: boolean
   /** Doctrine 3: entries that failed to resolve — surfaced as a visible list, never silently dropped. */
   brokenRefs: string[]
 }
@@ -663,6 +671,7 @@ export class OpenQuestionsPanel {
       theme: found.tour.theme,
       retired: found.tour.retired,
       done: isTourDone(resolved),
+      askedSomething: resolved.some(e => e.mustRespond),
       brokenRefs: resolved.filter(e => e.resolution.kind === 'error').map(e => e.ref),
     }
   }
@@ -2846,7 +2855,15 @@ function renderTourHeader() {
 
   const authorLabel = activeTour.author.role ? activeTour.author.name + ' (' + activeTour.author.role + ')' : activeTour.author.name;
   const mintedLabel = activeTour.mintedAt ? ' · minted ' + new Date(activeTour.mintedAt).toLocaleString() : '';
-  const statusLabel = activeTour.retired ? ' [retired]' : (activeTour.done ? ' [done]' : '');
+  // The done-label must not claim completion a tour never asked for. A tour
+  // with no must_respond stop is vacuously done (It-5), so it reads as
+  // finished while nothing was ever requested — the same lie staleAnswered's
+  // old "already answered" message told, in the same week. "nothing required"
+  // names the actual state and tells the minter their tour asks for nothing,
+  // which is usually not what they meant.
+  const statusLabel = activeTour.retired
+    ? ' [retired]'
+    : (activeTour.done ? (activeTour.askedSomething ? ' [done]' : ' [nothing required]') : '');
   $id('tour-header-title').textContent = activeTour.title + statusLabel;
   $id('tour-header-meta').textContent = 'By ' + authorLabel + mintedLabel;
 
