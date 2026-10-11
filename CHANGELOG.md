@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.126] - 2026-10-11
+
+### Added
+- **Protect a just-submitted answer from being clobbered by someone else's git operation, before anyone commits it.** In a shared working tree (your panel writing answers while a crew runs git in the same checkout), a `git checkout <tree-ish> -- <path>` or similar overwrite has no uncommitted-changes guard and can silently erase an answer the moment after you submit it — your draft history survives in `drafts-archive.json`, but the file itself doesn't. Turn on `adrManager.commitOnAnswerSubmit` (off by default) and every submitted answer gets its own tiny commit, pathspec'd to exactly that file, closing the window to the time between the write and the commit.
+
+## [0.7.125] - 2026-10-10
+
+### Fixed
+- **A tour minted or updated after the Open Questions panel was already open could render as if it had nothing left to walk, with no error.** The panel captured its data snapshot once, at construction, and was never reconnected when the underlying index refreshed — so a brand-new or just-changed tour the sidebar could see correctly, the panel couldn't, and showed the same "All caught up" a genuinely finished tour shows. Fixed by wiring the panel into the same refresh notification every other part of the extension already gets.
+
+## [0.7.124] - 2026-10-09
+
+### Fixed
+- **A tour the extension couldn't find, or whose every stop failed to resolve, rendered as "All caught up" — indistinguishable from a tour you'd actually finished.** Now it says so plainly (tour not found vs. nothing walkable), with a next step, instead of a false checkmark.
+
+## [0.7.123] - 2026-10-09
+
+### Fixed
+- **A tour whose every stop is marked optional showed a `[done]` label, even though nothing had ever been asked or answered.** Now reads `[nothing required]` — a tour that asks for nothing isn't the same as one that's finished.
+
 ## [0.7.122] - 2026-10-04
 
 ### Fixed

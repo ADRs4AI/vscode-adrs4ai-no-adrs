@@ -28,6 +28,7 @@ import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan
 import { parseSeed } from '../parser/seedExtractor'
 import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
+import { commitAnswerFile } from '../commit/answerCommit'
 import { resolveTourEntries, isTourDone, unresolvedTourRefs, referencedDocumentPaths, tourLedgerAnchor, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature, describeLedgerLocation } from '../drafts/errorLog'
@@ -1279,10 +1280,58 @@ export class OpenQuestionsPanel {
         return
       }
 
+      // Founder-commissioned protection (Concertmaster 5 forensics brief,
+      // 2026-10-11, companion etude): a human submitted two real answers
+      // into the shared working tree; minutes later a crew `git checkout
+      // origin/main -- <path>` (no uncommitted-changes guard, by design —
+      // unlike switch/merge) silently clobbered both, because nothing had
+      // committed them yet. drafts-archive.json's keystroke-level autosave
+      // is what actually saved the human's words that day — never weaken
+      // that lane — but the ANS block itself, once on disk, had no
+      // protection of its own. The ADR-0023 drift fence above guards a
+      // write racing a concurrent READ; nothing guarded a write against
+      // being overwritten AFTER it already landed. This shrinks that
+      // window from "until someone remembers to commit" to the time
+      // between this save and this commit. Best-effort and opt-in
+      // (commitOnAnswerSubmit, default false — an extension committing on
+      // every answer, even pathspec'd to one file, is a real behavior
+      // change some installs won't want by default): never blocks or
+      // fails the answer itself, since the file write already succeeded.
+      await this.commitAnswerOnSubmit(msg.adrPath, currentQuestion.qstId ?? currentQuestion.slug, msg.authorName)
+
       this.panel.webview.postMessage({ type: 'answered', questionId: msg.questionId })
     } catch (err) {
       this.harvestError('unhandled-exception', String(err), msg)
       this.panel.webview.postMessage({ type: 'error', message: String(err) })
+    }
+  }
+
+  /**
+   * Stakes a just-submitted ANS block with its own tiny commit, pathspec'd
+   * to exactly the one file — see the doc comment at writeAnswer's call
+   * site for why. Finds the owning repo by `rootUri` (the longest matching
+   * root wins, same idiom as `CompositeIndex.findRoot`), not by waiting on
+   * `repo.state` to reflect the just-landed write — avoids the exact
+   * git-status-cache-lag race `commitAdrChanges` had to harden against
+   * (2026-08-29). The repo-matching and commit logic itself lives in
+   * `commit/answerCommit.ts`, independently testable against plain mock
+   * objects; this method is just the config gate + the vscode.git lookup
+   * + the failure-soft log. A no-op, not an error, when: the setting is
+   * off, the git extension isn't present, or no repo owns this path. A
+   * commit failure (hooks, lock contention) is logged and swallowed — the
+   * human's answer is already safely on disk and in drafts-archive.json
+   * either way.
+   */
+  private async commitAnswerOnSubmit(adrPath: string, qstHandle: string | undefined, authorName: string): Promise<void> {
+    if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('commitOnAnswerSubmit', false)) return
+    try {
+      const gitExtension = vscode.extensions.getExtension('vscode.git')
+      if (!gitExtension) return
+      const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate()
+      const api = git.getAPI(1)
+      await commitAnswerFile(api.repositories, adrPath, qstHandle, authorName)
+    } catch (err) {
+      this.harvestError('answer-commit-failed', String(err), { adrPath })
     }
   }
 

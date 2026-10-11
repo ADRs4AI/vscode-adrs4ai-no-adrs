@@ -1,0 +1,100 @@
+/**
+ * Real behavioral tests for commit/answerCommit.ts — no vscode mock
+ * needed, since the module only ever touches plain objects shaped like
+ * the vscode.git extension's Repository. Context: Concertmaster 5's
+ * forensics brief (companion etude, 2026-10-11) — a human's submitted
+ * answer got overwritten by a crew `git checkout` before anyone had
+ * committed it; this module stakes the answer with its own commit right
+ * after it's written, closing that window.
+ */
+import { describe, it, expect, vi } from 'vitest'
+import { findRepoForFile, commitAnswerFile, type GitRepoLike } from '../commit/answerCommit'
+
+function fakeRepo(rootPath: string): GitRepoLike & { add: ReturnType<typeof vi.fn>; commit: ReturnType<typeof vi.fn> } {
+  return {
+    rootUri: { fsPath: rootPath },
+    add: vi.fn(async () => undefined),
+    commit: vi.fn(async () => undefined),
+  }
+}
+
+describe('findRepoForFile: longest-matching-root wins, same idiom as CompositeIndex.findRoot', () => {
+  it('finds the single repo containing the file', () => {
+    const repo = fakeRepo('/Users/x/project')
+    expect(findRepoForFile([repo], '/Users/x/project/docs/adr/0001.md')).toBe(repo)
+  })
+
+  it('a submodule nested inside a parent repo: the longer, more specific root wins', () => {
+    const parent = fakeRepo('/Users/x/project')
+    const submodule = fakeRepo('/Users/x/project/vendor/sub')
+    const file = '/Users/x/project/vendor/sub/docs/adr/0001.md'
+    expect(findRepoForFile([parent, submodule], file)).toBe(submodule)
+    // Order independence — the longest-prefix rule, not "first match wins".
+    expect(findRepoForFile([submodule, parent], file)).toBe(submodule)
+  })
+
+  it('returns undefined for a file outside every known repo — not a throw', () => {
+    const repo = fakeRepo('/Users/x/project')
+    expect(findRepoForFile([repo], '/Users/elsewhere/docs/adr/0001.md')).toBeUndefined()
+  })
+
+  it('ignores a repo with no rootUri rather than crashing on it', () => {
+    const broken = { add: vi.fn(), commit: vi.fn() } as GitRepoLike
+    const real = fakeRepo('/Users/x/project')
+    expect(findRepoForFile([broken, real], '/Users/x/project/a.md')).toBe(real)
+  })
+
+  it('a bare match at the root path itself (file === root) still matches, not just a startsWith', () => {
+    const repo = fakeRepo('/Users/x/project')
+    // Pathological but shouldn't crash or false-negative on the edge.
+    expect(findRepoForFile([repo], '/Users/x/project')).toBe(repo)
+  })
+})
+
+describe('commitAnswerFile: pathspec\'d to exactly one file, never a bare commit()', () => {
+  it('stages and commits ONLY the one path — never the whole index', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    const ok = await commitAnswerFile([repo], '/Users/x/project/docs/adr/0001.md', 'FACE-BOOTSTRAP', 'Jérémie')
+    expect(ok).toBe(true)
+    expect(repo.add).toHaveBeenCalledWith(['/Users/x/project/docs/adr/0001.md'])
+    expect(repo.commit).toHaveBeenCalledTimes(1)
+    const message = repo.commit.mock.calls[0][0] as string
+    expect(message).toContain('QST-FACE-BOOTSTRAP')
+    expect(message).toContain('Jérémie')
+  })
+
+  it('falls back to a generic label when no QST handle is known', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    await commitAnswerFile([repo], '/Users/x/project/a.md', undefined, 'Jérémie')
+    expect(repo.commit.mock.calls[0][0]).toContain('a question')
+  })
+
+  it('an empty/whitespace author name falls back to "Human", matching writeAnswer\'s own ANS-byline convention', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    await commitAnswerFile([repo], '/Users/x/project/a.md', 'X', '   ')
+    expect(repo.commit.mock.calls[0][0]).toContain('(by Human)')
+  })
+
+  it('returns false, without calling add/commit, when no repo owns the path — a no-op, not an error', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    const ok = await commitAnswerFile([repo], '/elsewhere/a.md', 'X', 'Human')
+    expect(ok).toBe(false)
+    expect(repo.add).not.toHaveBeenCalled()
+    expect(repo.commit).not.toHaveBeenCalled()
+  })
+
+  it('a git failure (e.g. a commit hook rejection) propagates — the caller\'s job to catch and log, never this module\'s to swallow silently', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    repo.commit.mockRejectedValueOnce(new Error('pre-commit hook rejected'))
+    await expect(commitAnswerFile([repo], '/Users/x/project/a.md', 'X', 'Human')).rejects.toThrow('pre-commit hook rejected')
+  })
+
+  it('a shared tree with two repos: only the one that actually owns the file gets touched', async () => {
+    const unrelated = fakeRepo('/Users/x/other-project')
+    const owner = fakeRepo('/Users/x/project')
+    await commitAnswerFile([unrelated, owner], '/Users/x/project/docs/adr/0001.md', 'X', 'Human')
+    expect(unrelated.add).not.toHaveBeenCalled()
+    expect(unrelated.commit).not.toHaveBeenCalled()
+    expect(owner.add).toHaveBeenCalledTimes(1)
+  })
+})

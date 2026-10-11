@@ -2,7 +2,7 @@
   "name": "adrs4ai",
   "displayName": "ADRs for AI",
   "description": "Your AI's reasoning stops evaporating: Every open question in your project's deliberation records, in one sidebar—with the options, the recommendation, and the reasons—answered in place, never lost.",
-  "version": "0.7.125",
+  "version": "0.7.126",
   "publisher": "jlumbroso",
   "license": "MIT",
   "icon": "media/adr-icon-pinion-256.png",
@@ -641,6 +641,11 @@
           ],
           "default": "ask",
           "description": "ADR Commit: what to do about untracked files mentioned in the content you're about to commit. Only checked in the single-root interactive commit — the multi-root batch commit never prompts, to keep 'select all, go' actually one gesture (auto-commit still applies there; ask behaves as auto-ignore)."
+        },
+        "adrManager.commitOnAnswerSubmit": {
+          "type": "boolean",
+          "default": false,
+          "description": "When you submit an answer in the Open Questions panel, immediately git-commit that one file (pathspec'd, so it can never sweep up unrelated work). Founder-commissioned protection (Concertmaster 5 forensics, 2026-10-11): a crew git operation with no uncommitted-changes guard (e.g. `git checkout <tree-ish> -- <path>`) can silently overwrite a just-submitted answer before anyone commits it — this shrinks that window to the time between the save and the commit. Off by default: an extension committing on your behalf, even to one file, is a real behavior change not every workflow wants."
         },
         "adrManager.panel.bodyMaxWidth": {
           "type": "string",
