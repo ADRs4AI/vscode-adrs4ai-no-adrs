@@ -123,7 +123,22 @@ function disposeWatchersForComposite(composite: CompositeIndex): void {
 }
 
 export interface RootWatcherLifecycleController extends vscode.Disposable {
-  /** Current live composite — read this, don't cache the reference from setup time; it's replaced on every root-set refresh. */
+  /**
+   * Current live composite — read this, don't cache the reference from setup
+   * time; it's replaced on every root-set refresh.
+   *
+   * **This is a GETTER, not a field** (`get composite() { return composite }`
+   * over the owning closure), which is the whole reason it is safe to read
+   * repeatedly. `readonly` here says only "a consumer cannot reassign it" —
+   * in TypeScript that is silent about whether the value behind it is live,
+   * and a careful auditor read it as an inert setup-time snapshot on
+   * 2026-10-11 (Gleaner's sweep after the panel's dead-index bug) precisely
+   * because the declaration cannot show the difference. Stated here so the
+   * interface carries what the implementation knows.
+   *
+   * This accessor is the pattern every other holder should imitate: hold an
+   * accessor, never a value. See `src/test/compositeSubscriberRegistry.test.ts`.
+   */
   readonly composite: CompositeIndex
   /** Re-run discovery and rebuild watchers for the current root set. Coalesced (Decision 5) — safe to call from multiple trigger sources without overlapping rebuilds. */
   requestRefresh(): Promise<void>
