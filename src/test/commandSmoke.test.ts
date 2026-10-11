@@ -299,6 +299,30 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       await expect(handler(f.seed)).resolves.not.toThrow()
       await expect(handler(f.question)).resolves.not.toThrow()
     })
+
+    // Regression (founder Report, HQ, 2026-10-11): "when i right click a
+    // quesiton in question tour, my options are super limited! why? I can
+    // only 'report' — i'd love to copy a deep link". Root cause: a
+    // tour-entry carries the exact same `question` a plain 'question' item
+    // does (adrTreeProvider.ts constructs both from the same resolved
+    // Question), but copyDeepLink's own `item.kind === 'question'` check —
+    // and the context-menu `when` clause gating it — both named only
+    // 'question', never 'tour-entry', so the command silently no-op'd (no
+    // ref, no error) even if invoked directly, and never appeared in the
+    // tour-entry right-click menu at all.
+    it('a tour-entry item copies a real deep link — not a silent no-op — same as the plain question it wraps', async () => {
+      resetInteractionState()
+      const handler = getRegisteredCommand('adrManager.copyDeepLink')!
+      const f = fixtures()
+      await handler(f.tourEntry)
+      const { env } = await import('./helpers/vscodeMock')
+      const written = vi.mocked(env.clipboard.writeText).mock.calls.at(-1)?.[0]
+      expect(written).toBeDefined()
+      // Same question, same ref either way — the tour-entry wrapper changes nothing about WHAT gets linked.
+      await handler(f.question)
+      const writtenForPlainQuestion = vi.mocked(env.clipboard.writeText).mock.calls.at(-1)?.[0]
+      expect(written).toBe(writtenForPlainQuestion)
+    })
   })
 
   describe('reportTreeItem — the tree-wide report, with logging enabled', () => {

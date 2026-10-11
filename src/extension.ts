@@ -2090,7 +2090,7 @@ function copyDeepLink(item: import('./views/adrTreeProvider').AdrTreeItem): void
       : namespace
         ? buildXProjectAdrRef({ namespace, number: item.adr.number })
         : buildLocalAdrRef({ number: item.adr.number });
-  } else if (item.kind === 'question' && item.question) {
+  } else if ((item.kind === 'question' || item.kind === 'tour-entry') && item.question) {
     const gitSlug = owningRootGitSlug(item.question.adrPath);
     const namespace = owningRootNamespace(item.question.adrPath);
     if (item.question.sourceKind === 'seed') {

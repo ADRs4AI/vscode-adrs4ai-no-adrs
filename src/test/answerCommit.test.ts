@@ -10,9 +10,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { findRepoForFile, commitAnswerFile, type GitRepoLike } from '../commit/answerCommit'
 
-function fakeRepo(rootPath: string): GitRepoLike & { add: ReturnType<typeof vi.fn>; commit: ReturnType<typeof vi.fn> } {
+function fakeRepo(rootPath: string, branchName = 'main'): GitRepoLike & { add: ReturnType<typeof vi.fn>; commit: ReturnType<typeof vi.fn> } {
   return {
     rootUri: { fsPath: rootPath },
+    // Realistic default: ON a branch, so tests not specifically about the
+    // detached-HEAD case don't accidentally exercise it (`!undefined ===
+    // true` would make every repo without a `state` field look detached).
+    state: { HEAD: { name: branchName } },
     add: vi.fn(async () => undefined),
     commit: vi.fn(async () => undefined),
   }
@@ -54,8 +58,8 @@ describe('findRepoForFile: longest-matching-root wins, same idiom as CompositeIn
 describe('commitAnswerFile: pathspec\'d to exactly one file, never a bare commit()', () => {
   it('stages and commits ONLY the one path — never the whole index', async () => {
     const repo = fakeRepo('/Users/x/project')
-    const ok = await commitAnswerFile([repo], '/Users/x/project/docs/adr/0001.md', 'FACE-BOOTSTRAP', 'Jérémie')
-    expect(ok).toBe(true)
+    const result = await commitAnswerFile([repo], '/Users/x/project/docs/adr/0001.md', 'FACE-BOOTSTRAP', 'Jérémie')
+    expect(result).toEqual({ committed: true, detachedHead: false })
     expect(repo.add).toHaveBeenCalledWith(['/Users/x/project/docs/adr/0001.md'])
     expect(repo.commit).toHaveBeenCalledTimes(1)
     const message = repo.commit.mock.calls[0][0] as string
@@ -75,12 +79,28 @@ describe('commitAnswerFile: pathspec\'d to exactly one file, never a bare commit
     expect(repo.commit.mock.calls[0][0]).toContain('(by Human)')
   })
 
-  it('returns false, without calling add/commit, when no repo owns the path — a no-op, not an error', async () => {
+  it('returns committed:false, without calling add/commit, when no repo owns the path — a no-op, not an error', async () => {
     const repo = fakeRepo('/Users/x/project')
-    const ok = await commitAnswerFile([repo], '/elsewhere/a.md', 'X', 'Human')
-    expect(ok).toBe(false)
+    const result = await commitAnswerFile([repo], '/elsewhere/a.md', 'X', 'Human')
+    expect(result).toEqual({ committed: false, detachedHead: false })
     expect(repo.add).not.toHaveBeenCalled()
     expect(repo.commit).not.toHaveBeenCalled()
+  })
+
+  it('detachedHead is true when the repo\'s own state says so (Concertmaster 5\'s amendment, 2026-10-11) — the commit still lands, it\'s just a recoverable stray, not something a branch carries forward', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    repo.state!.HEAD!.name = undefined // detached — the real git extension's own shape for this state
+    const result = await commitAnswerFile([repo], '/Users/x/project/a.md', 'X', 'Human')
+    expect(result).toEqual({ committed: true, detachedHead: true })
+    expect(repo.add).toHaveBeenCalled()
+    expect(repo.commit).toHaveBeenCalled()
+  })
+
+  it('a repo with no state field at all is treated as detached (fail toward "tell the human", not toward silence)', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    delete repo.state
+    const result = await commitAnswerFile([repo], '/Users/x/project/a.md', 'X', 'Human')
+    expect(result.detachedHead).toBe(true)
   })
 
   it('a git failure (e.g. a commit hook rejection) propagates — the caller\'s job to catch and log, never this module\'s to swallow silently', async () => {

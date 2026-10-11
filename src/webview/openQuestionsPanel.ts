@@ -1321,6 +1321,14 @@ export class OpenQuestionsPanel {
    * commit failure (hooks, lock contention) is logged and swallowed — the
    * human's answer is already safely on disk and in drafts-archive.json
    * either way.
+   *
+   * Detached-HEAD warning (Concertmaster 5's same-day amendment to their
+   * own forensics brief, 2026-10-11): committing on a detached HEAD makes
+   * a recoverable "stray" commit — strictly better than an uncommitted
+   * file, but no branch carries it forward on its own, so it needs an
+   * explicit rescue (fast-forward/cherry-pick) before it's garbage-
+   * collected. Told, not silently handled — the human (or whichever crew
+   * seat is watching) needs to know to go rescue it.
    */
   private async commitAnswerOnSubmit(adrPath: string, qstHandle: string | undefined, authorName: string): Promise<void> {
     if (!vscode.workspace.getConfiguration('adrManager').get<boolean>('commitOnAnswerSubmit', false)) return
@@ -1329,7 +1337,13 @@ export class OpenQuestionsPanel {
       if (!gitExtension) return
       const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate()
       const api = git.getAPI(1)
-      await commitAnswerFile(api.repositories, adrPath, qstHandle, authorName)
+      const result = await commitAnswerFile(api.repositories, adrPath, qstHandle, authorName)
+      if (result.detachedHead) {
+        const label = qstHandle ? `QST-${qstHandle}` : 'this question'
+        vscode.window.showWarningMessage(
+          `Your answer to ${label} was committed, but on a DETACHED HEAD in ${path.basename(adrPath)} — it's safe from this repo overwriting it, but no branch will carry it forward on its own. Rescue it (checkout a branch, then fast-forward or cherry-pick) before it's garbage-collected.`,
+        )
+      }
     } catch (err) {
       this.harvestError('answer-commit-failed', String(err), { adrPath })
     }

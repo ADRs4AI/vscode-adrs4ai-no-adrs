@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.127] - 2026-10-11
+
+### Fixed
+- **A tour entry's right-click menu only offered Report — now it also offers Copy Deep Link, same as the plain question it wraps.** Founder Report: "when i right click a question in question tour, my options are super limited! why? I can only 'report' — i'd love to copy a deep link." A tour entry carries the exact same underlying question a sidebar question item does; the deep-link command just never recognized that item shape.
+
+### Added
+- **`adrManager.commitOnAnswerSubmit` now warns you when it commits on a detached HEAD.** Commit-on-submit (v0.7.126, below) still protects the answer — a detached-HEAD commit is a recoverable "stray," strictly safer than an uncommitted file — but nothing carries it forward onto a branch on its own, so you're told to rescue it (checkout a branch, then fast-forward or cherry-pick) before it's garbage-collected.
+
 ## [0.7.126] - 2026-10-11
 
 ### Added

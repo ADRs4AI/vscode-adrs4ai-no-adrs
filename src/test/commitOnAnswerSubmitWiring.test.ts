@@ -67,6 +67,11 @@ describe('commitAnswerOnSubmit: gated on the opt-in setting, never on by default
     expect(body).toMatch(/catch \(err\)/)
     expect(body).toMatch(/this\.harvestError\('answer-commit-failed'/)
   })
+
+  it('a detached-HEAD commit (Concertmaster 5\'s amendment, 2026-10-11) is surfaced with a warning, not silently accepted', () => {
+    expect(body).toMatch(/result\.detachedHead/)
+    expect(body).toMatch(/showWarningMessage/)
+  })
 })
 
 describe('package.json: adrManager.commitOnAnswerSubmit is declared, boolean, default false', () => {

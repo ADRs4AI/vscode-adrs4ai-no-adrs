@@ -22,8 +22,28 @@ import * as path from 'path'
 
 export interface GitRepoLike {
   rootUri?: { fsPath: string }
+  /** `state.HEAD.name` is undefined on a detached HEAD — the real vscode.git extension's own shape. */
+  state?: { HEAD?: { name?: string } }
   add(paths: string[]): Promise<void>
   commit(message: string): Promise<void>
+}
+
+export interface CommitAnswerResult {
+  /** False only when no repo owns `adrPath` — not an error, the caller decides whether that's worth logging. */
+  committed: boolean
+  /**
+   * True when the commit landed on a detached HEAD — Concertmaster 5's
+   * amendment to the forensics brief (2026-10-11, same day): in the
+   * etude's shared tree, HEAD was ALREADY detached when this feature
+   * shipped, so every commit this module makes there is a recoverable
+   * "stray" (their term) rather than a commit any branch will carry
+   * forward on its own — strictly better than an uncommitted file (a
+   * stray survives until GC and is rescuable by SHA; an uncommitted file
+   * doesn't survive the next overwrite at all), but silently leaving it
+   * there risks a stray nobody remembers to fast-forward. The caller
+   * decides whether/how to surface this; this module only reports it.
+   */
+  detachedHead: boolean
 }
 
 /**
@@ -65,11 +85,11 @@ export async function commitAnswerFile<Repo extends GitRepoLike>(
   adrPath: string,
   qstHandle: string | undefined,
   authorName: string,
-): Promise<boolean> {
+): Promise<CommitAnswerResult> {
   const repo = findRepoForFile(repos, adrPath)
-  if (!repo) return false
+  if (!repo) return { committed: false, detachedHead: false }
   const label = qstHandle ? `QST-${qstHandle}` : 'a question'
   await repo.add([adrPath])
   await repo.commit(`ans: ${label} (by ${authorName.trim() || 'Human'})`)
-  return true
+  return { committed: true, detachedHead: !repo.state?.HEAD?.name }
 }

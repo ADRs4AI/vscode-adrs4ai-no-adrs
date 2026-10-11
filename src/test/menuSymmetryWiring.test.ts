@@ -150,12 +150,20 @@ describe('package.json: menu symmetry — copy path/relative-path/deep-link, ADR
     })
   }
 
-  it('adrManager.copyDeepLink appears for adr, question, AND seed — tour deliberately excluded (no ratified tour: grammar yet)', () => {
+  it('adrManager.copyDeepLink appears for adr, question, seed, AND tour-entry — the tour SUMMARY item itself stays excluded (no ratified tour: grammar yet)', () => {
     const menuEntry = menuEntryFor('adrManager.copyDeepLink')
     expect(menuEntry).toContain('viewItem == adr')
     expect(menuEntry).toContain('viewItem == question')
     expect(menuEntry).toContain('viewItem == seed')
-    expect(menuEntry).not.toContain('viewItem == tour')
+    // Founder Report, HQ, 2026-10-11: tour-entry right-click only offered
+    // Report, not Copy Deep Link — a tour-entry carries the exact same
+    // Question a plain 'question' item does, so it gets the same command.
+    expect(menuEntry).toContain('viewItem == tour-entry')
+    // Word-boundary-safe: 'viewItem == tour-entry' contains the literal
+    // substring 'viewItem == tour', so a naive .not.toContain would
+    // false-positive now that tour-entry is included — assert the bare
+    // 'tour' form specifically (not immediately followed by '-').
+    expect(menuEntry).not.toMatch(/viewItem == tour(?!-)/)
   })
 
   it('the copy commands share one menu group, separate from item-specific actions (the doctrine\'s separator)', () => {
