@@ -190,7 +190,14 @@ describe('Webview script block syntax', () => {
   it('ADR-0025 panel-aggregation: createOrShow and the constructor both take a CompositeIndex', () => {
     // ADR-0034: both gained an optional tour-slug parameter — the CompositeIndex requirement itself is unchanged.
     expect(PANEL_SRC).toContain('createOrShow(composite: CompositeIndex, tourSlug?: string)')
-    expect(PANEL_SRC).toContain('constructor(private readonly composite: CompositeIndex, initialTourSlug?: string)')
+    // 2026-10-11: this used to pin `private readonly composite`, which had
+    // quietly encoded the frozen-index BUG as a requirement — the composite
+    // is REPLACED wholesale on a root-set refresh, so a panel that can never
+    // adopt the replacement renders the newest tours as empty (Concertmaster's
+    // specimen; behavioral coverage in panelCompositeRefresh.test.ts). The
+    // field must stay swappable; what matters structurally is the type.
+    expect(PANEL_SRC).toContain('constructor(private composite: CompositeIndex, initialTourSlug?: string)')
+    expect(PANEL_SRC).not.toContain('private readonly composite: CompositeIndex')
   })
 
   // Regression (Facet's live click-through report, 2026-07-26 inbox 0349):

@@ -275,6 +275,13 @@ export class OpenQuestionsPanel {
       // except the explicit Exit-tour link: clicking any other, non-tour
       // question in the tree called this with no tourSlug, which used to
       // leave activeTourSlug untouched — the click had nowhere to land.
+      // Second net for the frozen-index class: every caller already hands us
+      // the CURRENT composite, so an open panel adopts it rather than
+      // discarding the argument. Identity-guarded — the common case passes
+      // the same instance, and `setTour` below pushes anyway.
+      if (composite !== OpenQuestionsPanel.instance.composite) {
+        OpenQuestionsPanel.instance.setComposite(composite)
+      }
       OpenQuestionsPanel.instance.setTour(tourSlug)
       return
     }
@@ -308,7 +315,36 @@ export class OpenQuestionsPanel {
     this.panel.title = found ? `Tour: ${found.tour.title}` : 'Open Questions'
   }
 
-  private constructor(private readonly composite: CompositeIndex, initialTourSlug?: string) {
+  /**
+   * Flint 5's class, third occurrence (2026-10-11, Concertmaster's specimen).
+   * `CompositeIndex` is REPLACED wholesale on a root-set/`.adrignore` refresh,
+   * and `onChange` is a one-time subscription against the node instances live
+   * at call time — not a live aggregate. `onCompositeRefreshed` already
+   * re-wires index/seedIndex, diagnostics, the status bar, the badge and
+   * `treeProvider.setComposite`; the panel was never added to that list, so it
+   * held a construction-time snapshot FOREVER and its `onChange` was dead too.
+   *
+   * Symptom: the treeview rendered the three newest tours correctly while
+   * clicking any of them showed the empty state, because the panel's frozen
+   * composite had no such tour — `findTour` → undefined → `return []`. Window
+   * reload "fixed" it only because it built a new panel.
+   *
+   * Dispose-and-resubscribe, same discipline as `AdrTreeProvider.setComposite`.
+   */
+  static refreshComposite(composite: CompositeIndex): void {
+    OpenQuestionsPanel.instance?.setComposite(composite)
+  }
+
+  private setComposite(composite: CompositeIndex): void {
+    this.compositeSubscription?.()
+    this.composite = composite
+    this.compositeSubscription = composite.onChange(() => this.sendQuestions())
+    this.sendQuestions()
+  }
+
+  private compositeSubscription?: () => void
+
+  private constructor(private composite: CompositeIndex, initialTourSlug?: string) {
     OpenQuestionsPanel.instance = this
     this.activeTourSlug = initialTourSlug
 
@@ -353,8 +389,10 @@ export class OpenQuestionsPanel {
 
     // Refresh when anything in the composite changes (file edits, saves,
     // etc.) — any root, not just the one that happened to be active first.
-    const unsubscribe = composite.onChange(() => this.sendQuestions())
-    this.disposables.push({ dispose: unsubscribe })
+    // Held in a field, not a local, so `setComposite` can dispose and
+    // re-subscribe it against a replacement index (see refreshComposite).
+    this.compositeSubscription = composite.onChange(() => this.sendQuestions())
+    this.disposables.push({ dispose: () => this.compositeSubscription?.() })
 
     // ADR-0023 square 4 (staleness banner, Riddle 5's design, 2026-07-24
     // `1834`): the vault (drafts.json) can change without the ADR/seed

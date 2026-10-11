@@ -1094,6 +1094,13 @@ function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefine
   badgeSubscription = compositeIndex.onChange(updateBadge);
   updateBadge();
   treeProvider?.setComposite(compositeIndex);
+  // Third occurrence of Flint 5's class (Concertmaster's specimen,
+  // 2026-10-11): an OPEN Open-Questions panel held its construction-time
+  // composite forever, so after any root-set refresh the treeview rendered
+  // the newest tours while clicking one showed the empty state — the panel's
+  // frozen index had no such tour. Every other subscriber above is
+  // re-wired here; the panel simply was never on the list.
+  OpenQuestionsPanel.refreshComposite(compositeIndex);
 }
 
 // ---------------------------------------------------------------------------
