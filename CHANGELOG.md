@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.135] - 2026-10-12
+
+### Fixed
+- **An unanswered question's edit box could pre-fill with a large block of unrelated text that had nothing to do with it.** If a bare `[ ]` placeholder was followed by an italicized aside rather than a bold-labeled note, every paragraph after it — sometimes hundreds of words, all the way to the next major heading — got treated as part of "the answer," and the panel offered it back to you as something to preserve. A narrower version of this was fixed in July for one specific shape; this closes the same gap for any shape, not just that one.
+
+## [0.7.134] - 2026-10-12
+
+### Fixed
+- **The prologue card (the explanatory text at the top of a tour) rendered roughly three times taller than its content needed.** `white-space: pre-wrap` was set on the card's outer container instead of its text, so every line-wrapped sentence added its own extra blank space.
+
 ## [0.7.133] - 2026-10-12
 
 ### Added

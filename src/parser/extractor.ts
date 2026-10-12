@@ -1669,7 +1669,7 @@ export function extractQuestion(
       } else if (RECOMMENDATION_RE.test(line) || RECOMMENDATION_BULLET_RE.test(line)) {
         finalizeAnswerLayer();
         inAnswer = false; // fall through — the rec handlers below take it
-      } else if (/^\*\*[A-Z][^*]+\*\*:/.test(line) && isPlaceholderOnly(answerLines.join('\n').trim())) {
+      } else if (line.trim() !== '' && isPlaceholderOnly(answerLines.join('\n').trim())) {
         // Jérémie's report, 2026-07-29 (seed-2026-07-29-issue-parsing-text-
         // after-ans-placeholder-of-qsts.md): "**ANS:**\n[Fill this in]"
         // directly followed (blank line only — no "---", no next heading)
@@ -1679,12 +1679,32 @@ export function extractQuestion(
         // — the panel then showed the placeholder plus that unrelated text
         // as "the current answer," which Jérémie felt he had to preserve,
         // producing a duplicate on submit. Once everything collected so
-        // far is recognizably nothing but a placeholder, a new bold-key
-        // field is never a continuation of it — mirrors the identical
-        // stop-check recommendations already have (ADR-0010), scoped to
-        // the placeholder case only: a REAL in-progress answer can
-        // legitimately contain a line shaped like "**Note**: ..." as its
-        // own prose, so this must not fire once real content has started.
+        // far is recognizably nothing but a placeholder, nothing else is
+        // ever a continuation of it — mirrors the identical stop-check
+        // recommendations already have (ADR-0010), scoped to the
+        // placeholder case only: a REAL in-progress answer can legitimately
+        // contain a line shaped like "**Note**: ..." as its own prose, so
+        // this must not fire once real content has started.
+        //
+        // Widened 2026-10-12 (companion etude, founder Report — distressed
+        // language, "PARALYZING... ABORT ABORT ABORT"): the original fix
+        // only recognized a BOLD-key-shaped interruption
+        // (`/^\*\*[A-Z][^*]+\*\*:/`). The real specimen's bare `[ ]` was
+        // followed first by an ITALIC parenthetical aside
+        // (`*(The Brain-Dump sitting is already QST-VISIT-BRAINDUMP
+        // above...)*`) — a different shape the bold-only check never saw,
+        // so it got swallowed, which then permanently poisoned
+        // isPlaceholderOnly for every later line (including the bold-key
+        // ones that WOULD have matched) — three further unrelated
+        // paragraphs, hundreds of words, ended up pre-filled into the
+        // human's answer box as "existing content to preserve." The gate
+        // that actually matters is "is everything so far nothing but the
+        // placeholder" — that's unchanged and still the only thing that
+        // can make this fire — so dropping the bold-key shape requirement
+        // widens WHICH interruption shapes are caught without widening
+        // WHEN: a real in-progress answer's own prose still never
+        // triggers this, because by the time real content exists,
+        // isPlaceholderOnly is already false.
         finalizeAnswerLayer();
         inAnswer = false;
         // fall through — this line belongs to whatever surrounds the QST,

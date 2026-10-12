@@ -4569,6 +4569,63 @@ describe('Regression tests: unrelated bold-key paragraph swallowed after an unfi
   })
 })
 
+describe('Regression tests: a bare "[ ]" placeholder followed by an ITALIC aside, not a bold-key line, still gets caught (companion etude, founder Report, 2026-10-12)', () => {
+  // Real specimen, companion-thinking-stream-etude,
+  // seed-2026-08-07-jeremie-visit-queue.md, QST-WORD-FONTS: "**ANS:** (by
+  // Jérémie)\n[ ]" was followed, blank line only, by "*(The Brain-Dump
+  // sitting is already QST-VISIT-BRAINDUMP above...)*" — an italic
+  // parenthetical aside, not a "**Bold Key**:" line. The 2026-07-29 fix
+  // only recognized the bold-key shape, so this slipped through,
+  // permanently poisoning isPlaceholderOnly for every later line —
+  // THREE further unrelated paragraphs (hundreds of words, including two
+  // more genuinely bold-key-shaped ones that WOULD have matched the old
+  // check on their own) ended up pre-filled into the founder's answer box
+  // as "existing content to preserve." Founder's own words, verbatim,
+  // filing the Report: "I have a lot of unrelevant preparsed stuff in
+  // the box, and it is PARALYZING... ABORT ABORT ABORT ABORT ABORT!!!!"
+  it('"[ ]" then an italic aside (no separator) stays unanswered — the real specimen shape, trimmed to the load-bearing lines', () => {
+    const doc = [
+      '## Thread', '',
+      '### QST-WORD-FONTS: How does the font-choosing turn happen — kit or key?',
+      '- Status: unanswered', '',
+      '**ANS:** (by Jérémie)', '[ ]', '',
+      '*(The Brain-Dump sitting is already QST-VISIT-BRAINDUMP above — one chat sitting.)*', '',
+      '**Delivery mechanism note**: vision = solved (peek); external-image delivery = the attachments gap.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+    // Never silently dropped — still present in the raw body for whatever reads it.
+    expect(q.rawBody).toContain('Brain-Dump sitting')
+    expect(q.rawBody).toContain('Delivery mechanism note')
+  })
+
+  it('the SAME bare placeholder, with no interruption at all, is still correctly unanswered (the widened check must not need an interruption to fire)', () => {
+    const doc = [
+      '## Thread', '', '### QST: Q?', '- Status: unanswered', '',
+      '**ANS:** (by Jérémie)', '[ ]', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(false)
+    expect(q.answer).toBeUndefined()
+  })
+
+  it('a genuine real answer that happens to start with an italicized aside-shaped line is NOT mistaken for a placeholder interruption', () => {
+    // The widened check only ever fires while everything accumulated SO
+    // FAR is nothing but the placeholder — a real answer's own first
+    // line is never placeholder-only, so this must not regress the
+    // "real content survives" guarantee just because it widened which
+    // shapes count as an interruption.
+    const doc = [
+      '## Thread', '', '### QST: Q?', '',
+      '**ANS:** (by Jérémie)', '*(thinking about this one)* Yes, Option A — agreed.', '',
+    ].join('\n')
+    const q = parseAdr(doc, '/fake/docs/adr/x.md').questions[0]
+    expect(q.isAnswered).toBe(true)
+    expect(q.answer?.text).toContain('Yes, Option A')
+  })
+})
+
 describe('Regression tests: dash-bullet ANS + bold dash-bullet Recommendation (system3 etude ADR-0056, Jérémie frustrated report 2026-07-30)', () => {
   // Real specimen, verbatim shape — every field a uniform bullet, written
   // by builder-47 (a model): the ANS line and its placeholder rendered
