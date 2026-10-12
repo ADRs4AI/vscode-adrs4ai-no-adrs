@@ -36,6 +36,8 @@ import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocumen
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
 import { computeRootCaptions, type RootCaptionMode } from '../views/rootCaption'
 import { OPEN_DEEP_LINK_COMMAND } from '../views/documentLinkProvider'
+import { mintFollowUpQuestionBlock, collectExistingHandleSlugs, buildFollowUpMarkerLine } from './followUpQuestion'
+import { buildLocalAdrRef, buildLocalSeedRef, seedSlugFromPath } from '../deeplink/protocol'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -998,6 +1000,8 @@ export class OpenQuestionsPanel {
     insertLineOffset?: number
     /** ADR-0036: "Respond (unresolved)" writes the same ANS layer but sets Status: unresolved instead of answered — the human has contributed content, but the ball moves to the model's court rather than closing the question. Defaults to 'answered' (the ordinary Answer gesture). */
     targetStatus?: 'answered' | 'unresolved'
+    /** "This answer opens a follow-up question" (Riddle's brief, 2026-10-12) — distinct from targetStatus:'unresolved' above, which reopens THIS question; this mints a SEPARATE, newly handled question in the same write. Undefined/omitted is the ordinary case (no follow-up). */
+    mintFollowUp?: { title: string }
   }): Promise<void> {
     try {
       const uri = vscode.Uri.file(msg.adrPath)
@@ -1057,6 +1061,7 @@ export class OpenQuestionsPanel {
       // parseAdr would never find the question, no matter how it's matched.
       let freshQuestions: Question[]
       let freshContainerId: string
+      let freshAdrNumber: number | undefined
       if (msg.sourceKind === 'seed') {
         freshQuestions = parseSeed(currentContent, msg.adrPath).questions
         freshContainerId = msg.adrPath
@@ -1067,6 +1072,7 @@ export class OpenQuestionsPanel {
         // rootNamespace doc comment on WebviewQuestion for why a bare
         // adrNumber isn't safe once more than one root exists.
         freshContainerId = `${owningRoot.namespace}:${freshAdr.number}`
+        freshAdrNumber = freshAdr.number
       }
       const freshOrdinals = computeOccurrenceOrdinals(freshQuestions.map(q => q.text))
       const currentQuestion = freshQuestions.find((q, i) =>
@@ -1078,6 +1084,39 @@ export class OpenQuestionsPanel {
         this.panel.webview.postMessage({ type: 'error', message })
         return
       }
+
+      // "This answer opens a follow-up question" (Riddle's brief, 2026-10-12,
+      // ledger row cca8ee4 — the ADR-0064 QST-STREAM trial-answer specimen:
+      // a verdict owed, never written down, invisible for three days).
+      // Refuse-or-succeed (Docent's review sharpened this): validated and
+      // minted HERE, before the edit is even built, so a refused mint also
+      // refuses the answer itself — never a half-landed state where the
+      // answer writes but the follow-up silently didn't.
+      let followUp: import('./followUpQuestion').MintedFollowUpQuestion | undefined
+      if (msg.mintFollowUp) {
+        const mintResult = mintFollowUpQuestionBlock(
+          { title: msg.mintFollowUp.title, authorName: msg.authorName },
+          collectExistingHandleSlugs(freshQuestions),
+        )
+        if (!mintResult.ok) {
+          this.harvestError('follow-up-mint-refused', mintResult.error, msg)
+          this.panel.webview.postMessage({ type: 'error', message: mintResult.error })
+          return
+        }
+        followUp = mintResult
+      }
+      // Forward pointer only (Docent's ruling, 2026-10-12): the ANSWERED
+      // question carries the pointer to its follow-up, never the reverse
+      // — the failure this prevents is a human looking at an ANSWERED
+      // question and losing the thread, so the original must be the one
+      // that says where the rest of it went.
+      const followUpSuffix = followUp
+        ? `\n\n${buildFollowUpMarkerLine(
+            msg.sourceKind === 'seed'
+              ? buildLocalSeedRef(seedSlugFromPath(msg.adrPath), followUp.slug)
+              : buildLocalAdrRef({ number: freshAdrNumber!, anchor: followUp.slug }),
+          )}`
+        : ''
 
       const lines = currentContent.split('\n')
       const edit = new vscode.WorkspaceEdit()
@@ -1134,7 +1173,7 @@ export class OpenQuestionsPanel {
       // or append a brand-new ANS block if this question has neither an ANS
       // marker nor a placeholder at all)
       if (fillLineIdx >= 0) {
-        edit.replace(uri, lineRange(doc, fillLineIdx), msg.answerText)
+        edit.replace(uri, lineRange(doc, fillLineIdx), msg.answerText + followUpSuffix)
       } else if (ansHeaderLineIdx >= 0) {
         // No placeholder — the ANS block already holds REAL content (under
         // Status-authority this is the normal shape of an open question
@@ -1153,7 +1192,7 @@ export class OpenQuestionsPanel {
           new vscode.Position(ansHeaderLineIdx, 0),
           doc.lineAt(Math.max(ansHeaderLineIdx, ansContentEndLineIdx - 1)).range.end,
         )
-        edit.replace(uri, replaceRange, `**ANS:** (by ${author})\n${msg.answerText}`)
+        edit.replace(uri, replaceRange, `**ANS:** (by ${author})\n${msg.answerText}` + followUpSuffix)
       } else if (boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {
         // No statusLineIdx requirement here (Jérémie, 2026-07-25): a QST
         // block with NO "- Status:" line at all is fully surfaceable —
@@ -1207,13 +1246,24 @@ export class OpenQuestionsPanel {
         }
 
         const pos = new vscode.Position(insertLineIdx, 0)
-        edit.insert(uri, pos, `\n**ANS:** (by ${author})\n${msg.answerText}\n`)
+        edit.insert(uri, pos, `\n**ANS:** (by ${author})\n${msg.answerText}${followUpSuffix}\n`)
       } else {
         // Fallback: can't find where to insert — report error
         const message = `Could not find the ANS block near line ${currentQuestion.lineStart} in ${msg.adrPath}. Please answer this one manually.`
         this.harvestError('ans-anchor-not-found', message, msg)
         this.panel.webview.postMessage({ type: 'error', message })
         return
+      }
+
+      // The minted follow-up's own block lands right after THIS question's
+      // full extent — the next question in document order, not nested
+      // inside the one it follows from. blockEndLineIdx is independent of
+      // which of the three branches above fired, so this is a single,
+      // unconditional insert rather than one per branch.
+      if (followUp) {
+        let followUpInsertIdx = blockEndLineIdx
+        while (followUpInsertIdx > start && lines[followUpInsertIdx - 1].trim() === '') followUpInsertIdx--
+        edit.insert(uri, new vscode.Position(followUpInsertIdx, 0), `${followUp.blockText}\n`)
       }
 
       // "Question doesn't advance" residual (Lapidary 5, 2026-07-12): prior
@@ -1797,6 +1847,28 @@ textarea.expanded{min-height:70vh;height:70vh}
   font-size:11px;
 }
 .expand-link:hover{text-decoration:underline}
+/* "This answer opens a follow-up question" (2026-10-12, Riddle's brief):
+   checkbox + input both always rendered, input just disabled until
+   checked — same layout-surgery discipline as author-row/expand-row
+   above (2026-07-30 inbox 2020): a transient control must never shift
+   the button row beneath it. */
+.follow-up-row{display:flex;align-items:center;gap:8px;margin:2px 0 10px}
+.follow-up-row label{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--vscode-descriptionForeground);
+  white-space:nowrap;cursor:pointer;
+}
+.follow-up-row input[type="text"]{
+  flex:1;padding:5px 9px;
+  background:var(--vscode-input-background);
+  color:var(--vscode-input-foreground);
+  border:1px solid var(--vscode-input-border,transparent);
+  border-radius:3px;
+  font-family:var(--vscode-font-family);font-size:13px;
+  outline:none;
+}
+.follow-up-row input[type="text"]:disabled{opacity:0.5}
+.follow-up-row input[type="text"]:focus{border-color:var(--vscode-focusBorder)}
 /* ADR-0023: draft restored indicator — grey, never red (penn-cv 039 It.5) */
 .draft-restored{
   font-size:11px;
@@ -2187,6 +2259,19 @@ textarea.expanded{min-height:70vh;height:70vh}
        ever occupies it, so autosave firing/clearing never shifts the
        button row below. -->
   <div class="hint" id="answer-hint"><span>Cmd+Enter to submit · Skip to come back later · Cmd+Shift+Enter: request follow-up and return the partial answer to the model for consideration</span><span class="draft-flash" id="draft-flash">✓ draft saved</span></div>
+
+  <!-- "This answer opens a follow-up question" (Riddle's brief, 2026-10-12,
+       from the ADR-0064 QST-STREAM trial-answer specimen, ledger row
+       cca8ee4): a standing, always-visible door to mint a genuinely NEW,
+       fully handled question in the SAME write — so a trial/partial
+       answer never silently drops a verdict it owes. Distinct from
+       "Request Follow-up →" below, which reopens THIS SAME question
+       (targetStatus:'unresolved'); this one opens a SEPARATE question
+       with its own heading and handle. -->
+  <div class="follow-up-row" id="follow-up-row">
+    <label><input type="checkbox" id="follow-up-toggle" /> This answer opens a follow-up question</label>
+    <input id="follow-up-title" type="text" placeholder="One-line follow-up question…" disabled autocomplete="off" />
+  </div>
 
   <div class="row">
     <button class="btn-answer" id="btn-ans">Answer →</button>
@@ -2944,6 +3029,11 @@ $id('draft-restored').addEventListener('click', e => {
 
 $id('btn-ans').addEventListener('click', submit);
 $id('btn-respond-unresolved').addEventListener('click', () => submit(false, 'unresolved'));
+$id('follow-up-toggle').addEventListener('change', () => {
+  const on = $id('follow-up-toggle').checked;
+  $id('follow-up-title').disabled = !on;
+  if (on) $id('follow-up-title').focus();
+});
 window.addEventListener('scroll', checkInsertionPickerVisibility);
 $id('offscreen-toast').addEventListener('click', () => {
   $id('insertion-preview-bar').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3188,6 +3278,19 @@ function submit(force, targetStatus) {
   const text = $id('ans').value.trim();
   const author = $id('author').value.trim() || 'Human';
   if (!text || !questions[idx]) return;
+  // "This answer opens a follow-up question" — a required, human-typed
+  // title, never auto-derived (ADR-0034 It-32's exact lesson: an inherited
+  // title makes the stop lie). Refuse the submit entirely rather than
+  // silently drop the checked box — a placeholder-derived title would
+  // reproduce the defect this feature exists to prevent.
+  const followUpOn = $id('follow-up-toggle').checked;
+  const followUpTitle = $id('follow-up-title').value.trim();
+  if (followUpOn && !followUpTitle) {
+    $id('err').textContent = 'Type the follow-up question’s title — it can’t be minted blank.';
+    $id('err').style.display = 'block';
+    $id('follow-up-title').focus();
+    return;
+  }
   $id('btn-ans').disabled = true;
   $id('btn-respond-unresolved').disabled = true;
   $id('err').style.display = 'none';
@@ -3206,6 +3309,7 @@ function submit(force, targetStatus) {
     // but the ball moves to the model's court instead of closing the
     // question. Omitted (undefined) is the ordinary Answer gesture.
     targetStatus: targetStatus === 'unresolved' ? 'unresolved' : undefined,
+    mintFollowUp: followUpOn ? { title: followUpTitle } : undefined,
   });
 }
 
@@ -3496,6 +3600,12 @@ function render() {
     lastShownDraftKey = q.draftKey;
     $id('draft-restored').style.display = 'none';
   } else if (isNewQuestion) {
+    // The follow-up affordance is per-question, same as the answer box
+    // itself — a checked box left over from the PRIOR question must never
+    // silently mint a follow-up attached to this one.
+    $id('follow-up-toggle').checked = false;
+    $id('follow-up-title').value = '';
+    $id('follow-up-title').disabled = true;
     if (q.draftText) {
       $id('ans').value = q.draftText;
       const savedAt = q.draftSavedAt ? new Date(q.draftSavedAt).toLocaleTimeString() : '';

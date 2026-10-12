@@ -16,7 +16,7 @@
  * questions the machinery then can't serve (the 0620 composition rule).
  */
 
-import { STATUS_LINE_RE, isAnsMarkerLine, isPlaceholderAnswerText } from '../parser/extractor'
+import { STATUS_LINE_RE, isAnsMarkerLine, isPlaceholderAnswerText, isFollowUpMarkerLine } from '../parser/extractor'
 
 /** Thematic break — same boundary set as extractor.ts's THEMATIC_BREAK_RE. */
 const THEMATIC_BREAK_LINE_RE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/
@@ -136,8 +136,18 @@ export function scanAnswerWriteAnchors(
     ) anchors.fillLineIdx = i
   }
 
+  // Trim back over trailing blanks AND a trailing "**Follows up on**: ..."
+  // marker (2026-10-12, the follow-up-question mint): that marker sits
+  // OUTSIDE the ANS content on purpose (Docent's ruling — never inside the
+  // slot a future layered write replaces wholesale), so a REPLACE of
+  // [ansHeaderLineIdx, ansContentEndLineIdx) must stop before it, or a
+  // later re-answer of this same question silently deletes it.
   let contentEnd = anchors.blockEndLineIdx
-  while (contentEnd > startIdx && (lines[contentEnd - 1] ?? '').trim() === '') contentEnd--
+  while (contentEnd > startIdx) {
+    const trailing = (lines[contentEnd - 1] ?? '').trim()
+    if (trailing === '' || isFollowUpMarkerLine(trailing)) { contentEnd--; continue }
+    break
+  }
   anchors.ansContentEndLineIdx = contentEnd
 
   return anchors

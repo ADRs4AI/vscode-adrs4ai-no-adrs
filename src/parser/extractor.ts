@@ -137,7 +137,7 @@ const QST_HEADING_ANNOTATED_RE = /^QST[-\s]([^:]{1,64}):\s*(.*)$/i;
  * 24 chars after folding — combining-mark stripping only shortens in
  * practice, but this keeps the bound explicit rather than assumed.
  */
-function foldQstId(raw: string): string {
+export function foldQstId(raw: string): string {
   return raw
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // strip combining diacritical marks (U+0300-U+036F)
@@ -1245,6 +1245,22 @@ export function isAnsMarkerLine(line: string): boolean {
   return ANS_INLINE_RE.test(l) || ANS_COLON_OUTSIDE_RE.test(l);
 }
 
+/**
+ * `**Follows up on**: <ref>` — the forward pointer from an answered
+ * question to a follow-up question minted at the same time (Riddle's
+ * brief, 2026-10-12, from the ADR-0064 QST-STREAM trial-answer specimen;
+ * Docent's ruling: a sibling marker line, never folded into the ANS slot
+ * itself — "every overload is a question that silently vanishes" is the
+ * exact defect this feature exists to prevent, so the fix must not
+ * recreate it). Machine-authored only (the mint path is the sole writer),
+ * so an exact-case match is enough — no human-dialect tolerance needed,
+ * unlike isAnsMarkerLine's bullet/colon variants.
+ */
+const FOLLOW_UP_MARKER_RE = /^\*\*Follows up on\*\*:\s*\S/;
+export function isFollowUpMarkerLine(line: string): boolean {
+  return FOLLOW_UP_MARKER_RE.test(line.trim());
+}
+
 /** Whole-content placeholder test — same composition finalizeAnswerLayer uses. */
 /**
  * HTML comments are the format's reserved INVISIBLE channel (ADR-0032
@@ -1627,6 +1643,17 @@ export function extractQuestion(
       if (isAnsMarkerLine(line)) {
         finalizeAnswerLayer();
         inAnswer = false; // fall through to the ANS-start handler below
+      } else if (isFollowUpMarkerLine(line)) {
+        // Unconditional — same tier as the ANS/Recommendation markers
+        // above, never gated on isPlaceholderOnly the way the generic
+        // bold-key check below is. This is a STRUCTURAL marker this
+        // program itself mints, not prose that happens to look bold-keyed;
+        // it must never read as the tail of the answer it follows.
+        finalizeAnswerLayer();
+        inAnswer = false;
+        // fall through — ordinary post-body content; not its own field (v1
+        // scope, Docent's ruling: prose today, a one-line parser lift
+        // later if a structured consumer is ever funded).
       } else if (RECOMMENDATION_RE.test(line) || RECOMMENDATION_BULLET_RE.test(line)) {
         finalizeAnswerLayer();
         inAnswer = false; // fall through — the rec handlers below take it

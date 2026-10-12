@@ -486,3 +486,66 @@ describe('Regression tests: the elenchus 0002 same-line multi-paragraph destruct
     }
   })
 })
+
+// The follow-up-question mint (2026-10-12, Riddle's brief + Docent's
+// review): a "**Follows up on**: <ref>" marker line lives OUTSIDE the ANS
+// slot, as its own sibling line. Docent's flagged hazard: writeAnswer's
+// REPLACE branch (an existing REAL answer, no placeholder) replaces
+// [ansHeaderLineIdx, ansContentEndLineIdx) wholesale — if that range
+// didn't know to stop before the marker, re-answering a question that
+// already minted a follow-up would silently delete the marker on the very
+// next write. This is the regression test for that exact scenario.
+describe('scanAnswerWriteAnchors: a trailing "**Follows up on**:" marker survives a later re-answer (Docent\'s flagged hazard)', () => {
+  const WITH_FOLLOW_UP = `# ADR 0100: Some decision
+
+## Questions
+
+### QST-1: Should we try option A?
+
+- Status: answered
+- Why asking: context.
+- Need: pick.
+
+**ANS:** (by Jérémie)
+A, as a trial — if it's jarring we'll fall back to B.
+
+**Follows up on**: adr:0100#qst-trial-verdict
+
+---
+
+### QST-TRIAL-VERDICT: Did option A actually work out?
+- Status: unanswered
+- Why asking: opened as a follow-up at answer time.
+- Need: [specify what this follow-up needs]
+
+Options: none (elicitation)
+
+**ANS:** (by Jérémie)
+[Fill this in]   <!-- literal placeholder — parser-significant, do not paraphrase -->
+`
+
+  it('ansContentEndLineIdx stops BEFORE the marker line, not at the block\'s true end', () => {
+    const lines = WITH_FOLLOW_UP.split('\n')
+    const headingIdx = lines.findIndex((l) => l.startsWith('### QST-1:'))
+    const a = scanAnswerWriteAnchors(lines, headingIdx)
+    const ansHeaderIdx = lines.findIndex((l) => l.trim() === '**ANS:** (by Jérémie)')
+    expect(a.ansHeaderLineIdx).toBe(ansHeaderIdx)
+    const markerIdx = lines.findIndex((l) => l.startsWith('**Follows up on**:'))
+    expect(a.ansContentEndLineIdx).toBeLessThanOrEqual(markerIdx)
+    expect(lines[a.ansContentEndLineIdx - 1].trim()).toContain("we'll fall back to B")
+  })
+
+  it('a wholesale REPLACE of [ansHeaderLineIdx, ansContentEndLineIdx) therefore never touches the marker line', () => {
+    const lines = WITH_FOLLOW_UP.split('\n')
+    const headingIdx = lines.findIndex((l) => l.startsWith('### QST-1:'))
+    const a = scanAnswerWriteAnchors(lines, headingIdx)
+    const replaced = [
+      ...lines.slice(0, a.ansHeaderLineIdx),
+      '**ANS:** (by Jérémie)',
+      'Actually it was jarring — falling back to B.',
+      ...lines.slice(a.ansContentEndLineIdx),
+    ].join('\n')
+    expect(replaced).toContain('**Follows up on**: adr:0100#qst-trial-verdict')
+    expect(replaced).not.toContain("we'll fall back to B")
+  })
+})

@@ -414,7 +414,10 @@ describe('Webview script block syntax', () => {
   // placeholder line is found, using Status as the reliable anchor.
   it('writeAnswer appends a fresh ANS block when the question has no ANS marker at all — only at a REAL boundary (DEBRIEF-006 gate)', () => {
     expect(PANEL_SRC).toContain("} else if (boundaryKind !== 'window' && this.missingAnsBehavior(uri) !== 'refuse') {")
-    expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}\\n`)')
+    // followUpSuffix appended 2026-10-12 (Riddle's follow-up-question brief)
+    // — '' when no follow-up was minted, so this is a pure superset of the
+    // prior literal, not a behavior change for the ordinary case.
+    expect(PANEL_SRC).toContain('edit.insert(uri, pos, `\\n**ANS:** (by ${author})\\n${msg.answerText}${followUpSuffix}\\n`)')
   })
 
   describe('Regression tests', () => {
