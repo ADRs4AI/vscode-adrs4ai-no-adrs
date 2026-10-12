@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.129] - 2026-10-12
+
+### Fixed
+- **Committing a single ADR/seed from the sidebar could take a long time with no feedback, in a large multi-root workspace — long enough that the eventual commit-message prompt could feel like it came out of nowhere and stole focus from whatever you'd moved on to.** It was checking git status for every open project before it even knew it only needed one. Now it only checks the one the item you clicked actually belongs to.
+
 ## [0.7.128] - 2026-10-11
 
 ### Changed

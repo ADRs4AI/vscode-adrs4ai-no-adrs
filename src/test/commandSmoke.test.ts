@@ -405,6 +405,7 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       const seedPath = realSeed().path
       const change = (fsPath: string) => ({ uri: { fsPath }, status: 5 /* MODIFIED */ })
       const repo = {
+        rootUri: { fsPath: workspaceRoot },
         state: { workingTreeChanges: [change(adrPath), change(seedPath)], indexChanges: [] },
         status: vi.fn(async () => undefined),
         add: vi.fn(async (_paths: string[]) => undefined),
@@ -440,6 +441,60 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       const titleCmds = menus['view/title'].map((m: { command: string }) => m.command)
       expect(titleCmds).toContain('adrManager.commitAllAdrs')
       expect(titleCmds).not.toContain('adrManager.commitAdrs')
+    })
+  })
+
+  // Founder Report, lumbroso-hq (a real 22-root composite), 2026-10-12:
+  // "a call to 'commit ADR' that I had made that took forever and forgot
+  // about preempted the palette." Root cause: commitAdrChanges refreshed
+  // EVERY repo's git status unconditionally before reading any of them,
+  // even for a scoped, single-item commit where targetRootPath already
+  // names the one repo that matters — the slowest of N `repo.status()`
+  // calls decided the wait, with no progress indicator, so by the time
+  // the delayed showInputBox finally appeared he'd moved on to typing
+  // somewhere else. A second, clearly-irrelevant fake repo makes the
+  // over-fetch observable: its `status` must never be called for a
+  // right-click commit scoped to an item in the FIRST repo.
+  describe('commitAdrs (item-scoped) refreshes ONLY the owning repo\'s git status, never every repo in a multi-root workspace', () => {
+    function withTwoRepos() {
+      const adrPath = realAdr().path
+      const owningRepo = {
+        rootUri: { fsPath: workspaceRoot },
+        state: { workingTreeChanges: [{ uri: { fsPath: adrPath }, status: 5 }], indexChanges: [] },
+        status: vi.fn(async () => undefined),
+        add: vi.fn(async (_paths: string[]) => undefined),
+        commit: vi.fn(async (_message: string) => undefined),
+      }
+      // A second repo elsewhere entirely — same shape, never touched by a
+      // commit scoped to something inside owningRepo's tree.
+      const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-cmd-smoke-unrelated-'))
+      const unrelatedRepo = {
+        rootUri: { fsPath: otherRoot },
+        state: { workingTreeChanges: [], indexChanges: [] },
+        status: vi.fn(async () => undefined),
+        add: vi.fn(async (_paths: string[]) => undefined),
+        commit: vi.fn(async (_message: string) => undefined),
+      }
+      setExtension('vscode.git', { isActive: true, exports: { getAPI: () => ({ repositories: [unrelatedRepo, owningRepo] }) } })
+      return { owningRepo, unrelatedRepo, adrPath }
+    }
+
+    it('calls status() on the owning repo but never on the unrelated one', async () => {
+      resetInteractionState()
+      const { owningRepo, unrelatedRepo } = withTwoRepos()
+      queueInputBox('scoped commit')
+      await getRegisteredCommand('adrManager.commitAdrs')!(fixtures().adr)
+      expect(owningRepo.status).toHaveBeenCalled()
+      expect(unrelatedRepo.status).not.toHaveBeenCalled()
+    })
+
+    it('still stages and commits correctly through the owning repo — the scoping is only about WHICH repo gets refreshed, not whether the commit itself still works', async () => {
+      resetInteractionState()
+      const { owningRepo, adrPath } = withTwoRepos()
+      queueInputBox('scoped commit')
+      await getRegisteredCommand('adrManager.commitAdrs')!(fixtures().adr)
+      expect(owningRepo.add).toHaveBeenCalledWith([adrPath])
+      expect(owningRepo.commit).toHaveBeenCalledTimes(1)
     })
   })
 

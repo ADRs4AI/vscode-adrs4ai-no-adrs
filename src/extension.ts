@@ -62,6 +62,7 @@ import { D97RecommendationBulletFormHandler } from './normalizer/handlers/d9-7-r
 import { D98TrailingAliasHandleHandler } from './normalizer/handlers/d9-8-trailing-alias-handle'
 import { buildAdrCommitMessage, type ChangedFile } from './commit/commitMessage'
 import { isNewGitStatus, groupChangesByOwningRoot, refreshRepositories } from './commit/repositoryResolution'
+import { findRepoForFile } from './commit/answerCommit'
 import { findReferencedUntrackedFiles, type UntrackedReferencesMode } from './commit/untrackedReferences'
 import { summarizeCommittedArtifacts } from './commit/artifactClassifier'
 import { generateSeedTemplate } from './creation/seedTemplate'
@@ -1590,7 +1591,21 @@ async function commitAdrChanges(adrDirRel: string, targetRootPath?: string, scop
   // extension's own cached state can lag its file watcher by a beat, so
   // reading it immediately after this extension's own write can race and
   // see the pre-write status. See refreshRepositories's own doc comment.
-  await refreshRepositories(api.repositories);
+  //
+  // SCOPED to the one relevant repo when targetRootPath is already known
+  // (every per-item/context-menu commit) — founder Report, lumbroso-hq
+  // (a 22-root composite), 2026-10-12: "a call to 'commit ADR' that I had
+  // made that took forever and forgot about preempted the palette."
+  // Root-caused precisely: this refreshed EVERY repo's git status
+  // unconditionally, even for a single-ADR commit that only ever needed
+  // one of them — the slowest of 22 `repo.status()` calls decided the
+  // wait, with no progress indicator, so the delayed showInputBox
+  // appeared long after he'd moved on to something else and looked like
+  // it stole focus from whatever he was typing into by then. Only the
+  // global/toolbar commit (no targetRootPath — it doesn't know yet which
+  // repos are dirty) still needs the full fan-out.
+  const targetRepo = targetRootPath ? findRepoForFile(api.repositories, targetRootPath) : undefined;
+  await refreshRepositories(targetRootPath ? (targetRepo ? [targetRepo] : []) : api.repositories);
 
   const groups = groupChangesByOwningRoot<any, any>(api.repositories, adrDirRel, fp => compositeIndex!.findRoot(fp)); // eslint-disable-line @typescript-eslint/no-explicit-any
   const dirtyRoots: DirtyRoot[] = groups
