@@ -172,6 +172,19 @@ describe('DraftStore', () => {
     expect(store.get(key)?.draftText).toBe('I think Postgres.')
   })
 
+  // Context (2026-10-11, Jérémie's own correction): commitAnswerOnSubmit
+  // (openQuestionsPanel.ts) stages these two files alongside a just-
+  // answered one, closing the gap where the autosave/archive layer — the
+  // thing that actually saved a real clobbered answer — committed on a
+  // less frequent cadence than answers now do. This getter is the one
+  // place that knows where they live; a second `path.join` at the call
+  // site would be the exact sibling-grammar drift this codebase keeps
+  // finding and killing elsewhere.
+  it('filePaths exposes exactly drafts.json and drafts-archive.json, in this working dir', () => {
+    const store = new DraftStore(dir)
+    expect(store.filePaths).toEqual([path.join(dir, 'drafts.json'), path.join(dir, 'drafts-archive.json')])
+  })
+
   it('persists to docs/adr/.working/drafts.json (committed substrate, not a sidecar)', () => {
     const store = new DraftStore(dir)
     const key = computeDraftKey('3', 'Which database?', 0)

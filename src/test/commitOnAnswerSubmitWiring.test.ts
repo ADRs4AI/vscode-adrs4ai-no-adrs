@@ -72,6 +72,14 @@ describe('commitAnswerOnSubmit: gated on the opt-in setting, never on by default
     expect(body).toMatch(/result\.detachedHead/)
     expect(body).toMatch(/showWarningMessage/)
   })
+
+  // Jérémie's own correction (2026-10-11): committing only the answer file
+  // left drafts.json/drafts-archive.json no better protected than before.
+  it('passes draftStore.filePaths, filtered to files that actually exist on disk, as extraPaths — never an unconditional path that might not have been written yet', () => {
+    expect(body).toMatch(/this\.draftStore\.filePaths/)
+    expect(body).toMatch(/fs\.existsSync/)
+    expect(body).toMatch(/commitAnswerFile\(api\.repositories,\s*adrPath,\s*qstHandle,\s*authorName,\s*draftPaths\)/)
+  })
 })
 
 describe('package.json: adrManager.commitOnAnswerSubmit is declared, boolean, default false', () => {

@@ -97,6 +97,20 @@ export class DraftStore {
     this.reload()
   }
 
+  /**
+   * The two files this store persists to — `commitAnswerOnSubmit`
+   * (openQuestionsPanel.ts) stages these alongside the just-answered file
+   * so the draft/archive history commits at least as often as answers do,
+   * per Jérémie's own correction (2026-10-11): the autosave/archive layer
+   * is what actually saved a real clobbered answer that day, and it
+   * deserved hardening in its own right, not just credit after the fact.
+   * Exposed rather than duplicating the `path.join` logic at the call
+   * site — one definition of where these files live.
+   */
+  get filePaths(): [draftsPath: string, archivePath: string] {
+    return [this.draftsPath, this.archivePath]
+  }
+
   private canonicalAdrPath(adrPath: string): string {
     return this.workspaceRoot ? toRepoRelative(adrPath, this.workspaceRoot) : adrPath
   }

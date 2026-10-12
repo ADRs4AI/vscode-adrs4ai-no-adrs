@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.128] - 2026-10-11
+
+### Changed
+- **`commitOnAnswerSubmit` now commits your draft/archive history alongside the answer, not just the answer itself.** The autosave layer (`drafts.json`/`drafts-archive.json`) is what actually recovers a clobbered answer when one happens — committing only the answer file left that layer exactly as exposed to the same risk, on a more stale commit cadence than the answer file now has. Both now land in the same commit, when they exist.
+
 ## [0.7.127] - 2026-10-11
 
 ### Fixed

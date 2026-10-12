@@ -118,3 +118,47 @@ describe('commitAnswerFile: pathspec\'d to exactly one file, never a bare commit
     expect(owner.add).toHaveBeenCalledTimes(1)
   })
 })
+
+// Context (2026-10-11, Jérémie's own correction, same evening): committing
+// only the answer file left drafts.json/drafts-archive.json — what
+// actually saved a real clobbered answer — no better protected, and on a
+// more stale commit cadence than the answer file now has. `extraPaths`
+// closes that gap by committing them in the SAME stroke.
+describe('commitAnswerFile: extraPaths (drafts.json/drafts-archive.json) ride in the SAME commit', () => {
+  it('stages adrPath AND every extra path together, in one commit', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    await commitAnswerFile(
+      [repo],
+      '/Users/x/project/docs/adr/0001.md',
+      'X',
+      'Human',
+      ['/Users/x/project/docs/adr/.working/drafts.json', '/Users/x/project/docs/adr/.working/drafts-archive.json'],
+    )
+    expect(repo.add).toHaveBeenCalledWith([
+      '/Users/x/project/docs/adr/0001.md',
+      '/Users/x/project/docs/adr/.working/drafts.json',
+      '/Users/x/project/docs/adr/.working/drafts-archive.json',
+    ])
+    expect(repo.commit).toHaveBeenCalledTimes(1) // one commit, not one per file
+  })
+
+  it('an extra path belonging to a DIFFERENT repo is dropped, not committed into the wrong repo\'s history', async () => {
+    const owner = fakeRepo('/Users/x/project')
+    const otherRepo = fakeRepo('/Users/x/other-project')
+    await commitAnswerFile(
+      [owner, otherRepo],
+      '/Users/x/project/docs/adr/0001.md',
+      'X',
+      'Human',
+      ['/Users/x/other-project/docs/adr/.working/drafts.json'],
+    )
+    expect(owner.add).toHaveBeenCalledWith(['/Users/x/project/docs/adr/0001.md'])
+    expect(otherRepo.add).not.toHaveBeenCalled()
+  })
+
+  it('defaults to no extra paths when the caller omits the argument — same behavior as before this feature existed', async () => {
+    const repo = fakeRepo('/Users/x/project')
+    await commitAnswerFile([repo], '/Users/x/project/a.md', 'X', 'Human')
+    expect(repo.add).toHaveBeenCalledWith(['/Users/x/project/a.md'])
+  })
+})

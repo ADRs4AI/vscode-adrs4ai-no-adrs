@@ -69,27 +69,49 @@ export function findRepoForFile<Repo extends GitRepoLike>(repos: Repo[], filePat
 }
 
 /**
- * Stakes `adrPath` with a commit scoped to exactly that one path — never
- * `git add -A` or a bare `commit()` with nothing pathspec'd, which would
- * sweep in whatever else happens to be staged in a shared working tree
- * (the exact kind of surprise this whole feature exists to prevent, not
- * reintroduce). Returns `false` (not an error) when no repo owns the
- * path — the caller decides whether that's worth logging. Throws on an
- * actual git failure (hooks, lock contention); the caller's contract
- * (both real callers in this codebase) is to catch and log, never let a
- * commit failure block or fail the answer it's protecting — the file
- * write already succeeded before this is ever called.
+ * Stakes `adrPath` with a commit scoped to exactly that path plus
+ * `extraPaths` (the draft/archive files, when the caller passes them) —
+ * never `git add -A` or a bare `commit()` with nothing pathspec'd, which
+ * would sweep in whatever else happens to be staged in a shared working
+ * tree (the exact kind of surprise this whole feature exists to
+ * prevent, not reintroduce). `extraPaths` is specifically for
+ * drafts.json/drafts-archive.json — Jérémie's own correction (2026-10-11):
+ * those files are what actually saved a real clobbered answer, and
+ * staying git-tracked makes them exactly as exposed to the same clobber
+ * class as the answer file was, with no guarantee of being committed on
+ * anywhere near the same cadence. Committing them together closes that
+ * gap — doesn't touch what branch-switch or `reset --hard` can still do,
+ * only what "nobody's committed this in a while" can.
+ *
+ * `extraPaths` entries belonging to a DIFFERENT repo than `adrPath`'s are
+ * silently dropped (a multi-root workspace where the draft store's own
+ * workingDir doesn't share a root with this particular answer — an
+ * existing, separate DraftStore scoping question, not something to paper
+ * over here by committing into the wrong repo). The caller is expected to
+ * have already filtered to paths that exist on disk; `repo.add` on a path
+ * that was never written (e.g. an answer with no prior autosaved draft at
+ * all) would otherwise be a spurious failure on an ordinary case, not a
+ * real one.
+ *
+ * Returns `committed: false` (not an error) when no repo owns `adrPath` —
+ * the caller decides whether that's worth logging. Throws on an actual
+ * git failure (hooks, lock contention); the caller's contract (both real
+ * callers in this codebase) is to catch and log, never let a commit
+ * failure block or fail the answer it's protecting — the file write
+ * already succeeded before this is ever called.
  */
 export async function commitAnswerFile<Repo extends GitRepoLike>(
   repos: Repo[],
   adrPath: string,
   qstHandle: string | undefined,
   authorName: string,
+  extraPaths: string[] = [],
 ): Promise<CommitAnswerResult> {
   const repo = findRepoForFile(repos, adrPath)
   if (!repo) return { committed: false, detachedHead: false }
+  const sameRepoExtras = extraPaths.filter(p => findRepoForFile([repo], p) === repo)
   const label = qstHandle ? `QST-${qstHandle}` : 'a question'
-  await repo.add([adrPath])
+  await repo.add([adrPath, ...sameRepoExtras])
   await repo.commit(`ans: ${label} (by ${authorName.trim() || 'Human'})`)
   return { committed: true, detachedHead: !repo.state?.HEAD?.name }
 }

@@ -1337,7 +1337,19 @@ export class OpenQuestionsPanel {
       if (!gitExtension) return
       const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate()
       const api = git.getAPI(1)
-      const result = await commitAnswerFile(api.repositories, adrPath, qstHandle, authorName)
+      // Jérémie's correction (2026-10-11): committing only the answer file
+      // leaves drafts.json/drafts-archive.json — the layer that actually
+      // saved a real clobbered answer that day — no better protected than
+      // before, and now on a MORE stale cadence relative to the answer
+      // file than it was. Stage them in the SAME commit when they exist;
+      // a brand-new workspace (or an answer with no prior autosaved draft
+      // at all — `promote()` no-ops without writing when there was
+      // nothing to promote) may not have written either file yet, and
+      // `repo.add` on a path that was never written would be a spurious
+      // failure on an ordinary case, not a real one, so check existence
+      // first rather than let commitAnswerFile guess.
+      const draftPaths = this.draftStore.filePaths.filter(p => fs.existsSync(p))
+      const result = await commitAnswerFile(api.repositories, adrPath, qstHandle, authorName, draftPaths)
       if (result.detachedHead) {
         const label = qstHandle ? `QST-${qstHandle}` : 'this question'
         vscode.window.showWarningMessage(
