@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.131] - 2026-10-12
+
+### Added
+- **The Open Questions panel can now open a follow-up question at the exact moment you need one.** A trial or partial answer ("Option A to try — if it's jarring, we'll fall back to B") is a real, honest way to answer, but the format had no slot for "there's still a verdict owed" — so it silently vanished. A new "This answer opens a follow-up question" checkbox mints a brand-new, fully addressable question in the same write as your answer: refuse-or-succeed, so a collision with an existing question's handle refuses the whole submit rather than guessing. The answered question gets a small "Follows up on" pointer to the new one, outside the answer text itself, so re-answering later never loses it.
+
 ## [0.7.129] - 2026-10-12
 
 ### Fixed
