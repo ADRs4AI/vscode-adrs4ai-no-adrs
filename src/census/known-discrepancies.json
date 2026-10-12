@@ -7,6 +7,14 @@
       "signalKind": "S4"
     }
   ],
+  "0045-azure-pat-exposure-via-committed-working-drafts.md": [
+    {
+      "kind": "orphan_signal",
+      "line": 92,
+      "raw": "6. Scopes: **Custom defined → Marketplace → Manage** only (pending QST-PAT-SCOPE above).",
+      "signalKind": "S4"
+    }
+  ],
   "0011-seeds-as-first-class-artifacts.md": [
     {
       "kind": "orphan_signal",
