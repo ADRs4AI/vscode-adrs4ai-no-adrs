@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.133] - 2026-10-12
+
+### Added
+- **A Command Palette toggle and README documentation for Commit on Answer Submit (v0.7.128).** A real, enthusiastic founder Report also surfaced a real gap: the feature was easy to miss and had no quick way to flip without digging into settings.json. "ADR Manager: Toggle Commit on Answer Submit" flips it and tells you the resulting state.
+
 ## [0.7.132] - 2026-10-12
 
 ### Fixed
