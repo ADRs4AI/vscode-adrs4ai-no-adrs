@@ -1549,7 +1549,8 @@ function lineRange(doc: vscode.TextDocument, lineIdx: number): vscode.Range {
 // HTML / CSS / JS for the webview
 // ---------------------------------------------------------------------------
 
-function getHtml(bodyMaxWidth: string): string {
+/** Exported for out-of-VS-Code visual verification: the panel's own HTML/CSS can be rendered in a real browser engine to check layout, which the stub-DOM harness cannot do (ADR-0034 It-29's prologue card was the first caller). Not used by the extension. */
+export function getHtml(bodyMaxWidth: string): string {
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1948,8 +1949,14 @@ textarea.expanded{min-height:70vh;height:70vh}
    holds — the tour's theme colors its own chrome, never the substrate below. */
 .tour-header-title.has-prologue{cursor:pointer}
 .tour-header-title.has-prologue:hover{text-decoration:underline}
-.tour-prologue{font-size:12px;line-height:1.5;margin-top:6px;padding:8px 10px;
-  border-left:2px solid currentColor;opacity:.95;white-space:pre-wrap}
+.tour-prologue{font-size:12px;line-height:1.5;margin-top:6px;padding:2px 0 2px 10px;
+  border-left:2px solid currentColor;opacity:.95}
+/* pre-wrap belongs on the TEXT nodes, never the container: on the container the
+   source-code newlines and indentation BETWEEN these child divs render as blank
+   space, which padded the card to ~3x its content height. Caught only by
+   rendering the real panel in a real browser engine (2026-10-12) — invisible to
+   every stub-DOM test, and it would have been the first thing he saw. */
+#tour-prologue-rationale,.tour-prologue-context{white-space:pre-wrap}
 .tour-prologue-context{margin-top:6px;opacity:.8}
 /* Bug fix (Jérémie via Facet, 2026-07-28 inbox 1337): was hardcoded to the
    editor's global link color, independent of the tour's own theme applied
