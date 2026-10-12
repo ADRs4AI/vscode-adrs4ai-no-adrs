@@ -166,6 +166,11 @@
         "icon": "$(eye)"
       },
       {
+        "command": "adrManager.toggleCommitOnAnswerSubmit",
+        "title": "Toggle Commit on Answer Submit",
+        "category": "ADR Manager"
+      },
+      {
         "command": "adrManager.hideSettledAdrs",
         "title": "Hide Settled ADRs",
         "category": "ADR Manager",

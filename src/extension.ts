@@ -647,6 +647,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       treeProvider?.refresh();
     }),
 
+    // Founder Report, companion etude, 2026-10-12 ("deeply pleased" with
+    // commitOnAnswerSubmit, v0.7.128, but: "I didn't know about this
+    // feature and it might surprise other users... perhaps we can swap
+    // between modes"). A Command Palette toggle, not a context menu item —
+    // this setting isn't tied to any one tree item's `when` context, it's
+    // a global on/off, and "swap between modes" reads most plainly as
+    // "let me flip it without opening settings.json."
+    registerLoggedCommand('adrManager.toggleCommitOnAnswerSubmit', async () => {
+      const cfg = vscode.workspace.getConfiguration('adrManager');
+      const next = !cfg.get<boolean>('commitOnAnswerSubmit', false);
+      await cfg.update('commitOnAnswerSubmit', next);
+      vscode.window.showInformationMessage(
+        next
+          ? 'ADR Manager: Commit on Answer Submit is now ON — every submitted answer gets its own tiny commit, pathspec\'d to that file plus your draft/archive history.'
+          : 'ADR Manager: Commit on Answer Submit is now OFF — answers are written and auto-saved as before, not committed.',
+      );
+    }),
+
     // Category-header filter checkboxes for ADRs/Seeds (Facet's go-ahead,
     // 2026-08-16, unblocking my own 2026-08-06 design brief; built now
     // per Jérémie's live "clear your queue" ask, 2026-08-25) — same

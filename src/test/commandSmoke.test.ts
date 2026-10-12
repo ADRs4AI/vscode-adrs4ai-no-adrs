@@ -242,6 +242,7 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       'adrManager.mintTourFromFilter': [],
       'adrManager.hideCompletedTours': [],
       'adrManager.showCompletedTours': [],
+      'adrManager.toggleCommitOnAnswerSubmit': [],
       'adrManager.hideSettledAdrs': [],
       'adrManager.showSettledAdrs': [],
       'adrManager.hideAdrsWithoutOpenQuestions': [],
@@ -372,6 +373,40 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
         fs.rmSync(ledgerPath, { recursive: true, force: true })
         if (hadLedger) fs.renameSync(backupPath, ledgerPath)
       }
+    })
+  })
+
+  // Founder Report, companion etude, 2026-10-12: "deeply pleased" with
+  // commitOnAnswerSubmit, but "I didn't know about this feature... perhaps
+  // we can swap between modes." A Command Palette toggle, no item to
+  // right-click — so this is invoked with no argument, unlike every other
+  // command in this file's table.
+  describe('toggleCommitOnAnswerSubmit — flips the setting and confirms with the real resulting state, not a generic message', () => {
+    it('OFF (the default) flips to ON, and says so', async () => {
+      resetInteractionState()
+      setConfigOverride('adrManager.commitOnAnswerSubmit', false)
+      const handler = getRegisteredCommand('adrManager.toggleCommitOnAnswerSubmit')!
+      await handler()
+      const { workspace } = await import('./helpers/vscodeMock')
+      // update() writes into the same shared configOverrides map get() reads
+      // from — reading the resulting value back is the real round trip;
+      // spying on getConfiguration(...).update directly would catch a
+      // DIFFERENT mock instance than the one the handler itself obtained
+      // (getConfiguration is a factory, a fresh object each call).
+      expect(workspace.getConfiguration('adrManager').get('commitOnAnswerSubmit')).toBe(true)
+      const infoMessages = vi.mocked(mockWindow.showInformationMessage).mock.calls.map(c => String(c[0]))
+      expect(infoMessages.some(m => m.includes('now ON'))).toBe(true)
+    })
+
+    it('ON flips back to OFF — a real round trip, not a one-way switch', async () => {
+      resetInteractionState()
+      setConfigOverride('adrManager.commitOnAnswerSubmit', true)
+      const handler = getRegisteredCommand('adrManager.toggleCommitOnAnswerSubmit')!
+      await handler()
+      const { workspace } = await import('./helpers/vscodeMock')
+      expect(workspace.getConfiguration('adrManager').get('commitOnAnswerSubmit')).toBe(false)
+      const infoMessages = vi.mocked(mockWindow.showInformationMessage).mock.calls.map(c => String(c[0]))
+      expect(infoMessages.some(m => m.includes('now OFF'))).toBe(true)
     })
   })
 

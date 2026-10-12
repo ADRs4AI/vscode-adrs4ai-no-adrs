@@ -102,6 +102,7 @@ That's the whole loop. Everything else—deep links between ADRs, creating new o
 | Seed lifecycle | Seeds show their real state at a glance—iterating, quiet, parked, superseded, terminated, or chunked-with-a-rollup-badge—instead of one wrench for everything pending |
 | Pause & retire | Pause a whole ADR's questions (`Deferred`/`Paused`/`Suspended`/`On Hold`) or retire one specifically (`withdrawn`/`superseded`/`moot`) — both stay fully readable, neither counts as answered |
 | Report button | Flag a problem from inside the panel, in one gesture, without losing your in-progress answer — off by default |
+| Commit on answer submit | Every submitted answer gets its own tiny, pathspec'd commit — plus your draft/archive history, same commit — the instant you submit it. Off by default; a real behavior change not every workflow wants |
 
 ### Key settings
 
@@ -121,6 +122,7 @@ A curated few — there are just over thirty in total by now, all browsable via 
 | `adrManager.reportButton.enabled` | `false` | Adds a Report button to the panel for flagging a problem without losing your place |
 | `adrManager.unresolved.hideFromPanel` / `.deferred.hideFromPanel` | `false` / `false` | Hide "unresolved" (contributed, but the next move is the model's) or "deferred" (blocked, nobody's ball right now) questions from the answering walk |
 | `adrManager.roots.captionMode` | `git-auto` | How each root is labeled in a multi-root workspace — repo name, `owner/repo`, or auto |
+| `adrManager.commitOnAnswerSubmit` | `false` | Every submitted answer gets its own tiny git commit — pathspec'd to just that file plus your draft/archive history, immediately, so a crew git operation elsewhere in a shared working tree can't silently overwrite it before anyone's committed it. Toggle: Command Palette → "ADR Manager: Toggle Commit on Answer Submit" |
 
 ## Related
 
