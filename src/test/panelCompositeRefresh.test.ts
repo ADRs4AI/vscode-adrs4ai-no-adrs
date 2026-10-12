@@ -71,18 +71,24 @@ const TOUR = {
 
 type MockWebview = { postMessage: { mock: { calls: unknown[][] } } }
 
+/** The slice of the pushed `questions` message these tests assert on. */
+type PushedTour = {
+  emptyReason?: string
+  prologue?: { rationale: string; context?: string }
+}
+
 let dir: string
 let staleIndex: CompositeIndex
 let webview: MockWebview
 
 /** Every `questions` message this panel has pushed, oldest first. */
-function pushes(): Array<{ questions: unknown[]; tour: { emptyReason?: string } | null }> {
+function pushes(): Array<{ questions: unknown[]; tour: PushedTour | null }> {
   return webview.postMessage.mock.calls
-    .map(c => c[0] as { type: string; questions: unknown[]; tour: { emptyReason?: string } | null })
+    .map(c => c[0] as { type: string; questions: unknown[]; tour: PushedTour | null })
     .filter(m => m.type === 'questions')
 }
 
-function lastPush(): { questions: unknown[]; tour: { emptyReason?: string } | null } {
+function lastPush(): { questions: unknown[]; tour: PushedTour | null } {
   const all = pushes()
   return all[all.length - 1]
 }
@@ -159,6 +165,28 @@ describe('Regression tests: the panel adopts a REPLACED CompositeIndex (Concertm
 
     expect(lastPush().questions).toHaveLength(1)
     expect(lastPush().tour?.emptyReason).toBeUndefined()
+  })
+
+  it('a prologue authored on disk reaches the webview through the real index (ADR-0034 It-29)', async () => {
+    // Closes the last unverified link in the prologue path. The unit tests
+    // cover parse/read and the webview harness covers the render; this is the
+    // middle — CompositeIndex -> buildTourMeta -> postMessage — which matters
+    // because the frozen parser has NO prologue field, so the host reads it
+    // out-of-band via TourFile.path. If that join breaks, both ends still pass.
+    const tourPath = path.join(dir, 'docs', 'adr', 'tours', `${SLUG}.tour.json`)
+    fs.writeFileSync(tourPath, JSON.stringify({
+      ...TOUR,
+      prologue: { rationale: 'These three are the alpha gate.', context: 'Endgame, wave A.' },
+    }, null, 2))
+
+    const live = await freshIndex()
+    OpenQuestionsPanel.refreshComposite(live)
+    OpenQuestionsPanel.createOrShow(live, SLUG)
+
+    expect(lastPush().tour?.prologue).toEqual({
+      rationale: 'These three are the alpha gate.',
+      context: 'Endgame, wave A.',
+    })
   })
 
   it('after a swap, a change on the NEW index still refreshes the panel (the dead-subscription half)', async () => {

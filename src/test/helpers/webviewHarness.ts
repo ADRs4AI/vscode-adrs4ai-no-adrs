@@ -73,7 +73,7 @@ export interface FakeElement {
   disabled: boolean
   dataset: Record<string, string>
   style: Record<string, string>
-  classList: { add: (c: string) => void; remove: (c: string) => void; contains: (c: string) => boolean }
+  classList: { add: (c: string) => void; remove: (c: string) => void; contains: (c: string) => boolean; toggle: (c: string, force?: boolean) => boolean }
   addEventListener: (type: string, handler: (e: unknown) => void) => void
   focus: () => void
   scrollIntoView: () => void
@@ -102,7 +102,25 @@ function makeFakeElement(id: string): FakeElement {
     disabled: false,
     dataset: {},
     style: {},
-    classList: { add: () => {}, remove: () => {}, contains: () => false },
+    // Set-backed, not no-op. The previous stub answered `contains` with a
+    // constant `false` — a stub that LIES, which is the defect class this
+    // harness exists to catch in production code. Any test asserting on a
+    // class now gets the truth, and `toggle` exists because real code uses it
+    // (ADR-0034 It-29's prologue affordance was the first caller).
+    classList: (() => {
+      const classes = new Set<string>()
+      return {
+        add: (c: string) => { classes.add(c) },
+        remove: (c: string) => { classes.delete(c) },
+        contains: (c: string) => classes.has(c),
+        toggle: (c: string, force?: boolean) => {
+          const on = force ?? !classes.has(c)
+          if (on) classes.add(c)
+          else classes.delete(c)
+          return on
+        },
+      }
+    })(),
     addEventListener: (type, handler) => {
       ;(el.listeners[type] ??= []).push(handler)
     },

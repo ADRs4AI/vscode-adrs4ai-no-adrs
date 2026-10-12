@@ -1164,6 +1164,82 @@ describe('Tour-mode skin (ADR-0034)', () => {
     expect(h.element('tour-header').style.color).toBe('#F5F5F0')
   })
 
+  // ADR-0034 It-29 — the prologue. The founder's need, verbatim: "sometimes I
+  // completely forgot the ADR in context and the why needed is not good
+  // enough". The grouping rationale is content NO ADR can hold, so the tour is
+  // the only surface that can load it.
+  describe('the prologue — the one claim no ADR can hold', () => {
+    const PROLOGUE = { rationale: 'These three are the alpha gate.', context: 'Endgame, wave A.' }
+
+    it('is hidden until the TITLE is clicked — a context-loader must not tax the oriented reader', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      expect(h.element('tour-prologue').style.display).toBe('none')
+
+      h.click('tour-header-title')
+      expect(h.element('tour-prologue').style.display).toBe('block')
+      expect(h.element('tour-prologue-rationale').textContent).toBe('These three are the alpha gate.')
+      expect(h.element('tour-prologue-context').textContent).toBe('Endgame, wave A.')
+
+      h.click('tour-header-title')
+      expect(h.element('tour-prologue').style.display).toBe('none')
+    })
+
+    it('advertises itself on the title ONLY when there is a card to show', () => {
+      // A title that looks clickable and does nothing is a worse lie than no
+      // affordance — same family as the [done] label that claimed completion
+      // a tour never asked for (v0.7.123).
+      const withCard = createWebviewHarness()
+      withCard.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      expect(withCard.element('tour-header-title').classList.contains('has-prologue')).toBe(true)
+
+      const without = createWebviewHarness()
+      without.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+      expect(without.element('tour-header-title').classList.contains('has-prologue')).toBe(false)
+    })
+
+    it('a click does nothing on a tour with no prologue — no card, no toggle', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+      h.click('tour-header-title')
+      expect(h.element('tour-prologue').style.display).toBe('none')
+    })
+
+    it('omits the context paragraph when only a rationale was authored', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: { rationale: 'Why these.' } } })
+      h.click('tour-header-title')
+      expect(h.element('tour-prologue-rationale').textContent).toBe('Why these.')
+      expect(h.element('tour-prologue-context').style.display).toBe('none')
+    })
+
+    it('does not carry an open card onto a DIFFERENT tour', () => {
+      // Found by writing this test honestly: the first version switched to a
+      // tour with NO prologue, which can't fail — display is gated on
+      // `hasPrologue && prologueOpen`, so the card is hidden either way. The
+      // real leak is tour->tour, and the implementation did carry it until
+      // this caught it. Tour-switching is a live path (Facet's click-through
+      // report).
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      h.click('tour-header-title')
+      expect(h.element('tour-prologue').style.display).toBe('block')
+
+      h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, slug: 'other-tour', prologue: { rationale: 'Different bundle.' } } })
+      expect(h.element('tour-prologue').style.display).toBe('none')
+    })
+
+    it('a background re-push of the SAME tour does not close a card being read', () => {
+      // The content-vs-navigation distinction: an unrelated file save
+      // re-pushes questions, and that must not yank the card shut mid-read.
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      h.click('tour-header-title')
+      h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      expect(h.element('tour-prologue').style.display).toBe('block')
+    })
+  })
+
   // Regression — Gleaner's TWO specimens (2026-10-09 dechrome-residue,
   // 2026-10-10 map-details with must_respond: true, so NOT the vacuous-
   // doneness class v0.7.122/123 closed): the founder clicks a tour-entry on a

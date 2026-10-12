@@ -30,6 +30,7 @@ import { bodyMaxWidthCss } from './panelSettings'
 import { DraftStore } from '../drafts/draftStore'
 import { commitAnswerFile } from '../commit/answerCommit'
 import { resolveTourEntries, isTourDone, unresolvedTourRefs, referencedDocumentPaths, tourLedgerAnchor, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
+import { readPrologue, type TourPrologue } from '../index/tourPrologue'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import { appendErrorRecord, buildErrorRecord, appendLedgerRecord, captureDocument, errorSignature, describeLedgerLocation } from '../drafts/errorLog'
 import { computeDraftKey, computeOccurrenceOrdinals, computeOccurrenceCounts } from '../drafts/draftKey'
@@ -158,6 +159,8 @@ interface WebviewTourMeta {
    *   'no-walkable'     — the tour exists and not one entry resolved
    */
   emptyReason?: 'tour-not-found' | 'no-walkable'
+  /** ADR-0034 It-29: the authored grouping claim, shown on TITLE click. Absent = today's behavior exactly. */
+  prologue?: TourPrologue
   /** Doctrine 3: entries that failed to resolve — surfaced as a visible list, never silently dropped. */
   brokenRefs: string[]
 }
@@ -741,6 +744,7 @@ export class OpenQuestionsPanel {
       askedSomething: resolved.some(e => e.mustRespond),
       // Found, but not one entry resolved to a question — distinct from
       // not-found, and the distinction is what makes the next report decisive.
+      prologue: readPrologue(found.tour.path),
       emptyReason: resolved.some(e => e.resolution.kind === 'question') ? undefined : 'no-walkable',
       brokenRefs: resolved.filter(e => e.resolution.kind === 'error').map(e => e.ref),
     }
@@ -1868,6 +1872,13 @@ textarea.expanded{min-height:70vh;height:70vh}
 .tour-header-title{font-size:14px;font-weight:600}
 .tour-header-meta{font-size:11px;opacity:.85}
 .tour-header-broken{font-size:11px;color:var(--vscode-inputValidation-warningForeground,#a9822c)}
+/* ADR-0034 It-29: the prologue card. Lives INSIDE the tour header so doctrine 6
+   holds — the tour's theme colors its own chrome, never the substrate below. */
+.tour-header-title.has-prologue{cursor:pointer}
+.tour-header-title.has-prologue:hover{text-decoration:underline}
+.tour-prologue{font-size:12px;line-height:1.5;margin-top:6px;padding:8px 10px;
+  border-left:2px solid currentColor;opacity:.95;white-space:pre-wrap}
+.tour-prologue-context{margin-top:6px;opacity:.8}
 /* Bug fix (Jérémie via Facet, 2026-07-28 inbox 1337): was hardcoded to the
    editor's global link color, independent of the tour's own theme applied
    to #tour-header above — clashed against a custom theme (his exact
@@ -2098,7 +2109,11 @@ textarea.expanded{min-height:70vh;height:70vh}
 
 <!-- ADR-0034: tour-mode header — provenance first, per doctrine 2. Hidden entirely outside tour mode. -->
 <div class="tour-header" id="tour-header" style="display:none">
-  <div class="tour-header-title" id="tour-header-title"></div>
+  <div class="tour-header-title" id="tour-header-title" role="button" tabindex="0"></div>
+  <div class="tour-prologue" id="tour-prologue" style="display:none">
+    <div id="tour-prologue-rationale"></div>
+    <div class="tour-prologue-context" id="tour-prologue-context" style="display:none"></div>
+  </div>
   <div class="tour-header-meta" id="tour-header-meta"></div>
   <div class="tour-header-broken" id="tour-header-broken" style="display:none"></div>
   <a id="exit-tour" role="button">← Exit tour, back to all open questions</a>
@@ -2982,6 +2997,11 @@ function hideOverlay() { $id('q-overlay').classList.remove('open'); }
 // ADR-0034: tour-mode header — called once per 'questions' push (not
 // per-render like the per-question card), since provenance/theme don't
 // change while skipping/back-ing within the same walk.
+// Per-walk UI state, deliberately NOT persisted: the card answers "what is
+// this bundle" at the moment of disorientation, and a sticky-open card becomes
+// chrome the next walk has to scroll past.
+let prologueOpen = false;
+let prologueTourSlug = null;
 function renderTourHeader() {
   const header = $id('tour-header');
   if (!activeTour) {
@@ -3011,6 +3031,38 @@ function renderTourHeader() {
   $id('tour-header-title').textContent = activeTour.title + statusLabel;
   $id('tour-header-meta').textContent = 'By ' + authorLabel + mintedLabel;
 
+  // ADR-0034 It-29 — the prologue, on TITLE click. His framing: "sometimes I
+  // completely forgot the ADR in context and the why needed is not good
+  // enough". The grouping rationale is the one thing no ADR can hold, so the
+  // tour is the only surface that can load it.
+  //
+  // Title-click, not always-open: the card is a context-loader for the reader
+  // who has lost the thread, and spending vertical space on it every walk
+  // would tax the reader who has not. Absent prologue = no affordance at all,
+  // so the title never advertises a card that isn't there.
+  // Reset on a tour CHANGE, not merely on a re-push. The card answers "what
+  // is this bundle", so carrying "open" across a bundle change shows the next
+  // tour's card nobody asked for — and a routine background refresh must not
+  // close a card the reader is mid-read of (same content-vs-navigation
+  // distinction the draftKey gate makes).
+  if (activeTour.slug !== prologueTourSlug) {
+    prologueTourSlug = activeTour.slug;
+    prologueOpen = false;
+  }
+  const hasPrologue = !!(activeTour.prologue && activeTour.prologue.rationale);
+  $id('tour-header-title').classList.toggle('has-prologue', hasPrologue);
+  $id('tour-header-title').title = hasPrologue ? 'Why these questions, together — click to show' : '';
+  if (!hasPrologue) {
+    prologueOpen = false;
+  }
+  $id('tour-prologue').style.display = hasPrologue && prologueOpen ? 'block' : 'none';
+  if (hasPrologue) {
+    $id('tour-prologue-rationale').textContent = activeTour.prologue.rationale;
+    const ctx = activeTour.prologue.context;
+    $id('tour-prologue-context').textContent = ctx || '';
+    $id('tour-prologue-context').style.display = ctx ? 'block' : 'none';
+  }
+
   // Doctrine 3: broken references are visible, never silently dropped.
   if (activeTour.brokenRefs && activeTour.brokenRefs.length > 0) {
     const n = activeTour.brokenRefs.length;
@@ -3020,6 +3072,16 @@ function renderTourHeader() {
     $id('tour-header-broken').style.display = 'none';
   }
 }
+$id('tour-header-title').addEventListener('click', () => {
+  if (!activeTour || !activeTour.prologue || !activeTour.prologue.rationale) return;
+  prologueOpen = !prologueOpen;
+  renderTourHeader();
+});
+$id('tour-header-title').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  $id('tour-header-title').click();
+});
 $id('exit-tour').addEventListener('click', e => {
   e.preventDefault();
   vscode.postMessage({ type: 'exitTour' });
