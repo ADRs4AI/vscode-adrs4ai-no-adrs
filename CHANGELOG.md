@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.132] - 2026-10-12
+
+### Fixed
+- **The new "Follows up on" marker (0.7.131) recognized only its own exact byte-for-byte form** — a hand-typed variant (a leading "- " bullet, "Follows Up On" capitalized, or a space before the colon) would have silently fallen into the answer text it follows and been deleted the next time that question was re-answered, reproducing the exact defect the marker exists to prevent. It now tolerates the same variations the `**ANS:**` marker it joins already does. Caught in review before anyone hand-typed one.
+
 ## [0.7.131] - 2026-10-12
 
 ### Added
