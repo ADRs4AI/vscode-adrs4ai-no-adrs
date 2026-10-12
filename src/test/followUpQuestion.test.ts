@@ -67,6 +67,30 @@ describe('buildFollowUpMarkerLine', () => {
   })
 })
 
+// Regression tests (ledger row cca8ee4; Docent's probe
+// scripts/ephemeral/2026-10-12-follow-up-marker-tolerance-probe.ts, e5df7a2;
+// ratified by Riddle same day): the recognizer shipped stricter than the
+// ANS-marker family it joined — a hand-authored bullet/case/spacing
+// variant failed to match, which falls the marker straight into the ANS
+// overload this feature exists to prevent (swallowed into q.answer.text,
+// deleted on the next re-answer — the exact cca8ee4 defect). The write
+// path always emits the bare canonical form (buildFollowUpMarkerLine,
+// unchanged, still bare, per Riddle's ruling); this widens the READ side
+// only, for the hand-authored path Docent/Shipwright are about to teach.
+describe('Regression tests', () => {
+  it('tolerates a leading bullet, same as ANS (fixes ledger cca8ee4\'s hand-authored gap)', () => {
+    expect(isFollowUpMarkerLine('- **Follows up on**: adr:0064#qst-stream')).toBe(true)
+  })
+
+  it('tolerates each-word capitalization, a plausible hand-authored instinct', () => {
+    expect(isFollowUpMarkerLine('**Follows Up On**: adr:0064#qst-stream')).toBe(true)
+  })
+
+  it('tolerates a space before the colon', () => {
+    expect(isFollowUpMarkerLine('**Follows up on** : adr:0064#qst-stream')).toBe(true)
+  })
+})
+
 describe('isFollowUpMarkerLine', () => {
   it('recognizes the exact marker form', () => {
     expect(isFollowUpMarkerLine('**Follows up on**: adr:0100#qst-trial-verdict')).toBe(true)

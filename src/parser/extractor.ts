@@ -1252,13 +1252,25 @@ export function isAnsMarkerLine(line: string): boolean {
  * Docent's ruling: a sibling marker line, never folded into the ANS slot
  * itself — "every overload is a question that silently vanishes" is the
  * exact defect this feature exists to prevent, so the fix must not
- * recreate it). Machine-authored only (the mint path is the sole writer),
- * so an exact-case match is enough — no human-dialect tolerance needed,
- * unlike isAnsMarkerLine's bullet/colon variants.
+ * recreate it).
+ *
+ * Tolerant, same reasoning as isAnsMarkerLine's bullet/colon variants
+ * (Docent's review, same sitting, probed not asserted — a fourth
+ * hand-rolled marker regex stricter than the other three is exactly how
+ * the family drifts, v0.7.40's hand-copied-cascade lesson): the mint path
+ * is the only writer TODAY, but the marker is about to be taught
+ * (Docent's authoring prompt, Shipwright's ✗/✓ pair), and a hand-authored
+ * line that fails to match falls straight into the ANS overload this
+ * feature exists to prevent. Tolerates a leading bullet (debulletFollowUp
+ * Line, same technique as debulletAnsLine), case, and a space before the colon.
  */
-const FOLLOW_UP_MARKER_RE = /^\*\*Follows up on\*\*:\s*\S/;
+const FOLLOW_UP_MARKER_RE = /^\*\*follows up on\*\*\s*:\s*\S/i;
+function debulletFollowUpLine(line: string): string {
+  const m = line.match(/^-\s+(?=\*\*follows up on\*\*)/i);
+  return m ? line.slice(m[0].length) : line;
+}
 export function isFollowUpMarkerLine(line: string): boolean {
-  return FOLLOW_UP_MARKER_RE.test(line.trim());
+  return FOLLOW_UP_MARKER_RE.test(debulletFollowUpLine(line.trim()));
 }
 
 /** Whole-content placeholder test — same composition finalizeAnswerLayer uses. */
