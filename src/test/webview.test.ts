@@ -1174,17 +1174,45 @@ describe('Tour-mode skin (ADR-0034)', () => {
   describe('the prologue — the one claim no ADR can hold', () => {
     const PROLOGUE = { rationale: 'These three are the alpha gate.', context: 'Endgame, wave A.' }
 
-    it('is hidden until the TITLE is clicked — a context-loader must not tax the oriented reader', () => {
+    it('opens by DEFAULT on entering a tour — a context-loader nobody finds loads no context', () => {
+      // Reversed from the shipped v0.7.130 behaviour by the founder's verdict
+      // (2026-10-12): he clicked the tour title in the TREEVIEW — whose command
+      // opens the walk at question one — and reported "no dedicated title card
+      // that I can see". Closed-by-default assumed the affordance was
+      // discoverable; it was not.
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
-      expect(h.element('tour-prologue').style.display).toBe('none')
-
-      h.click('tour-header-title')
       expect(h.element('tour-prologue').style.display).toBe('block')
       expect(h.element('tour-prologue-rationale').textContent).toBe('These three are the alpha gate.')
       expect(h.element('tour-prologue-context').textContent).toBe('Endgame, wave A.')
+    })
 
-      h.click('tour-header-title')
+    it('advertises itself with a VISIBLE chip, not a hover tooltip on a bare title', () => {
+      // The whole defect in one assertion: a clickable title with a title=
+      // tooltip cannot be found by someone who does not already suspect the
+      // card exists.
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      expect(h.element('tour-prologue-toggle').style.display).toBe('inline-flex')
+      expect(h.element('tour-prologue-toggle').textContent).toContain('Why these questions')
+
+      const without = createWebviewHarness()
+      without.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
+      expect(without.element('tour-prologue-toggle').style.display).toBe('none')
+    })
+
+    it('a collapse is remembered for that tour, so it does not re-open every push', () => {
+      // Keeps the original "don't tax the oriented reader" concern without
+      // paying for it in discoverability.
+      const h = createWebviewHarness()
+      h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
+      h.click('tour-prologue-toggle')
+      expect(h.element('tour-prologue').style.display).toBe('none')
+
+      h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, slug: 'other', prologue: PROLOGUE } })
+      expect(h.element('tour-prologue').style.display).toBe('block')
+
+      h.postToWebview({ type: 'questions', generation: 2, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
       expect(h.element('tour-prologue').style.display).toBe('none')
     })
 
@@ -1201,17 +1229,17 @@ describe('Tour-mode skin (ADR-0034)', () => {
       expect(without.element('tour-header-title').classList.contains('has-prologue')).toBe(false)
     })
 
-    it('a click does nothing on a tour with no prologue — no card, no toggle', () => {
+    it('a click does nothing on a tour with no prologue — no card, no chip', () => {
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: TOUR })
       h.click('tour-header-title')
       expect(h.element('tour-prologue').style.display).toBe('none')
+      expect(h.element('tour-prologue-toggle').style.display).toBe('none')
     })
 
     it('omits the context paragraph when only a rationale was authored', () => {
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: { rationale: 'Why these.' } } })
-      h.click('tour-header-title')
       expect(h.element('tour-prologue-rationale').textContent).toBe('Why these.')
       expect(h.element('tour-prologue-context').style.display).toBe('none')
     })
@@ -1225,11 +1253,11 @@ describe('Tour-mode skin (ADR-0034)', () => {
       // report).
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
-      h.click('tour-header-title')
-      expect(h.element('tour-prologue').style.display).toBe('block')
+      h.click('tour-prologue-toggle')
+      expect(h.element('tour-prologue').style.display).toBe('none')
 
       h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, slug: 'other-tour', prologue: { rationale: 'Different bundle.' } } })
-      expect(h.element('tour-prologue').style.display).toBe('none')
+      expect(h.element('tour-prologue').style.display).toBe('block')
     })
 
     it('a background re-push of the SAME tour does not close a card being read', () => {
@@ -1237,7 +1265,6 @@ describe('Tour-mode skin (ADR-0034)', () => {
       // re-pushes questions, and that must not yank the card shut mid-read.
       const h = createWebviewHarness()
       h.postToWebview({ type: 'questions', generation: 0, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
-      h.click('tour-header-title')
       h.postToWebview({ type: 'questions', generation: 1, questions: [Q1], tour: { ...TOUR, prologue: PROLOGUE } })
       expect(h.element('tour-prologue').style.display).toBe('block')
     })

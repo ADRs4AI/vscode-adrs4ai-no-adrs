@@ -1949,6 +1949,20 @@ textarea.expanded{min-height:70vh;height:70vh}
    holds — the tour's theme colors its own chrome, never the substrate below. */
 .tour-header-title.has-prologue{cursor:pointer}
 .tour-header-title.has-prologue:hover{text-decoration:underline}
+/* The card needs a VISIBLE affordance, not a clickable title. Founder verdict
+   2026-10-12: he clicked the tour's title in the TREEVIEW (whose command opens
+   the walk at question one) and reported "no dedicated title card that I can
+   see". A hover tooltip on a bare title cannot be found by someone who does not
+   already suspect the card exists. */
+.tour-prologue-toggle{
+  align-self:flex-start;display:inline-flex;align-items:center;gap:5px;
+  margin-top:2px;padding:1px 7px 2px;border-radius:10px;
+  font-family:inherit;font-size:11px;line-height:1.6;cursor:pointer;
+  color:inherit;opacity:.8;
+  background:var(--vscode-badge-background,rgba(127,127,127,.18));
+  border:1px solid var(--vscode-textBlockQuote-border,rgba(127,127,127,.3));
+}
+.tour-prologue-toggle:hover{opacity:1}
 .tour-prologue{font-size:12px;line-height:1.5;margin-top:6px;padding:2px 0 2px 10px;
   border-left:2px solid currentColor;opacity:.95}
 /* pre-wrap belongs on the TEXT nodes, never the container: on the container the
@@ -2189,6 +2203,7 @@ textarea.expanded{min-height:70vh;height:70vh}
 <!-- ADR-0034: tour-mode header — provenance first, per doctrine 2. Hidden entirely outside tour mode. -->
 <div class="tour-header" id="tour-header" style="display:none">
   <div class="tour-header-title" id="tour-header-title" role="button" tabindex="0"></div>
+  <button class="tour-prologue-toggle" id="tour-prologue-toggle" type="button" style="display:none"></button>
   <div class="tour-prologue" id="tour-prologue" style="display:none">
     <div id="tour-prologue-rationale"></div>
     <div class="tour-prologue-context" id="tour-prologue-context" style="display:none"></div>
@@ -3097,8 +3112,15 @@ function hideOverlay() { $id('q-overlay').classList.remove('open'); }
 // Per-walk UI state, deliberately NOT persisted: the card answers "what is
 // this bundle" at the moment of disorientation, and a sticky-open card becomes
 // chrome the next walk has to scroll past.
+// Open by DEFAULT on first entry to a tour: the card exists for the moment of
+// disorientation, and a context-loader nobody finds loads no context. The
+// original closed-by-default reasoning ("don't tax the oriented reader")
+// assumed the affordance was discoverable; the founder's 10-12 verdict showed
+// it was not. The tax concern is kept instead by REMEMBERING a collapse
+// per-tour, so closing it once keeps it closed for that tour.
 let prologueOpen = false;
 let prologueTourSlug = null;
+const prologueCollapsed = new Set();
 function renderTourHeader() {
   const header = $id('tour-header');
   if (!activeTour) {
@@ -3144,7 +3166,7 @@ function renderTourHeader() {
   // distinction the draftKey gate makes).
   if (activeTour.slug !== prologueTourSlug) {
     prologueTourSlug = activeTour.slug;
-    prologueOpen = false;
+    prologueOpen = !prologueCollapsed.has(activeTour.slug);
   }
   const hasPrologue = !!(activeTour.prologue && activeTour.prologue.rationale);
   $id('tour-header-title').classList.toggle('has-prologue', hasPrologue);
@@ -3152,6 +3174,8 @@ function renderTourHeader() {
   if (!hasPrologue) {
     prologueOpen = false;
   }
+  $id('tour-prologue-toggle').style.display = hasPrologue ? 'inline-flex' : 'none';
+  $id('tour-prologue-toggle').textContent = (prologueOpen ? '\u25be' : '\u25b8') + ' Why these questions, together';
   $id('tour-prologue').style.display = hasPrologue && prologueOpen ? 'block' : 'none';
   if (hasPrologue) {
     $id('tour-prologue-rationale').textContent = activeTour.prologue.rationale;
@@ -3169,10 +3193,16 @@ function renderTourHeader() {
     $id('tour-header-broken').style.display = 'none';
   }
 }
+$id('tour-prologue-toggle').addEventListener('click', () => {
+  if (!activeTour) return;
+  prologueOpen = !prologueOpen;
+  if (prologueOpen) prologueCollapsed.delete(activeTour.slug);
+  else prologueCollapsed.add(activeTour.slug);
+  renderTourHeader();
+});
 $id('tour-header-title').addEventListener('click', () => {
   if (!activeTour || !activeTour.prologue || !activeTour.prologue.rationale) return;
-  prologueOpen = !prologueOpen;
-  renderTourHeader();
+  $id('tour-prologue-toggle').click(); // one toggle path — never two definitions of "open"
 });
 $id('tour-header-title').addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;

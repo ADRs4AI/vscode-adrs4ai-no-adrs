@@ -83,3 +83,16 @@ console.log('rationale chars:', prologue.rationale.length, '| context:', !!prolo
  * vscode at module scope, so it only resolves under vitest's alias), then
  * npx playwright screenshot --viewport-size=960,760 file://<the html> out.png
  */
+
+/*
+ * ADDENDUM (2026-10-12, second round — the founder's "no card" verdict):
+ *
+ * TOOLING NOTE, learned the hard way: `npx playwright screenshot <file>` can
+ * capture BEFORE a page's own deferred script has rendered, and it did — the
+ * image showed no tour header while the DOM reported headerDisplay:"flex" and
+ * the toggle present. I nearly reported a regression that was an artifact of
+ * the screenshot CLI. Use the playwright API instead (launch -> goto ->
+ * waitForTimeout -> page.screenshot), and attach pageerror/console listeners
+ * so a real exception is distinguishable from a capture race. Same lesson as
+ * the parseTourFile near-miss: check the instrument before reporting the bug.
+ */
