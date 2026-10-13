@@ -103,7 +103,7 @@ kbd{background:var(--chip); border:1px solid var(--line); border-radius:4px; pad
 <div class="banner" id="probeBanner"></div>
 <div class="banner" id="staleBanner"></div>
 
-<p class="note">Ten stops: three real decisions (I've staked a lean on each, blind by default — press <kbd>L</kbd> or the button to see it), seven "I did this, confirm" checkpoints. Mark a checkpoint <b>Adopt</b> once you've actually done the step; <b>Override</b> if the real UI didn't match what's described here (sites drift — tell me what you saw in the notes box, I'll adjust). Takes maybe 10 minutes total. Export any time, as many times as you like — nothing is final until you say so. One rule that applies to every single card below: <b>the token value itself never goes in a note box, never gets typed anywhere on this page</b> — only "done" / "not done" / what differed.</p>
+<p class="note">Ten stops: three real decisions (I've staked a lean on each, blind by default — press <kbd>L</kbd> or the button to see it), seven "I did this, confirm" checkpoints. Mark a checkpoint <b>Adopt</b> once you've actually done the step; <b>Override</b> if the real UI didn't match what's described here (sites drift — tell me what you saw in the notes box, I'll adjust). Takes maybe 10 minutes total. Export any time, as many times as you like — nothing is final until you say so. One rule that applies to every single card below: <b>the token value itself never goes in a note box, never gets typed anywhere on this page</b> — only "done" / "not done" / what differed. Inside a note box, your browser's own keys apply (not the ones below) — this page's own shortcuts only act outside text fields.</p>
 
 <div class="section-label">Part 1 — Azure DevOps (powers <code>vsce publish</code>)</div>
 
@@ -396,6 +396,10 @@ function focusCard(i){
 document.addEventListener('keydown',function(ev){
   var tag=(ev.target.tagName||'').toLowerCase();
   if(tag==='textarea'||tag==='input') return;
+  /* H14 (Pharos 5, pharoscan-hq handbook): ev.key for Ctrl+A is still "a" —
+     a bare tag-guard doesn't stop a modifier-held shortcut (browser select-
+     all, etc.) from being silently read as a card-navigation key. */
+  if(ev.ctrlKey || ev.metaKey || ev.altKey) return;
   var k=ev.key.toLowerCase();
   if(k==='arrowdown'||k==='j'){ ev.preventDefault(); focusCard(focusIdx+1); }
   else if(k==='arrowup'||k==='k'){ ev.preventDefault(); focusCard(focusIdx-1); }
