@@ -21,7 +21,7 @@ import * as os from 'os'
 import type { CompositeIndex } from '../index/compositeIndex'
 import type { AdrFile, SeedFile, Recommendation, Question } from '../parser/types'
 import { questionStatusToken } from '../parser/statusInfo'
-import { parseAdr, isDocumentPausedStatus } from '../parser/extractor'
+import { parseAdr, isDocumentPausedStatus, isPlaceholderAnswerText } from '../parser/extractor'
 import { computeAdrContext } from '../parser/adrContext'
 import { stripAdrNumberPrefix, normalizeDateForTitle } from '../parser/adrTitle'
 import { scanAnswerWriteAnchors, buildInsertionPreview } from './answerWriteScan'
@@ -106,6 +106,8 @@ interface WebviewQuestion {
   draftText?: string
   /** The existing (unconfirmed) answer text when the question is OPEN under Status-authority but its ANS block holds a real draft — prefilled into the textarea so replacement is never blind. */
   existingAnswer?: string
+  /** The ANS slot's raw content when it LEADS with a placeholder — context to show above the box, never prefilled into it (founder's "PARALYZING" record, 2026-10-12). */
+  unansweredSlotContent?: string
   /** File mtime (ms) at push time — renders as the existing answer's save time and dates edit-time drift banners. */
   fileMtime?: number
   /** ADR-0023: ISO timestamp the draft was last saved, for the "draft restored" indicator. */
@@ -534,7 +536,13 @@ export class OpenQuestionsPanel {
       // fresh confirmation) while making sure "reopened" never means
       // "your prior answer vanished" — same prefill affordance this field
       // already gives the Status-declared-unanswered-with-stale-content case.
-      existingAnswer: !q.isAnswered ? (q.answer?.text ?? q.answers?.[q.answers.length - 1]?.text) : undefined,
+      existingAnswer: !q.isAnswered ? this.prefillableAnswer(q.answer?.text ?? q.answers?.[q.answers.length - 1]?.text) : undefined,
+      // Shown ABOVE the box, never inside it: the slot's own content stays
+      // visible so a replace is still not blind (the property the prefill was
+      // protecting), without becoming his draft.
+      unansweredSlotContent: !q.isAnswered && this.leadsWithPlaceholder(q.answer?.text ?? q.answers?.[q.answers.length - 1]?.text)
+        ? (q.answer?.text ?? q.answers?.[q.answers.length - 1]?.text)
+        : undefined,
       fileMtime: statMtimeMs(q.adrPath),
       draftSavedAt: draft?.updatedAt,
       draftSource: draft?.source,
@@ -584,6 +592,33 @@ export class OpenQuestionsPanel {
       rootNamespace: namespace,
       rootCaption: (node && captions.get(node.path)) ?? namespace,
     }
+  }
+
+  /**
+   * Does this ANS slot LEAD with a placeholder? Then it is not a draft, whatever
+   * trails it.
+   *
+   * Founder, 2026-10-12T22:34:11Z, on a pre-ORRCF block whose slot held `[ ]`
+   * plus an unseparated parenthetical: *"the ANS placeholder was [ ] or
+   * something and so I have a lot unrelevant preparsed stuff in the box, and it
+   * is PARALYZING."* Every placeholder regex is anchored `^…$` over the WHOLE
+   * slot, so a placeholder plus ANY trailing content stops being recognized as a
+   * placeholder — and is then treated as a real answer and prefilled. That is
+   * the worst possible case to prefill: the slot says *unanswered* and we hand
+   * him its noise as his own draft, on a slot he has scheduled.
+   *
+   * Reuses `isPlaceholderAnswerText` on the first non-empty line rather than
+   * adding a fourth placeholder recognizer — a recognizer that drifts from its
+   * family is the defect this program fixed in a sibling marker the day before.
+   */
+  /** The slot's text if it is genuinely a draft worth editing; `undefined` if it only LEADS with a placeholder. Kept as a one-line call at the `existingAnswer` site so `reopenedAnswerFallbackWiring.test.ts` still pins the 2026-08-30 fallback invariant it was written for. */
+  private prefillableAnswer(text: string | undefined): string | undefined {
+    return this.leadsWithPlaceholder(text) ? undefined : text
+  }
+
+  private leadsWithPlaceholder(text: string | undefined): boolean {
+    const first = (text ?? '').split('\n').map(l => l.trim()).find(l => l.length > 0)
+    return first !== undefined && isPlaceholderAnswerText(first)
   }
 
   private sendQuestions(): void {
@@ -1871,6 +1906,17 @@ textarea.expanded{min-height:70vh;height:70vh}
 .follow-up-row input[type="text"]:disabled{opacity:0.5}
 .follow-up-row input[type="text"]:focus{border-color:var(--vscode-focusBorder)}
 /* ADR-0023: draft restored indicator — grey, never red (penn-cv 039 It.5) */
+/* Founder, 2026-10-12: a malformed ANS slot ("[ ]" plus an unseparated note)
+   was prefilled into his answer box — "it is PARALYZING". The slot's content
+   still has to be VISIBLE so a replace isn't blind, but it must not arrive as
+   his draft. Shown here, above the box, read-only and visibly not-his. */
+.slot-context{
+  margin:4px 0 6px;padding:6px 9px;border-radius:3px;
+  border-left:2px solid var(--vscode-inputValidation-warningBorder,#a9822c);
+  background:var(--vscode-textBlockQuote-background,rgba(127,127,127,.08));
+}
+.slot-context-label{font-size:11px;opacity:.85;margin-bottom:3px}
+.slot-context-body{font-size:12px;white-space:pre-wrap;opacity:.9}
 .draft-restored{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
@@ -2274,6 +2320,10 @@ textarea.expanded{min-height:70vh;height:70vh}
     <a id="expand-field" class="expand-link" role="button" title="Grow the answer field to fill the panel (Cmd+Shift+E)">Expand field ⤢</a>
   </div>
 
+  <div class="slot-context" id="slot-context" style="display:none">
+    <div class="slot-context-label">The answer slot currently holds this. It is not an answer — it will be replaced when you submit.</div>
+    <div class="slot-context-body" id="slot-context-body"></div>
+  </div>
   <textarea id="ans" placeholder="Type your answer… (Cmd+Enter to submit)"></textarea>
   <div class="draft-restored" id="draft-restored" style="display:none"></div>
   <!-- "Draft saved" lives here now — the expand-field link's vacated
@@ -3630,6 +3680,17 @@ function render() {
   // textarea + stealing focus on every one of those repaints is what was
   // clobbering in-progress typing and yanking the cursor to the end
   // "incessantly" — see the note by lastShownDraftKey's declaration.
+  // The malformed-slot notice: per-question, rendered every pass so it can
+  // never survive onto a question whose slot is clean (the same leak class the
+  // follow-up checkbox guards against just below).
+  if (q.unansweredSlotContent) {
+    $id('slot-context-body').textContent = q.unansweredSlotContent;
+    $id('slot-context').style.display = 'block';
+  } else {
+    $id('slot-context-body').textContent = '';
+    $id('slot-context').style.display = 'none';
+  }
+
   const isNewQuestion = q.draftKey !== lastShownDraftKey;
   if (q.isReviewStop) {
     // A review stop never shows draft/drift banners — there's no live
