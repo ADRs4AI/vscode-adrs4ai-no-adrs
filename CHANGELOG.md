@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.138] - 2026-10-18
+
+### Fixed
+- **Dismissing the "commit these additional references?" checklist with Esc used to commit anyway, with none of the detected screenshots staged — no confirmation, no way back in.** The checklist (shown when a seed/ADR mentions a screenshot that's still untracked) couldn't tell "I pressed Esc" from "I explicitly unchecked every box" — both returned the same empty list, and either way the commit went through. Esc now cancels the whole commit instead, matching this window's own clobber-minimization standard: never take a staking action the human didn't clearly intend. Explicitly confirming with every box unchecked still commits without the extras, exactly as before — only the ambiguous dismissal changed.
+
 ## [0.7.137] - 2026-10-18
 
 ### Fixed

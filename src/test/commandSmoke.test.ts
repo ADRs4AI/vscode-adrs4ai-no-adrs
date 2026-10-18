@@ -533,6 +533,72 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
     })
   })
 
+  // Founder Report, porthole (ADR-0018), 2026-10-13: "ESC would just skip
+  // that phase" — dismissing the "commit these additional references?"
+  // checklist used to return [] (indistinguishable from explicitly
+  // unchecking every box), and the commit proceeded anyway with zero extra
+  // files staged, no confirmation, no way back in. His own clobber-
+  // minimization directive from this same window ("strengthen that aspect
+  // against every possible failure mode including committing imprudently")
+  // settles which way this should go: Esc now cancels the WHOLE commit.
+  describe('resolveUntrackedReferencesToStage: Esc on the checklist cancels the whole commit, never proceeds with zero extras', () => {
+    function withReferencedScreenshot() {
+      const adrPath = realAdr().path
+      const screenshotPath = path.join(workspaceRoot, 'docs', 'screenshots', 'evidence.png')
+      fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+      fs.writeFileSync(screenshotPath, 'fake-png-bytes')
+      fs.appendFileSync(adrPath, '\nSee docs/screenshots/evidence.png for the evidence.\n')
+      const repo = {
+        rootUri: { fsPath: workspaceRoot },
+        state: {
+          workingTreeChanges: [
+            { uri: { fsPath: adrPath }, status: 5 /* MODIFIED */ },
+            { uri: { fsPath: screenshotPath }, status: 7 /* UNTRACKED */ },
+          ],
+          indexChanges: [],
+        },
+        status: vi.fn(async () => undefined),
+        add: vi.fn(async (_paths: string[]) => undefined),
+        commit: vi.fn(async (_message: string) => undefined),
+      }
+      setExtension('vscode.git', { isActive: true, exports: { getAPI: () => ({ repositories: [repo] }) } })
+      return { repo, adrPath, screenshotPath }
+    }
+
+    it('Esc (queued showQuickPick resolution: undefined) aborts before staging or committing anything', async () => {
+      resetInteractionState()
+      const { repo } = withReferencedScreenshot()
+      queueInputBox('scoped commit')
+      queueQuickPick(undefined)
+      await getRegisteredCommand('adrManager.commitAdrs')!(fixtures().adr)
+      expect(repo.add).not.toHaveBeenCalled()
+      expect(repo.commit).not.toHaveBeenCalled()
+    })
+
+    it('confirming with the pre-checked screenshot still attached stages both files — status quo preserved for an explicit choice', async () => {
+      resetInteractionState()
+      const { repo, adrPath, screenshotPath } = withReferencedScreenshot()
+      queueInputBox('scoped commit')
+      queueQuickPick([{ label: 'evidence.png', detail: screenshotPath, picked: true, filePath: screenshotPath }])
+      await getRegisteredCommand('adrManager.commitAdrs')!(fixtures().adr)
+      const staged = repo.add.mock.calls[0][0]
+      expect(staged).toContain(adrPath)
+      expect(staged).toContain(screenshotPath)
+    })
+
+    it('confirming with everything explicitly unchecked (an empty array, not undefined) still commits, just without the extras', async () => {
+      resetInteractionState()
+      const { repo, adrPath, screenshotPath } = withReferencedScreenshot()
+      queueInputBox('scoped commit')
+      queueQuickPick([])
+      await getRegisteredCommand('adrManager.commitAdrs')!(fixtures().adr)
+      expect(repo.commit).toHaveBeenCalledTimes(1)
+      const staged = repo.add.mock.calls[0][0]
+      expect(staged).toContain(adrPath)
+      expect(staged).not.toContain(screenshotPath)
+    })
+  })
+
   describe('registerLoggedCommand contract — a handler that throws still reaches errors.jsonl', () => {
     it('commitAdrs surviving a throwing dependency (simulated git-extension failure) still logs to the ledger before re-throwing', async () => {
       resetInteractionState()

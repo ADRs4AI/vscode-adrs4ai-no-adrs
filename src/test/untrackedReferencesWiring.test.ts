@@ -49,6 +49,16 @@ describe('extension.ts: resolveUntrackedReferencesToStage', () => {
     expect(fn).toContain('picked: true')
   })
 
+  // Regression (porthole, 2026-10-13, ADR-0018): Esc on this checklist used
+  // to return [], indistinguishable from "explicitly unchecked everything,"
+  // and the commit proceeded anyway with zero extra files staged — no
+  // confirmation, no way back in. showQuickPick itself already distinguishes
+  // the two cases (Esc -> undefined, explicit empty selection -> []); only
+  // the dismissal (undefined) must now cancel the whole commit.
+  it('Esc (undefined picks) returns null — an explicit empty selection still returns []', () => {
+    expect(fn).toContain('return picks ? picks.map(p => p.filePath) : null;')
+  })
+
   it('reads settings resource-scoped to the dirty root, not the global window default', () => {
     expect(fn).toContain("vscode.Uri.file(dr.node.path)")
   })
@@ -65,6 +75,10 @@ describe('extension.ts: commitOneRoot stages extra files and reflects them in th
     expect(fn).toContain('const extraFiles = await resolveUntrackedReferencesToStage(dr, interactive);')
     expect(fn).toContain('const allPaths = [...dr.changes.map((c: any) => c.uri.fsPath as string), ...extraFiles];')
     expect(fn).toContain('await dr.repo.add(allPaths);')
+  })
+
+  it('a null (Esc-cancelled) references checklist aborts before anything is staged', () => {
+    expect(fn).toMatch(/if \(extraFiles === null\) return false;/)
   })
 
   it('the confirmation summary counts allPaths, not just the primary ADR-dir changes', () => {

@@ -1714,8 +1714,18 @@ async function commitAdrChanges(adrDirRel: string, targetRootPath?: string, scop
  * the INTERACTIVE (single-root) path — the batch multi-root commit never
  * shows a checkbox, to keep "select all, go" one gesture; `ask` behaves as
  * `auto-ignore` there, `auto-commit` still applies either way.
+ *
+ * Return contract: `null` means "cancel the whole commit" — never "stage
+ * nothing and commit anyway." A founder Report (porthole, 2026-10-13,
+ * ADR-0018) caught the old contract: dismissing the checklist with Esc
+ * returned `[]`, indistinguishable from explicitly unchecking every item,
+ * and the commit proceeded regardless — exactly the "committing imprudently"
+ * failure mode his own clobber-minimization directive (2026-10-xx,
+ * commitOnAnswerSubmit's scope correction) named. VS Code's own
+ * showQuickPick already distinguishes the two: Esc resolves `undefined`;
+ * confirming with zero boxes checked resolves `[]`. Only the former cancels.
  */
-async function resolveUntrackedReferencesToStage(dr: DirtyRoot, interactive: boolean): Promise<string[]> {
+async function resolveUntrackedReferencesToStage(dr: DirtyRoot, interactive: boolean): Promise<string[] | null> {
   if (dr.untrackedCandidates.length === 0) return [];
 
   const mode = vscode.workspace
@@ -1738,7 +1748,7 @@ async function resolveUntrackedReferencesToStage(dr: DirtyRoot, interactive: boo
     referenced.map(p => ({ label: path.basename(p), detail: p, picked: true, filePath: p })),
     { title: 'Additional references mentioned — commit these?', canPickMany: true },
   );
-  return picks ? picks.map(p => p.filePath) : [];
+  return picks ? picks.map(p => p.filePath) : null; // Esc (undefined) cancels; an explicit empty selection is still []
 }
 
 /** Commits one root's already-collected changes. `interactive`: show the editable message input box and the single-root confirmation (the existing, unchanged single-root UX); false for the batch multi-root path, which stays silent per-root and reports one aggregate count instead. */
@@ -1761,6 +1771,7 @@ async function commitOneRoot(dr: DirtyRoot, interactive: boolean): Promise<boole
   if (!message) return false;
 
   const extraFiles = await resolveUntrackedReferencesToStage(dr, interactive);
+  if (extraFiles === null) return false; // Esc on the references checklist cancels the whole commit, same as an empty message
   const allPaths = [...dr.changes.map((c: any) => c.uri.fsPath as string), ...extraFiles]; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   try {
