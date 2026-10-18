@@ -5,6 +5,11 @@
 ### Fixed
 - **"Open in file ↗" could open the ADR inside a floating window instead of beside the panel.** The link targeted a hardcoded `ViewColumn.Two`, which VS Code resolves by counting every window's editor groups — auxiliary (floating) windows included. With one floating window open (e.g. from the Porthole extension, or VS Code's own "Move into New Window"), column Two silently resolved to that window's own locked group, and its tab bar came back. Diagnosed and fixed per Glazier 5.5's porthole brief — the link now opens `Beside` the active group instead, which is immune to floating windows existing or not.
 
+## [0.7.136] - 2026-10-12
+
+### Fixed
+- **An unanswered question's edit box could be pre-filled with the question's own stale, unrelated leftover text — and offered back to you as if it were your own draft.** A placeholder slot followed by any trailing content stopped being recognized as a placeholder at all, so that content was treated as a real prior answer. The slot's real content now renders above the answer box, read-only and clearly marked "not an answer — will be replaced when you submit," instead of silently seeding your draft with it.
+
 ## [0.7.135] - 2026-10-12
 
 ### Fixed
@@ -24,6 +29,11 @@
 
 ### Fixed
 - **The new "Follows up on" marker (0.7.131) recognized only its own exact byte-for-byte form** — a hand-typed variant (a leading "- " bullet, "Follows Up On" capitalized, or a space before the colon) would have silently fallen into the answer text it follows and been deleted the next time that question was re-answered, reproducing the exact defect the marker exists to prevent. It now tolerates the same variations the `**ANS:**` marker it joins already does. Caught in review before anyone hand-typed one.
+
+## [0.7.130] - 2026-10-12
+
+### Added
+- **A tour can now carry its own prologue — the rationale for why its questions are grouped together, not just the questions themselves.** Click a tour's title to see it. Previously the "why" lived only in whoever minted the tour's memory, and a reader walking it later had no way to recover it if the context behind the grouping had been forgotten.
 
 ## [0.7.131] - 2026-10-12
 
