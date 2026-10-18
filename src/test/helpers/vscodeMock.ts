@@ -125,7 +125,7 @@ export enum TreeItemCollapsibleState { None = 0, Collapsed = 1, Expanded = 2 }
 export enum StatusBarAlignment { Left = 1, Right = 2 }
 export enum DiagnosticSeverity { Error = 0, Warning = 1, Information = 2, Hint = 3 }
 export enum CodeActionKind { QuickFix = 'quickfix' as any } // eslint-disable-line @typescript-eslint/no-explicit-any
-export enum ViewColumn { One = 1, Two = 2 }
+export enum ViewColumn { Active = -1, Beside = -2, One = 1, Two = 2 }
 export enum TextEditorRevealType { Default = 0, InCenter = 1, InCenterIfOutsideViewport = 2, AtTop = 3 }
 
 export class TreeItem {

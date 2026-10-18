@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.137] - 2026-10-18
+
+### Fixed
+- **"Open in file ↗" could open the ADR inside a floating window instead of beside the panel.** The link targeted a hardcoded `ViewColumn.Two`, which VS Code resolves by counting every window's editor groups — auxiliary (floating) windows included. With one floating window open (e.g. from the Porthole extension, or VS Code's own "Move into New Window"), column Two silently resolved to that window's own locked group, and its tab bar came back. Diagnosed and fixed per Glazier 5.5's porthole brief — the link now opens `Beside` the active group instead, which is immune to floating windows existing or not.
+
 ## [0.7.135] - 2026-10-12
 
 ### Fixed

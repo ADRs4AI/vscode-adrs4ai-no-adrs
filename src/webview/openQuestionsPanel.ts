@@ -38,6 +38,7 @@ import { computeRootCaptions, type RootCaptionMode } from '../views/rootCaption'
 import { OPEN_DEEP_LINK_COMMAND } from '../views/documentLinkProvider'
 import { mintFollowUpQuestionBlock, collectExistingHandleSlugs, buildFollowUpMarkerLine } from './followUpQuestion'
 import { buildLocalAdrRef, buildLocalSeedRef, seedSlugFromPath } from '../deeplink/protocol'
+import { openInFileShowOptions } from './openInFileTarget'
 
 // ---------------------------------------------------------------------------
 // Serialized question shape (what we send to the webview)
@@ -1494,7 +1495,7 @@ export class OpenQuestionsPanel {
   private async openAtLine(adrPath: string, lineNumber: number): Promise<void> {
     const uri = vscode.Uri.file(adrPath)
     const doc = await vscode.workspace.openTextDocument(uri)
-    const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Two, true)
+    const editor = await vscode.window.showTextDocument(doc, openInFileShowOptions())
     const pos = new vscode.Position(Math.max(0, lineNumber - 1), 0)
     editor.selection = new vscode.Selection(pos, pos)
     editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter)
