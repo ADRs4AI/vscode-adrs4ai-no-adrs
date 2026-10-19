@@ -2904,9 +2904,24 @@ function renderMarkdown(md) {
       // Blank line
       if (line.trim() === '') { i++; continue; }
 
-      // Paragraph
-      out.push('<p>'+renderInline(line)+'</p>');
+      // Paragraph — with CommonMark lazy continuation (ledger row "hard-wrapped
+      // lines fragment into separate paragraphs", OPEN since 2026-08-06,
+      // Fitter's residual find): consecutive non-blank lines that aren't
+      // themselves block constructs are ONE hard-wrapped paragraph, joined by
+      // the same joinSoftWrappedLines the list branches have used since the
+      // 2026-07-13 fix — the plain-paragraph path was the one consumer that
+      // never got that treatment, so a sentence wrapped mid-clause rendered
+      // as two sibling <p> elements.
+      const paraLines = [line];
       i++;
+      while (i < lines.length
+        && lines[i].trim() !== ''
+        && !looksLikeNewBlock(lines[i])
+        && !/^[\\-\\*]\\s+/.test(lines[i])) {
+        paraLines.push(lines[i]);
+        i++;
+      }
+      out.push('<p>'+renderInline(joinSoftWrappedLines(paraLines))+'</p>');
     }
 
     return out.join('\\n');

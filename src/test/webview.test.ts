@@ -943,6 +943,46 @@ describe('Webview script block syntax', () => {
   // level of nested emphasis in either direction; the italic pass right
   // after still finds and wraps the nested span since the bold pass leaves
   // captured content unprocessed.
+  // Regression (ledger "hard-wrap paragraph fragmentation", OPEN 2026-08-06 →
+  // fixed 2026-10-19, pre-announcement sweep): a single sentence hard-wrapped
+  // across source lines with no blank line between them rendered as N sibling
+  // <p> elements — the plain-paragraph branch emitted one <p> per line while
+  // every list branch had had lazy-continuation joining since 2026-07-13. The
+  // corpus hard-wraps routinely (briefs, older ADRs), so walkers saw
+  // mid-sentence paragraph breaks.
+  describe('Regression tests: hard-wrapped plain paragraphs join into one <p>', () => {
+    function render(md: string): string {
+      const h = createWebviewHarness()
+      const renderMarkdown = h.sandbox.renderMarkdown as (md: string) => string
+      return renderMarkdown(md)
+    }
+
+    it('a sentence wrapped across two lines is ONE paragraph, joined with a space', () => {
+      expect(render('This sentence was wrapped by an editor\nmid-clause with no blank line.')).toBe(
+        '<p>This sentence was wrapped by an editor mid-clause with no blank line.</p>',
+      )
+    })
+
+    it('a hyphenated line-break joins with NO space (cross- + platform)', () => {
+      expect(render('The fix must be cross-\nplatform to count.')).toBe(
+        '<p>The fix must be cross-platform to count.</p>',
+      )
+    })
+
+    it('a blank line still separates real paragraphs', () => {
+      expect(render('First paragraph.\n\nSecond paragraph.')).toBe(
+        '<p>First paragraph.</p>\n<p>Second paragraph.</p>',
+      )
+    })
+
+    it('a following block construct is never swallowed into the paragraph', () => {
+      const html = render('Intro line wraps\nonto this line.\n- a bullet right after')
+      expect(html).toContain('<p>Intro line wraps onto this line.</p>')
+      expect(html).toContain('<ul><li>')
+      expect(html).not.toContain('a bullet right after onto')
+    })
+  })
+
   describe('Regression tests: a **bold** span containing a nested *italic* word renders correctly', () => {
     function render(md: string): string {
       const h = createWebviewHarness()
