@@ -46,6 +46,7 @@ export function registeredCommandIds(): string[] {
 export function resetVscodeMock(): void {
   commandRegistry.clear()
   mockWorkspace.workspaceFolders = undefined
+  createdWatchers = []
   resetInteractionState()
 }
 
@@ -106,6 +107,36 @@ export class EventEmitter<T> {
   }
   fire(e: T): void { for (const l of this.listeners) l(e) }
   dispose(): void { this.listeners = [] }
+}
+
+// ---------------------------------------------------------------------------
+// FileSystemWatcher — real firing, not a dead stub (Fixture 5, 2026-10-19:
+// the pre-fix stub's onDidChange/onDidCreate/onDidDelete never invoked their
+// own registered callbacks, so no test could drive a real watcher-to-
+// listener pipeline end to end — Fitter and Docent both hit this same wall
+// independently within a week of each other, pinning their fixes structurally
+// instead. Built on the same EventEmitter primitive RelativePattern's
+// sibling mocks already use, for the same reason: real registration, real
+// firing, nothing contrived).
+// ---------------------------------------------------------------------------
+
+export interface MockFileSystemWatcher {
+  pattern: unknown
+  onDidChange: (listener: (e: unknown) => any) => { dispose(): void } // eslint-disable-line @typescript-eslint/no-explicit-any
+  onDidCreate: (listener: (e: unknown) => any) => { dispose(): void } // eslint-disable-line @typescript-eslint/no-explicit-any
+  onDidDelete: (listener: (e: unknown) => any) => { dispose(): void } // eslint-disable-line @typescript-eslint/no-explicit-any
+  dispose: () => void
+  /** Test-only: simulate a real file-system event reaching this watcher. */
+  fireChange: (uri: unknown) => void
+  fireCreate: (uri: unknown) => void
+  fireDelete: (uri: unknown) => void
+}
+
+let createdWatchers: MockFileSystemWatcher[] = []
+
+/** Every watcher created since the last resetVscodeMock() — a test finds the one it wants by inspecting `.pattern` (a RelativePattern: `.base` + `.pattern`, or a bare glob string). */
+export function getFileSystemWatchers(): MockFileSystemWatcher[] {
+  return createdWatchers
 }
 
 export const Uri = {
@@ -346,12 +377,25 @@ export const mockWorkspace = {
   }),
   save: vi.fn(async (_uri: { fsPath: string }) => true),
   onDidChangeTextDocument: vi.fn((_listener: unknown) => ({ dispose: vi.fn() })),
-  createFileSystemWatcher: vi.fn((_pattern: unknown) => ({
-    onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
-    onDidCreate: vi.fn(() => ({ dispose: vi.fn() })),
-    onDidDelete: vi.fn(() => ({ dispose: vi.fn() })),
-    dispose: vi.fn(),
-  })),
+  createFileSystemWatcher: vi.fn((pattern: unknown): MockFileSystemWatcher => {
+    const changeEmitter = new EventEmitter<unknown>()
+    const createEmitter = new EventEmitter<unknown>()
+    const deleteEmitter = new EventEmitter<unknown>()
+    const watcher: MockFileSystemWatcher = {
+      pattern,
+      onDidChange: changeEmitter.event,
+      onDidCreate: createEmitter.event,
+      onDidDelete: deleteEmitter.event,
+      dispose: vi.fn(() => {
+        changeEmitter.dispose(); createEmitter.dispose(); deleteEmitter.dispose()
+      }),
+      fireChange: (uri: unknown) => changeEmitter.fire(uri),
+      fireCreate: (uri: unknown) => createEmitter.fire(uri),
+      fireDelete: (uri: unknown) => deleteEmitter.fire(uri),
+    }
+    createdWatchers.push(watcher)
+    return watcher
+  }),
   // Real disk operations (not recorded-only): excludeRoot and
   // mintTourFromFilter both write real config/tour files whose actual
   // on-disk presence and content is exactly what Fixture 5's priority-A
