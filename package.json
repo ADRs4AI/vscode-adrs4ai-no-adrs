@@ -768,7 +768,67 @@
           "description": "ADR-0036: hide 'Status: deferred' questions (blocked on data/build/users — nobody's ball right now) from the Open Questions panel. Off by default, same reasoning as adrManager.unresolved.hideFromPanel."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "adrExplorer",
+        "contents": "No decision records yet — this project's deliberation starts here.\n[Start your first decision record](command:adrManager.createAdr)\nOr begin from the [companion template](https://github.com/ADRs4AI/human-ai-collaboration-template-A) — starter files that give an AI model the vocabulary this extension expects.\nYour thinking stops disappearing. Your decisions start compounding.",
+        "when": "adrManager.corpusEmpty"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "adrManager.gettingStarted",
+        "title": "Your decisions start compounding",
+        "description": "From first decision record to an AI answering through the record — four steps.",
+        "steps": [
+          {
+            "id": "firstAdr",
+            "title": "Create your first decision record",
+            "description": "A living Markdown document: your context, the AI's interpretation, answers in place.\n[Create an ADR](command:adrManager.createAdr)",
+            "media": {
+              "markdown": "media/walkthrough/step-first-adr.md"
+            },
+            "completionEvents": [
+              "onCommand:adrManager.createAdr"
+            ]
+          },
+          {
+            "id": "openQuestions",
+            "title": "Walk your open questions",
+            "description": "Every unanswered question, one sidebar, answered in place.\n[Open the panel](command:adrManager.openQuestionsPanel)",
+            "media": {
+              "markdown": "media/walkthrough/step-open-questions.md"
+            },
+            "completionEvents": [
+              "onCommand:adrManager.openQuestionsPanel"
+            ]
+          },
+          {
+            "id": "connectAi",
+            "title": "Connect your AI over MCP",
+            "description": "Your assistant reads and writes the record through typed tools, in the session where it writes code.\n[Configure the MCP server](command:adrManager.configureMcpServer)",
+            "media": {
+              "markdown": "media/walkthrough/step-connect-ai.md"
+            },
+            "completionEvents": [
+              "onCommand:adrManager.configureMcpServer"
+            ]
+          },
+          {
+            "id": "learnFormat",
+            "title": "Take the format anywhere",
+            "description": "Plain Markdown plus a few greppable codes — readable in any editor, forever.\n[Get the companion template](https://github.com/ADRs4AI/human-ai-collaboration-template-A)",
+            "media": {
+              "markdown": "media/walkthrough/step-learn-format.md"
+            },
+            "completionEvents": [
+              "onLink:https://github.com/ADRs4AI/human-ai-collaboration-template-A"
+            ]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "build": "vite build && vite build --config vite.mcp-server.config.ts",

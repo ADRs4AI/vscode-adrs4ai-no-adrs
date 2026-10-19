@@ -21,6 +21,7 @@
 
 import * as vscode from 'vscode'
 import { coerceTourSlug } from './webview/commandArgs'
+import { isCorpusEmpty } from './webview/corpusEmpty'
 import * as path from 'path'
 import * as fs from 'fs'
 import { execSync } from 'child_process'
@@ -276,6 +277,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   index = compositeIndex.root.adrs;
   seedIndex = compositeIndex.root.seeds;
   treeProvider = new AdrTreeProvider(compositeIndex);
+  updateCorpusEmptyContext();
 
   // ── Deep-link click-through (2026-07-13) ────────────────────────────────
   // The provider is a CALLER, not a resolver (Lapidary's brief): it holds no
@@ -1089,10 +1091,21 @@ function subscribeDiagnostics(composite: CompositeIndex, collection: vscode.Diag
  * here — the tree view no longer freezes at its pre-refresh state after a
  * root-set change.
  */
+// The welcome mat (2026-10-19): drives package.json's viewsWelcome — VS Code's
+// own native first-run affordance (the plays-absolutely-nicest doctrine; same
+// reasoning as ADR-0029's native ViewBadge). The key must be re-derived on
+// every refresh, not just activation: the mat must disappear the moment the
+// first ADR lands, without a reload.
+function updateCorpusEmptyContext(): void {
+  if (!compositeIndex) return;
+  void vscode.commands.executeCommand('setContext', 'adrManager.corpusEmpty', isCorpusEmpty(compositeIndex));
+}
+
 function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefined): void {
   if (!compositeIndex) return;
   index = compositeIndex.root.adrs;
   seedIndex = compositeIndex.root.seeds;
+  updateCorpusEmptyContext();
   diagnosticsSubscription?.dispose();
   if (collection) {
     diagnosticsSubscription = subscribeDiagnostics(compositeIndex, collection);

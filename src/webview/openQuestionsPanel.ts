@@ -13,6 +13,7 @@
  */
 
 import * as vscode from 'vscode'
+import { isCorpusEmpty } from './corpusEmpty'
 import { execSync } from 'child_process'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
@@ -236,6 +237,7 @@ type WebviewMessage =
    * new caller.
    */
   | { type: 'openDeepLinkRef'; ref: string }
+  | { type: 'createAdr' }
 
 // ---------------------------------------------------------------------------
 // Panel class
@@ -631,6 +633,7 @@ export class OpenQuestionsPanel {
     this.questionsGeneration += 1
     this.panel.webview.postMessage({
       type: 'questions',
+      corpusEmpty: isCorpusEmpty(this.composite),
       questions,
       tour,
       renderTitleMarkdown: vscode.workspace.getConfiguration('adrManager').get<boolean>('renderMarkdownInQuestionTitles', true),
@@ -943,6 +946,8 @@ export class OpenQuestionsPanel {
       case 'reportObservation': await this.reportObservation(msg); break
       case 'openExternalUrl': await this.openExternalUrl(msg.href); break
       case 'openDeepLinkRef': await vscode.commands.executeCommand(OPEN_DEEP_LINK_COMMAND, msg.ref); break
+      // The welcome mat (2026-10-19): the empty-corpus invitation's one action.
+      case 'createAdr': await vscode.commands.executeCommand('adrManager.createAdr'); break
     }
   }
 
@@ -2500,6 +2505,7 @@ let lastQuestionsGeneration = -1;
 // null outside tour mode — set fresh from every 'questions' push, never
 // cached longer than that (doctrine 1: facts and claims both re-read live).
 let activeTour = null;
+let corpusEmpty = false;
 const saved = vscode.getState() || {};
 
 const $id = id => document.getElementById(id);
@@ -3547,6 +3553,18 @@ function render() {
         ? 'The index has no tour "' + activeTour.slug + '". If it was just committed, the window may be a beat behind the file — reload the window. If it persists, the tour is a real broken reference.'
         : 'Every entry failed to resolve to a question. Run just tour-walk for the per-entry reasons.';
       $id('empty-icon').textContent = '!';
+    } else if (corpusEmpty) {
+      // The welcome mat (2026-10-19, launch feature): an EMPTY corpus must
+      // never be congratulated — "All caught up" over zero documents is the
+      // empty-state-that-says-nothing family's third member (broken tour,
+      // fresh tour, and this). A stranger's first screen gets the invitation.
+      $id('empty-title').textContent = 'No decision records yet';
+      $id('empty-detail').innerHTML = 'This project\\u2019s deliberation starts here. '
+        + '<a href="#" id="welcome-create">Start your first decision record</a> \\u2014 '
+        + 'or begin from the <a href="https://github.com/ADRs4AI/human-ai-collaboration-template-A">companion template</a>.';
+      $id('empty-icon').textContent = '…';
+      const wc = document.getElementById('welcome-create');
+      if (wc) wc.addEventListener('click', e => { e.preventDefault(); vscode.postMessage({ type: 'createAdr' }); });
     } else {
       $id('empty-title').textContent = 'All caught up';
       $id('empty-detail').textContent = 'No open questions across your ADRs.';
@@ -3834,6 +3852,7 @@ window.addEventListener('message', e => {
     const previousTourSlug = activeTour ? activeTour.slug : null;
     renderTitleMarkdown = msg.renderTitleMarkdown !== false;
     questions = msg.questions;
+    corpusEmpty = !!msg.corpusEmpty;
     activeTour = msg.tour || null;
     renderTourHeader();
     const poolChanged = previousTourSlug !== (activeTour ? activeTour.slug : null);
