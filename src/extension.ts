@@ -136,6 +136,18 @@ let treeView: vscode.TreeView<AdrTreeItem> | undefined;
  */
 let badgeSubscription: (() => void) | undefined;
 /**
+ * The welcome mat's context key (2026-10-19): same dispose-and-resubscribe
+ * requirement as statusBarSubscription/badgeSubscription above — found
+ * missing in review (Fitter 5), not shipped with the feature: activation
+ * and a root-set refresh both called updateCorpusEmptyContext() once, but
+ * nothing re-derived it on the ORDINARY content change the welcome mat's
+ * own first action produces (creating the first ADR indexes into the
+ * existing root via node.adrs.indexFile(), never a root-set refresh) — so
+ * the native tree mat would have silently outlived the moment it was
+ * supposed to disappear, surviving until a manual refresh or window reload.
+ */
+let corpusEmptySubscription: (() => void) | undefined;
+/**
  * Module-scoped so failure-soft catch blocks outside activate() (e.g.
  * reportTreeItem) can log diagnosably instead of swallowing silently.
  * Gleaner's brief 2026-08-14: a root-item Report vanished with zero trace
@@ -278,6 +290,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   seedIndex = compositeIndex.root.seeds;
   treeProvider = new AdrTreeProvider(compositeIndex);
   updateCorpusEmptyContext();
+  corpusEmptySubscription = compositeIndex.onChange(updateCorpusEmptyContext);
 
   // ── Deep-link click-through (2026-07-13) ────────────────────────────────
   // The provider is a CALLER, not a resolver (Lapidary's brief): it holds no
@@ -963,6 +976,8 @@ export function deactivate(): void {
   statusBarSubscription = undefined;
   badgeSubscription?.();
   badgeSubscription = undefined;
+  corpusEmptySubscription?.();
+  corpusEmptySubscription = undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,6 +1121,8 @@ function onCompositeRefreshed(collection: vscode.DiagnosticCollection | undefine
   index = compositeIndex.root.adrs;
   seedIndex = compositeIndex.root.seeds;
   updateCorpusEmptyContext();
+  corpusEmptySubscription?.();
+  corpusEmptySubscription = compositeIndex.onChange(updateCorpusEmptyContext);
   diagnosticsSubscription?.dispose();
   if (collection) {
     diagnosticsSubscription = subscribeDiagnostics(compositeIndex, collection);
