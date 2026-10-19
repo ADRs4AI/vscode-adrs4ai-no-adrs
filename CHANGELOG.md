@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.139] - 2026-10-19
+
+### Fixed
+- **The "start your first decision record" invitation in the sidebar could outlive the moment it was supposed to disappear.** Creating your first ADR is an ordinary file-indexing update, not the kind of change that already refreshed the invitation's on/off switch — so after creating it, the sidebar could keep inviting you to do what you'd just done until a manual refresh or window reload. The Open Questions panel's own copy of this message was never affected. Caught in review before the public launch.
+
 ## [0.7.138] - 2026-10-18
 
 ### Fixed
