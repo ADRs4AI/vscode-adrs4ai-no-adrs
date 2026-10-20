@@ -1,12 +1,12 @@
 # kintsugi.lock — tool-written state; do not hand-edit.
 # What this repo HAS, per artifact (base version + exact canonical blob).
 kintsugi_schema: 1
-canonical_version: 3.11.6
-synced: '2026-10-11T17:54:52Z'
+canonical_version: 3.12.0
+synced: '2026-10-20T16:46:21Z'
 artifacts:
   .claude/skills/adr-authoring/SKILL.md:
-    base_version: 3.11.6
-    base_blob: d7becc1a77ac7f6a4531a4bd1467a8a7f9d6a9d1
+    base_version: 3.12.0
+    base_blob: 7dab7c534d2591c3887dd3410fff8d9625d601ba
   .claude/skills/adr-authoring/references/depth.md:
     base_version: 3.11.1
     base_blob: 479e7aeaa4fac1c6fed7d2d57077e8c1ef58bca4
@@ -16,14 +16,20 @@ artifacts:
   .claude/skills/adr-authoring/references/questions-reference.md:
     base_version: 3.11.6
     base_blob: edb0148e4db42c6b6df925cdf9f2b8fc5ab2b968
+  .claude/skills/adrs4ai-tooling/SKILL.md:
+    base_version: 3.12.0
+    base_blob: 92f9239b3f3bd3f6c16f60f6e81945f7285b8ea5
+  .claude/skills/adrs4ai-tooling/references/seats-models-and-usage-caps.md:
+    base_version: 3.12.0
+    base_blob: 605522d466ce3290eec7e0beefd2005ba8999520
   .vscode/vscode-optimization-guide.md:
     base_version: 3.10.0
     base_blob: c530ec32ed082c3649c967556ba7ac541e3f39bb
   CLAUDE.md:
     state_at_adopt: unknown-base
   QUICK-START.md:
-    base_version: 3.10.0
-    base_blob: 0996d551ca5ac3c77e71463dc01f22e38560a547
+    base_version: 3.12.0
+    base_blob: dfe398524801cf15c83f4697d32619e2021fd6b9
   docs/METHODOLOGY.md:
     state_at_adopt: unknown-base
   docs/adr/AGENTS.md:
@@ -33,8 +39,8 @@ artifacts:
     base_version: 3.10.0
     base_blob: 3ad56716a2a0fbd13b706b9031e61db35c4f219f
   docs/adr/templates/adr-madr.md:
-    base_version: 3.10.0
-    base_blob: 6801bd39e142abde8a2ff55f848fcf5dc152cd88
+    base_version: 3.12.0
+    base_blob: 09622e4274c73f946b8f96f29e93c8b9c172440c
   docs/adr/templates/adr.md:
     state_at_adopt: unknown-base
   docs/adr/templates/debrief.md:
@@ -50,8 +56,8 @@ artifacts:
   docs/inbox/ENCODING-MAP.md:
     state_at_adopt: unknown-base
   docs/inbox/INBOX-PROTOCOL.md:
-    base_version: 3.11.1
-    base_blob: 53c33cec9e69bbf656b96f01e771aad61ebca8f5
+    base_version: 3.12.0
+    base_blob: f81dd3524ea95d6caa40b6e8bdb2dba162d60e85
   docs/inbox/ONBOARDING.md:
     state_at_adopt: unknown-base
   justfile:

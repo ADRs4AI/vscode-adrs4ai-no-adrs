@@ -1,6 +1,6 @@
 # Quick Start Card
 
-**Streamlined Human-AI Collaboration System A v3.2**
+**Streamlined Human-AI Collaboration System A** — version: see [CHANGELOG.md](CHANGELOG.md). (No number here on purpose: hardcoded versions rotted in this card twice — header and footer disagreed for months — and in README through five releases.)
 
 ---
 
@@ -14,9 +14,11 @@ This system preserves valuable conversations by turning them into persistent art
 
 ## Essential Files (3)
 
-1. **CLAUDE.md** (87 lines) - Claude reads this at session start
-2. **seed.md** (12 lines) - For brain dumps
-3. **adr.md** (~120 lines) - For decisions
+1. **CLAUDE.md** - Claude reads this at session start
+2. **seed.md** - For brain dumps
+3. **adr.md** - For decisions
+
+(No line counts — they rot. A real instantiator met "87 lines" against an actual 395.)
 
 ---
 
@@ -34,15 +36,15 @@ This system preserves valuable conversations by turning them into persistent art
 
 ## Navigation Codes (6 codes)
 
-Find anything instantly:
+Find anything instantly — if the `adrs-for-ai` MCP is in your session, its typed verbs come first (`list_open_questions`, `lookup`); the greps below are the floor that works with nothing installed:
 ```bash
-QST:  # Questions     → grep '^### QST:' docs/adr/
-ANS:  # Answers       → grep 'ANS:' docs/adr/
-COD:  # Code examples → grep '^### COD:' docs/adr/
-API:  # API calls     → grep '^### API:' docs/adr/
-FIL:  # Files         → grep '^### FIL:' docs/adr/
-DOC:  # Documentation → grep '^### DOC:' docs/adr/
-NOT:  # Notes, remarks, comments, observations → grep 'NOT:' docs/adr/
+QST:  # Questions     → grep -E '^### QST(-[A-Za-z0-9-]{1,24})?:' -r docs/adr/   # both forms; bare '^### QST:' misses every handled question
+ANS:  # Answers       → grep 'ANS:' docs/adr/ -r
+COD:  # Code examples → grep '^### COD:' docs/adr/ -r
+API:  # API calls     → grep '^### API:' docs/adr/ -r
+FIL:  # Files         → grep '^### FIL:' docs/adr/ -r
+DOC:  # Documentation → grep '^### DOC:' docs/adr/ -r
+NOT:  # Notes, remarks, comments, observations → grep 'NOT:' docs/adr/ -r
 ```
 
 ---
@@ -56,6 +58,8 @@ project/
 │   ├── seed-*.md          # Brain dumps
 │   ├── 0001-*.md          # ADRs (numbered)
 │   └── templates/         # Templates
+├── docs/inbox/            # Crew layer: registry, briefs, ONBOARDING (multi-participant projects)
+├── justfile               # Coordination recipes (just adr / brief / safe-commit / ...)
 └── [your code]
 ```
 
@@ -117,12 +121,15 @@ Replace these sections:
 
 - **README.md** - Full documentation
 - **METHODOLOGY.md** - The "why"
+- **docs/inbox/ONBOARDING.md** - The crew layer (seats, briefs, recipes), when more than one participant works the repo
+- **QuestionTours** - when many questions await one human sitting, bundle them (the `question-tours` skill is the authority) — O(N) open questions become O(1) focused attention
+- **The `adr` plugin** - this template's operator layer (the skills + `/adr:*` commands), installed once and following you across every repo: `/plugin marketplace add ADRs4AI/plugins` → `/plugin install adr@adrs4ai`
 
 ---
 
 ## Version
 
-v3.0 - Streamlined by Claude Sonnet 4.5 (Nov 2025)
+See [CHANGELOG.md](CHANGELOG.md) — every release is tagged and dated there. (Card originally streamlined by Claude Sonnet 4.5, Nov 2025; de-versioned 2026-10-07 after a cold instantiator met a header saying v3.2 and a footer saying v3.0 in the same read.)
 
 ---
 
