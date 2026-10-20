@@ -90,8 +90,18 @@ describe('extension.ts: resolveReportFilePath (Gleaner\'s spec §3)', () => {
 describe('extension.ts: resolveReportAnchorPath (Gleaner\'s spec §5)', () => {
   const fn = EXT_SRC.match(/function resolveReportAnchorPath\([\s\S]*?\n\}/)![0]
 
-  it('a file-backed item anchors on its own file path, no synthesis', () => {
-    expect(fn).toMatch(/if \(filePath\) return filePath;/)
+  it('an ADR/seed-backed item anchors on its own file path, no synthesis', () => {
+    expect(fn).toContain('if (filePath) {')
+    expect(fn).toMatch(/return filePath;\s*\}/)
+  })
+
+  // Regression (founder, 2026-10-20: "I already answered the questions of
+  // this tour wth?"): a tour lives at docs/adr/tours/*.tour.json, one
+  // directory deeper than errorLogPathFor's dirname()-based resolution
+  // expects (docs/adr/*.md) — used as-is, the tour's own path landed the
+  // ledger at the un-swept docs/adr/tours/.working/errors.jsonl.
+  it('a TOUR item moves its anchor one directory up before errorLogPathFor ever sees it', () => {
+    expect(fn).toContain("if (item.kind === 'tour') return path.join(path.dirname(path.dirname(filePath)), path.basename(filePath));")
   })
 
   it('falls back to the single active root when item.rootNode is absent (the N=1 case Gleaner flagged as unresolved in the spec)', () => {

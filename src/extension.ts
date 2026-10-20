@@ -2289,7 +2289,22 @@ function resolveReportFilePath(item: import('./views/adrTreeProvider').AdrTreeIt
  * silent bug.
  */
 function resolveReportAnchorPath(item: import('./views/adrTreeProvider').AdrTreeItem, filePath: string | undefined): string | undefined {
-  if (filePath) return filePath;
+  if (filePath) {
+    // Founder Report, 2026-10-20 ("I already answered the questions of this
+    // tour wth?", reported on the TOUR item itself): a tour file lives at
+    // docs/adr/tours/*.tour.json — one directory deeper than the ADRs/seeds
+    // errorLogPathFor expects (docs/adr/*.md) and takes dirname() of. Used
+    // as-is, the tour's own path lands the ledger at docs/adr/tours/.working/
+    // — a second, un-swept location nothing else scans, the exact class
+    // Fixture 5 already fixed once above for a bare root directory. Strip
+    // one segment back off before it becomes the anchor: same file for
+    // captureDocument/display (that's the caller's own `filePath`, untouched
+    // by this), only the ledger-targeting anchor moves up one level — same
+    // "never created, just a path errorLogPathFor can derive .working/ from"
+    // contract as the .tree-report-anchor placeholder below.
+    if (item.kind === 'tour') return path.join(path.dirname(path.dirname(filePath)), path.basename(filePath));
+    return filePath;
+  }
   const rootPath = item.rootNode?.path ?? compositeIndex?.root.path;
   if (!rootPath) return undefined;
   const adrDirRel = vscode.workspace.getConfiguration('adrManager', vscode.Uri.file(rootPath)).get<string>('adrDirectory', 'docs/adr');

@@ -375,6 +375,29 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
         if (hadLedger) fs.renameSync(backupPath, ledgerPath)
       }
     })
+
+    // Regression (founder, 2026-10-20: "I already answered the questions of
+    // this tour wth?" — reported on the TOUR item itself). A tour file lives
+    // at docs/adr/tours/*.tour.json, one directory deeper than the ADRs/seeds
+    // errorLogPathFor's dirname()-based resolution expects (docs/adr/*.md).
+    // Used as-is, the tour's own path landed the ledger at the un-swept
+    // docs/adr/tours/.working/errors.jsonl instead of the real
+    // docs/adr/.working/errors.jsonl every other anchor uses.
+    it('a report on a TOUR item lands in the real docs/adr/.working/errors.jsonl, not docs/adr/tours/.working/', async () => {
+      resetInteractionState()
+      setConfigOverride('adrManager.logging.observations', true)
+      queueInputBox('I already answered the questions of this tour wth?')
+      const handler = getRegisteredCommand('adrManager.reportTreeItem')!
+      await handler(fixtures().tour)
+
+      const realLedgerPath = path.join(workspaceRoot, 'docs', 'adr', '.working', 'errors.jsonl')
+      const wrongLedgerPath = path.join(workspaceRoot, 'docs', 'adr', 'tours', '.working', 'errors.jsonl')
+      expect(fs.existsSync(wrongLedgerPath)).toBe(false)
+      const lines = fs.readFileSync(realLedgerPath, 'utf8').trim().split('\n')
+      const record = JSON.parse(lines.at(-1)!)
+      expect(record.message).toBe('I already answered the questions of this tour wth?')
+      expect(record.payload.clickedItemKind).toBe('tour')
+    })
   })
 
   // Founder Report, companion etude, 2026-10-12: "deeply pleased" with
