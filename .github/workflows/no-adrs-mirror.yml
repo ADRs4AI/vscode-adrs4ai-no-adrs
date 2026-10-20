@@ -29,11 +29,14 @@ jobs:
           history_mode: filter
           message_mode: mechanical       # deterministic lines, no model, no leakage
           additional_strip_paths: |
+            docs
             justfile
             TEMPLATE-UPDATES.md
             .vscode/terminals.json
             *.vsix
           approved_paths: |
+            kintsugi.yaml
+            kintsugi.lock
             .github
             .gitignore
             .vscode
