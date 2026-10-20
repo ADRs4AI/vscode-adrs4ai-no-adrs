@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.5] - 2026-10-20
+
+The first launch release. The major version marks it; the `.4.5` is an homage to Claude Sonnet 4.5, the collaborator this project was built with for nine months before anyone outside it ever saw it (ADR-0022). Everything in this release already shipped, version by version, below — this entry marks the moment, not new code.
+
 ## [0.7.139] - 2026-10-19
 
 ### Fixed
