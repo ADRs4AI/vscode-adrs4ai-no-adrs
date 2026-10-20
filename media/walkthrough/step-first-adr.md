@@ -1,4 +1,4 @@
-## Your first decision record
+## Your first deliberation record
 
 An ADR here is a living document: your context and questions on top, the AI's
 interpretation and recommendations beneath, answers written in place — and

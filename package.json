@@ -25,6 +25,7 @@
     "claude",
     "ai agents",
     "decision records",
+    "deliberation records",
     "markdown"
   ],
   "repository": {
@@ -772,7 +773,7 @@
     "viewsWelcome": [
       {
         "view": "adrExplorer",
-        "contents": "No decision records yet — this project's deliberation starts here.\n[Start your first decision record](command:adrManager.createAdr)\nOr begin from the [companion template](https://github.com/ADRs4AI/human-ai-collaboration-template-A) — starter files that give an AI model the vocabulary this extension expects.\nYour thinking stops disappearing. Your decisions start compounding.",
+        "contents": "No deliberation records yet — this project's deliberation starts here.\n[Start your first deliberation record](command:adrManager.createAdr)\nOr begin from the [companion template](https://github.com/ADRs4AI/human-ai-collaboration-template-A) — starter files that give an AI model the vocabulary this extension expects.\nYour thinking stops disappearing. Your decisions start compounding.",
         "when": "adrManager.corpusEmpty"
       }
     ],
@@ -780,11 +781,11 @@
       {
         "id": "adrManager.gettingStarted",
         "title": "Your decisions start compounding",
-        "description": "From first decision record to an AI answering through the record — four steps.",
+        "description": "From first deliberation record to an AI answering through the record — four steps.",
         "steps": [
           {
             "id": "firstAdr",
-            "title": "Create your first decision record",
+            "title": "Create your first deliberation record",
             "description": "A living Markdown document: your context, the AI's interpretation, answers in place.\n[Create an ADR](command:adrManager.createAdr)",
             "media": {
               "markdown": "media/walkthrough/step-first-adr.md"

@@ -3558,9 +3558,9 @@ function render() {
       // never be congratulated — "All caught up" over zero documents is the
       // empty-state-that-says-nothing family's third member (broken tour,
       // fresh tour, and this). A stranger's first screen gets the invitation.
-      $id('empty-title').textContent = 'No decision records yet';
+      $id('empty-title').textContent = 'No deliberation records yet';
       $id('empty-detail').innerHTML = 'This project\\u2019s deliberation starts here. '
-        + '<a href="#" id="welcome-create">Start your first decision record</a> \\u2014 '
+        + '<a href="#" id="welcome-create">Start your first deliberation record</a> \\u2014 '
         + 'or begin from the <a href="https://github.com/ADRs4AI/human-ai-collaboration-template-A">companion template</a>.';
       $id('empty-icon').textContent = '…';
       const wc = document.getElementById('welcome-create');

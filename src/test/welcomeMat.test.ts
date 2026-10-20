@@ -59,7 +59,7 @@ describe('Regression tests: the mat is wired, natively and in the panel', () => 
 
   it('the panel branch: empty corpus renders the invitation, non-empty keeps "All caught up"', () => {
     const src = readFileSync(resolve(root, 'src/webview/openQuestionsPanel.ts'), 'utf8')
-    expect(src).toContain("'No decision records yet'")
+    expect(src).toContain("'No deliberation records yet'")
     expect(src).toContain('else if (corpusEmpty)')
     // the earned checkmark survives as the final else — pinned so the mat
     // never replaces it for corpora that have genuinely finished their work
