@@ -57,6 +57,8 @@ artifacts:
     class: stencil
   docs/inbox/INBOX-PROTOCOL.md:
     class: stencil
+  .claude/skills/question-tours/SKILL.md:
+    class: stencil     # GRADUATED at v3.12 (Docent 5 remains author/maintainer; updates flow their pen → canonical release → fleet) — row added post-copy by the fleet manifest heal (Tender 5, 2026-10-20)
   .claude/skills/adr-authoring/SKILL.md:
     class: stencil     # the v3.9.x taught surface
   .claude/skills/adr-authoring/references/depth.md:
@@ -65,6 +67,10 @@ artifacts:
     class: stencil     # NEW at v3.10.0 (the ADR-0032 pairing's landing zone) — row added at assembly per this header's own enumeration doctrine; invisible to the v3.9.2 ls-tree above [Shipwright 5]
   .claude/skills/adr-authoring/references/freshening.md:
     class: stencil     # NEW at v3.11.0; row landed upstream at v3.11.2 after the campaign's dry-run catch (Tender 5) — added here post-copy by the fleet manifest heal, 2026-09-07
+  .claude/skills/adrs4ai-tooling/SKILL.md:
+    class: stencil     # NEW at v3.12.0 (toolchain-teaching skill, HQ ADR-0040) — row added post-copy by the fleet manifest heal (Tender 5, 2026-10-20)
+  .claude/skills/adrs4ai-tooling/references/seats-models-and-usage-caps.md:
+    class: stencil     # NEW at v3.12.0 (seats/models philosophy + cap tips, ADR-0040 It-2) — row added post-copy by the fleet manifest heal (Tender 5, 2026-10-20)
   .claude/agent.env:
     class: stencil     # asdf-shim boilerplate, template-maintained
   .vscode/vscode-optimization-guide.md:
