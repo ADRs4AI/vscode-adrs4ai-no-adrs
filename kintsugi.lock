@@ -2,7 +2,7 @@
 # What this repo HAS, per artifact (base version + exact canonical blob).
 kintsugi_schema: 1
 canonical_version: 3.12.1
-synced: '2026-10-20T22:16:38Z'
+synced: '2026-10-20T22:16:47Z'
 artifacts:
   .claude/skills/adr-authoring/SKILL.md:
     base_version: 3.12.0
@@ -22,6 +22,9 @@ artifacts:
   .claude/skills/adrs4ai-tooling/references/seats-models-and-usage-caps.md:
     base_version: 3.12.0
     base_blob: 605522d466ce3290eec7e0beefd2005ba8999520
+  .claude/skills/question-tours/SKILL.md:
+    base_version: 3.12.1
+    base_blob: 4d2d2805c0182606a385b030c561fe8c243c3137
   .vscode/vscode-optimization-guide.md:
     base_version: 3.10.0
     base_blob: c530ec32ed082c3649c967556ba7ac541e3f39bb
