@@ -737,7 +737,7 @@
         "adrManager.adrs.hideSettled": {
           "type": "boolean",
           "default": false,
-          "description": "Hide ADRs whose status is Implemented, Superseded, or paused (Deferred/Paused/Suspended/On Hold) from the sidebar's ADRs category — the decisions that aren't actively being worked. Toggle from the ADRs category's own right-click menu (Hide/Show Settled ADRs) or here."
+          "description": "Hide ADRs whose status is Implemented, Superseded, or paused (Deferred/Paused/Suspended/On Hold) from the sidebar's ADRs category — the deliberations that aren't actively being worked. Toggle from the ADRs category's own right-click menu (Hide/Show Settled ADRs) or here."
         },
         "adrManager.adrs.hideWithoutOpenQuestions": {
           "type": "boolean",
