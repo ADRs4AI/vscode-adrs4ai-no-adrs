@@ -1,11 +1,20 @@
 # The shipped product, dogfooding itself: this repo's code-public/record-gated
-# posture (the founder's C verdict) via the Marketplace Action. Landed at his
-# order 2026-10-20 ("recreate it using the marketplace setup"). The mirror is
-# created PRIVATE; flipping it public is his act alone. kintsugi.yaml + lock
-# stay visible per his 10-19 lean ("role models our tooling").
+# posture (the founder's C verdict) via the Marketplace Action.
+#
+# POSTURE (Parallax second look, 2026-10-20, rail 4): workflow_dispatch ONLY —
+# each rebuild is a deliberate, human-triggered phase-A epoch. Continuous
+# on-push filter syncing stays OFF until the two-phase (--state-branch) append
+# engine lands; the rejected rewrite-on-every-push shape is not silently
+# substituted for the answered design.
+#
+# approved_paths = the reviewed union of every top-level path that EVER
+# existed in history, minus strips (filter mode publishes history, so the
+# consent gate checks all of it). Review receipt 2026-10-20: historical
+# *.vsix build artifacts stripped (reproducible outputs, not record); all
+# remaining tops approved. kintsugi.yaml + lock stay visible per the
+# founder's 10-19 lean ("role models our tooling").
 name: no-adrs-mirror
 on:
-  push: { branches: [main] }
   workflow_dispatch:
 jobs:
   mirror:
@@ -23,6 +32,26 @@ jobs:
             justfile
             TEMPLATE-UPDATES.md
             .vscode/terminals.json
+            *.vsix
+          approved_paths: |
+            .github
+            .gitignore
+            .vscode
+            .vscode-test.mjs
+            .vscodeignore
+            CHANGELOG.md
+            fixture-workspace
+            LICENSE
+            media
+            package-lock.json
+            package.json
+            QUICK-START.md
+            README.md
+            scripts
+            src
+            tsconfig.integration.json
+            tsconfig.json
+            vite.config.ts
+            vite.mcp-server.config.ts
           disable_workflows: |
             release.yml
-            no-adrs-mirror.yml
