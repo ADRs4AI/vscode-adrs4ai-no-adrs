@@ -1,13 +1,11 @@
 # Changelog
 
-## [1.4.6] - 2026-10-20
+## [1.4.5] - 2026-10-20
+
+The first launch release. The major version marks it; the `.4.5` is an homage to Claude Sonnet 4.5, the collaborator this project was built with for nine months before anyone outside it ever saw it (ADR-0022). Everything below already shipped, version by version — this entry marks the moment, not new code, with one exception folded in because it never shipped separately: a real fix that landed while this release sat staged, unpublished, under a different version number it never actually reached the public under.
 
 ### Fixed
 - **The MCP server could serve stale results right after its own write, inside the same session.** All six write tools (`answer_question`, `add_recommendation`, `append_iteration`, `update_resolution`, `apply_batch`, `bless_qst_handle`) wrote to disk and recorded dedupe success, but never refreshed the session's cached index — so `list_open_questions` and the other reads kept returning the pre-write state until someone called `refresh_corpus` by hand. Each write handler now refreshes the session's index itself, immediately after writing. Found dogfooding the twin implementation in the `docket` project (Shipwright 5); confirmed identical here and fixed with the same shape so the two stay recognizable as one class.
-
-## [1.4.5] - 2026-10-20
-
-The first launch release. The major version marks it; the `.4.5` is an homage to Claude Sonnet 4.5, the collaborator this project was built with for nine months before anyone outside it ever saw it (ADR-0022). Everything in this release already shipped, version by version, below — this entry marks the moment, not new code.
 
 ## [0.7.139] - 2026-10-19
 
