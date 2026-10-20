@@ -511,7 +511,10 @@ export class AdrTreeItem extends vscode.TreeItem {
       return parts.join('\n')
     }
     if (opts.kind === 'adr-group') {
-      return 'Architectural Decision Records'
+      // ADRs4AI = Architectural DELIBERATION Records 4 AI (Jérémie's re-reading
+      // of the expansion, 2026-10-19 — the letters stay, the D is re-read; the
+      // lineage still extends MADR, whose D meant decision).
+      return 'Architectural Deliberation Records'
     }
     if (opts.kind === 'seed-group') {
       return 'Brain dumps and pre-decisional artifacts (see ADR-0011)'
