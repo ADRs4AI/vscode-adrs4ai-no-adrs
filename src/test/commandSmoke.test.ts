@@ -206,7 +206,7 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
         kind: 'tour-entry',
         question: realQuestion(),
         tour: fakeTour,
-        entry: { ref: `adr:0001#${realQuestion().slug}`, mustRespond: true, resolution: { kind: 'error', error: 'not_found', message: 'fixture — never resolved' } },
+        entry: { ref: `adr:0001#${realQuestion().slug}`, mustRespond: true, passed: false, resolution: { kind: 'error', error: 'not_found', message: 'fixture — never resolved' } },
       }),
     }
   }
@@ -239,6 +239,7 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       'adrManager.reportTreeItem': [f.adr],
       'adrManager.excludeRoot': [f.root],
       'adrManager.retireTour': [f.tour],
+      'adrManager.resetPassedOptionalStops': [f.tour],
       'adrManager.mintTourFromFilter': [],
       'adrManager.hideCompletedTours': [],
       'adrManager.showCompletedTours': [],
@@ -888,20 +889,67 @@ describe('menu-command smoke test — real handlers, real fixture data, mixed-ca
       await getRegisteredCommand('adrManager.retireTour')!(await tourItem(p))
       expect(JSON.parse(fs.readFileSync(p, 'utf8')).retired).toBe(false)
     })
+
+  describe('resetPassedOptionalStops — ADR-0046, clears Pass without touching required entries', () => {
+    it('clears passed:true on optional entries, leaves everything else untouched', async () => {
+      resetInteractionState()
+      const p = writeTour('reset-me.tour.json', {
+        schema: 'question-tour/1', title: 'Reset me', author: { name: 'Commodore' },
+        minted_at: '2026-07-29T00:00:00Z', retired: false,
+        entries: [
+          { ref: 'adr:0001#qst-a', must_respond: true, passed: false },
+          { ref: 'adr:0001#qst-b', must_respond: false, passed: true },
+          { ref: 'adr:0001#qst-c', must_respond: false, passed: false },
+        ],
+      })
+      await getRegisteredCommand('adrManager.resetPassedOptionalStops')!(await tourItem(p))
+      const after = JSON.parse(fs.readFileSync(p, 'utf8')).entries
+      expect(after[0]).toEqual({ ref: 'adr:0001#qst-a', must_respond: true, passed: false }) // required — never touched
+      expect(after[1].passed).toBe(false) // was true, now reset
+      expect(after[2].passed).toBe(false) // was already false, unchanged
+    })
+
+    // Defense in depth, matching passOptionalStop's own guard: a required
+    // entry must never become passable, so there is never anything on it to
+    // reset — a malformed tour claiming must_respond:true AND passed:true
+    // must not have the passed flag touched by this command either.
+    it('never clears passed on a required (must_respond:true) entry, even if one is somehow set', async () => {
+      resetInteractionState()
+      const p = writeTour('malformed-reset.tour.json', {
+        schema: 'question-tour/1', title: 'Malformed', author: { name: 'Commodore' },
+        minted_at: '2026-07-29T00:00:00Z', retired: false,
+        entries: [{ ref: 'adr:0001#qst-a', must_respond: true, passed: true }],
+      })
+      await getRegisteredCommand('adrManager.resetPassedOptionalStops')!(await tourItem(p))
+      expect(JSON.parse(fs.readFileSync(p, 'utf8')).entries[0].passed).toBe(true)
+    })
+
+    it('reports nothing to reset when no optional stop is passed', async () => {
+      resetInteractionState()
+      const p = writeTour('nothing-to-reset.tour.json', {
+        schema: 'question-tour/1', title: 'Nothing to reset', author: { name: 'Commodore' },
+        minted_at: '2026-07-29T00:00:00Z', retired: false,
+        entries: [{ ref: 'adr:0001#qst-a', must_respond: false, passed: false }],
+      })
+      const mtimeBefore = fs.statSync(p).mtimeMs
+      await getRegisteredCommand('adrManager.resetPassedOptionalStops')!(await tourItem(p))
+      expect(fs.statSync(p).mtimeMs).toBe(mtimeBefore) // no write when there's nothing to reset
+    })
   })
+  }) // close retireTour's outer describe — resetPassedOptionalStops nested above to share writeTour/tourItem
 
   describe('hideCompletedTours / showCompletedTours — the config setting actually flips both ways', () => {
-    it('hide sets tours.hideCompleted to true; show sets it back to false', async () => {
+    it('hide sets tours.hideCompletedMode to \'all\'; show sets it to \'never\' (ADR-0046)', async () => {
       resetInteractionState()
       const { workspace } = await import('./helpers/vscodeMock')
       const hide = getRegisteredCommand('adrManager.hideCompletedTours')!
       const show = getRegisteredCommand('adrManager.showCompletedTours')!
 
       await hide()
-      expect(workspace.getConfiguration('adrManager').get('tours.hideCompleted', false)).toBe(true)
+      expect(workspace.getConfiguration('adrManager').get('tours.hideCompletedMode', 'never')).toBe('all')
 
       await show()
-      expect(workspace.getConfiguration('adrManager').get('tours.hideCompleted', false)).toBe(false)
+      expect(workspace.getConfiguration('adrManager').get('tours.hideCompletedMode', 'all')).toBe('never')
     })
   })
 

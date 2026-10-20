@@ -53,7 +53,7 @@ describe('serializeTourJson + round-trip through parseTourFile', () => {
     const parsed = parseTourFile('/fake/docs/adr/tours/2026-07-26-morning-brief.tour.json', text)
     expect(parsed).not.toBeNull()
     expect(parsed!.title).toBe('Morning brief')
-    expect(parsed!.entries).toEqual([{ ref: 'adr:0001#qst-a', must_respond: true, disposition: undefined, answer_path: undefined, comment: undefined }])
+    expect(parsed!.entries).toEqual([{ ref: 'adr:0001#qst-a', must_respond: true, disposition: undefined, answer_path: undefined, comment: undefined, passed: false }])
   })
 })
 

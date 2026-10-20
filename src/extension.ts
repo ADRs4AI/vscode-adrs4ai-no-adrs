@@ -653,13 +653,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (watcherLifecycle) void watcherLifecycle.requestRefresh()
       }
     }),
+    // ADR-0046 (2026-10-20): tours.hideCompleted (boolean) replaced by
+    // tours.hideCompletedMode ('all' | 'optional-aware' | 'never') — these
+    // two commands keep their old names/icons and now set the two extremes;
+    // 'optional-aware' is reachable only via settings.json directly, same
+    // as adrManager.commit.untrackedReferences's own middle enum value has
+    // no dedicated command either.
     registerLoggedCommand('adrManager.hideCompletedTours', async () => {
-      await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', true);
+      await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompletedMode', 'all');
       treeProvider?.refresh();
     }),
     registerLoggedCommand('adrManager.showCompletedTours', async () => {
-      await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompleted', false);
+      await vscode.workspace.getConfiguration('adrManager').update('tours.hideCompletedMode', 'never');
       treeProvider?.refresh();
+    }),
+    // ADR-0046: clears disposition-adjacent `passed: true` (own field, not
+    // `disposition` — Docent 5's ruling, 2026-10-20: disposition's four
+    // values all name the ASK, `passed` would name the RESPONSE, mixing
+    // registers in one field) on every OPTIONAL (must_respond:false) entry
+    // in one tour. Required entries are never touched — they were never
+    // passable to begin with, so there's nothing on them to reset.
+    registerLoggedCommand('adrManager.resetPassedOptionalStops', async (item?: import('./views/adrTreeProvider').AdrTreeItem) => {
+      const tourPath = item?.tour?.path
+      if (!tourPath) {
+        vscode.window.showErrorMessage('ADR Manager: Reset Passed Optional Stops works on a tour in the sidebar — right-click one.')
+        return
+      }
+      try {
+        const raw = await fs.promises.readFile(tourPath, 'utf-8')
+        const parsed = JSON.parse(raw) as { entries?: Array<Record<string, unknown>> }
+        const entries = Array.isArray(parsed.entries) ? parsed.entries : []
+        let resetCount = 0
+        for (const e of entries) {
+          if (e.must_respond === false && e.passed === true) {
+            e.passed = false
+            resetCount++
+          }
+        }
+        const title = item?.tour?.title ?? path.basename(tourPath)
+        if (resetCount === 0) {
+          vscode.window.showInformationMessage(`"${title}" has no passed optional stops to reset.`)
+          return
+        }
+        await fs.promises.writeFile(tourPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
+        treeProvider?.refresh()
+        if (watcherLifecycle) void watcherLifecycle.requestRefresh()
+        vscode.window.showInformationMessage(`"${title}": ${resetCount} passed optional stop${resetCount === 1 ? '' : 's'} reset.`)
+      } catch (err) {
+        vscode.window.showErrorMessage(`ADR Manager: could not reset passed optional stops — ${err instanceof Error ? err.message : String(err)}`)
+      }
     }),
 
     // Founder Report, companion etude, 2026-10-12 ("deeply pleased" with

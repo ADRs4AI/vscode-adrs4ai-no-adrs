@@ -19,10 +19,10 @@ const EXT_SRC = readFileSync(resolve(__dirname, '../extension.ts'), 'utf8')
 const PKG = readFileSync(resolve(__dirname, '../../package.json'), 'utf8')
 
 describe('adrTreeProvider.ts: visibleTours() — one shared filter, no per-tour state', () => {
-  const fn = TREE_SRC.match(/private visibleTours\(node: RootNode\)[\s\S]*?\n  \}/)![0]
+  const fn = TREE_SRC.match(/private visibleTours\(\s*node: RootNode,?\s*\)[\s\S]*?\n  \}/)![0]
 
-  it('reads the workspace setting, default true (Jérémie\'s "on/checked" framing)', () => {
-    expect(fn).toContain("get<boolean>('tours.hideCompleted', true)")
+  it('reads the workspace setting, default \'all\' (ADR-0046 — the exact old true)', () => {
+    expect(fn).toContain("get<HideCompletedMode>('tours.hideCompletedMode', 'all')")
   })
 
   it('doneness is still computed fresh per call, never cached on the tour item (doctrine 1, unchanged)', () => {
@@ -55,28 +55,65 @@ describe('adrTreeProvider.ts: visibleTours() — one shared filter, no per-tour 
 describe('Regression tests: vacuous doneness must not hide a tour', () => {
   it('does NOT hide a tour whose every stop is optional, even though it is "done"', () => {
     // The exact shape of 2026-10-09-alpha-gate.
-    expect(isTourHidden({ done: true, retired: false, askedSomething: false })).toBe(false)
+    expect(isTourHidden({ done: true, fullyResolved: true, retired: false, askedSomething: false }, 'all')).toBe(false)
   })
 
   it('still hides a tour that genuinely asked and finished', () => {
-    expect(isTourHidden({ done: true, retired: false, askedSomething: true })).toBe(true)
+    expect(isTourHidden({ done: true, fullyResolved: true, retired: false, askedSomething: true }, 'all')).toBe(true)
   })
 
   it('still hides a retired tour regardless of doneness', () => {
-    expect(isTourHidden({ done: false, retired: true, askedSomething: true })).toBe(true)
-    expect(isTourHidden({ done: true, retired: true, askedSomething: false })).toBe(true)
+    expect(isTourHidden({ done: false, fullyResolved: false, retired: true, askedSomething: true }, 'all')).toBe(true)
+    expect(isTourHidden({ done: true, fullyResolved: true, retired: true, askedSomething: false }, 'all')).toBe(true)
   })
 
   it('shows an ordinary in-progress tour', () => {
-    expect(isTourHidden({ done: false, retired: false, askedSomething: true })).toBe(false)
+    expect(isTourHidden({ done: false, fullyResolved: false, retired: false, askedSomething: true }, 'all')).toBe(false)
   })
 
   // The filter must route through the pure predicate rather than re-deriving
   // the rule inline — that inline duplication is how the case got missed.
   it('visibleTours delegates to isTourHidden instead of inlining the rule', () => {
-    const fn = TREE_SRC.match(/private visibleTours\(node: RootNode\)[\s\S]*?\n  \}/)![0]
+    const fn = TREE_SRC.match(/private visibleTours\(\s*node: RootNode,?\s*\)[\s\S]*?\n  \}/)![0]
     expect(fn).toContain('isTourHidden(')
     expect(fn).toContain('askedSomething')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ADR-0046 (2026-10-20): the Launch Hour incident — a tour was [done] (every
+// REQUIRED stop answered) while a real must_respond:false stop sat open and
+// unreachable once hidden. 'optional-aware' mode fixes the visibility half
+// (the label half, "[done]" vs "[required done · N optional open]", is
+// Docent 5's separate fix, 098ffd7, in openQuestionsPanel.ts).
+// ---------------------------------------------------------------------------
+describe('ADR-0046: optional-aware hide mode', () => {
+  it('"all" mode hides once required-done, even with a real optional stop still open — the old behavior, unchanged', () => {
+    expect(isTourHidden({ done: true, fullyResolved: false, retired: false, askedSomething: true }, 'all')).toBe(true)
+  })
+
+  it('"optional-aware" mode does NOT hide while a real optional stop is open', () => {
+    expect(isTourHidden({ done: true, fullyResolved: false, retired: false, askedSomething: true }, 'optional-aware')).toBe(false)
+  })
+
+  it('"optional-aware" mode hides once the optional stop is also answered or Passed', () => {
+    expect(isTourHidden({ done: true, fullyResolved: true, retired: false, askedSomething: true }, 'optional-aware')).toBe(true)
+  })
+
+  it('"never" mode never hides, regardless of done/fullyResolved', () => {
+    expect(isTourHidden({ done: true, fullyResolved: true, retired: false, askedSomething: true }, 'never')).toBe(false)
+  })
+
+  it('vacuous doneness is never hidden in ANY mode', () => {
+    for (const mode of ['all', 'optional-aware', 'never'] as const) {
+      expect(isTourHidden({ done: true, fullyResolved: true, retired: false, askedSomething: false }, mode)).toBe(false)
+    }
+  })
+
+  it('a retired tour is hidden in every mode', () => {
+    for (const mode of ['all', 'optional-aware', 'never'] as const) {
+      expect(isTourHidden({ done: false, fullyResolved: false, retired: true, askedSomething: true }, mode)).toBe(true)
+    }
   })
 })
 
@@ -84,8 +121,8 @@ describe('extension.ts: hideCompletedTours / showCompletedTours commands', () =>
   it('both are registered and write the workspace setting directly — no custom context key to keep in sync', () => {
     expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.hideCompletedTours', async () => {")
     expect(EXT_SRC).toContain("registerLoggedCommand('adrManager.showCompletedTours', async () => {")
-    expect(EXT_SRC).toContain("update('tours.hideCompleted', true)")
-    expect(EXT_SRC).toContain("update('tours.hideCompleted', false)")
+    expect(EXT_SRC).toContain("update('tours.hideCompletedMode', 'all')")
+    expect(EXT_SRC).toContain("update('tours.hideCompletedMode', 'never')")
   })
 
   it('both explicitly refresh the tree — this codebase has no onDidChangeConfiguration listener, so a bare setting write would silently not redraw', () => {
@@ -97,10 +134,10 @@ describe('extension.ts: hideCompletedTours / showCompletedTours commands', () =>
 })
 
 describe('package.json: Hide/Show Completed Tours — complementary when clauses, no per-tour property', () => {
-  it('adrManager.tours.hideCompleted defaults to true, not resource-scoped (workspace-level, per Jérémie\'s own correction)', () => {
-    const match = PKG.match(/"adrManager\.tours\.hideCompleted":\s*\{[\s\S]*?\n\s*\}/)
+  it('adrManager.tours.hideCompletedMode defaults to \'all\' (ADR-0046 — the exact old true), not resource-scoped (workspace-level, per Jérémie\'s own correction)', () => {
+    const match = PKG.match(/"adrManager\.tours\.hideCompletedMode":\s*\{[\s\S]*?\n\s*\}/)
     expect(match, 'setting declaration missing').toBeTruthy()
-    expect(match![0]).toContain('"default": true')
+    expect(match![0]).toContain('"default": "all"')
     expect(match![0]).not.toContain('"scope"')
   })
 
@@ -110,10 +147,9 @@ describe('package.json: Hide/Show Completed Tours — complementary when clauses
     expect(hideEntry, 'hideCompletedTours menu entry missing').toBeTruthy()
     expect(showEntry, 'showCompletedTours menu entry missing').toBeTruthy()
     expect(hideEntry![1]).toContain('viewItem == tour-group')
-    expect(hideEntry![1]).toContain('!config.adrManager.tours.hideCompleted')
+    expect(hideEntry![1]).toContain("config.adrManager.tours.hideCompletedMode != 'all'")
     expect(showEntry![1]).toContain('viewItem == tour-group')
-    expect(showEntry![1]).toContain('config.adrManager.tours.hideCompleted')
-    expect(showEntry![1]).not.toContain('!config.adrManager.tours.hideCompleted')
+    expect(showEntry![1]).toContain("config.adrManager.tours.hideCompletedMode == 'all'")
   })
 
   it('icons read as a toggle pair (eye / eye-closed), matching the checked-state-reflected-in-icon mechanism (a) from the 2026-08-06 design brief', () => {

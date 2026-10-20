@@ -50,7 +50,7 @@ import { resolveQuestionClickCommand, type ClickOpensIn } from './questionClickC
 import { pathFragmentFor } from './rootPathFragment'
 import { stableTreeItemId } from './treeItemIdentity'
 import { openQuestionCountForNode, QUESTION_SOURCES, type SourceInclusion } from '../index/questionSource'
-import { resolveTourEntries, isTourDone, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
+import { resolveTourEntries, isTourDone, isTourFullyResolved, type TourFile, type ResolvedTourEntry } from '../index/tourIndex'
 import { orderCategories, DEFAULT_CATEGORY_ORDER, type SidebarCategory } from './categoryOrder'
 import { createRepositoryContextAdapter } from '../index/repositoryContextAdapter'
 import { stringifyCommandArg } from './commandArgDisplay'
@@ -632,12 +632,28 @@ export class AdrTreeItem extends vscode.TreeItem {
 export type QuestionFilter = 'open' | 'all' | 'answered';
 
 /**
- * Is this tour hidden while `tours.hideCompleted` is on? Pure, exported, and
- * tested — because the rule it encodes was got wrong once, invisibly.
+ * ADR-0046: replaces the old boolean `tours.hideCompleted`. Three states
+ * instead of two independent booleans (Jérémie's own proposal was two;
+ * Gleaner's filing argued, and Docent ruled, that one enum beats two
+ * booleans that can combine into states nobody defined):
+ * - `'all'` — hide once every REQUIRED stop is answered (the old `true`,
+ *   and the default — unchanged behavior for anyone who never touches this).
+ * - `'optional-aware'` — hide only once every stop, required or optional,
+ *   is answered or explicitly `passed` (ADR-0046's actual fix for the
+ *   Launch Hour incident — a tour with a real, un-dealt-with optional stop
+ *   stays visible).
+ * - `'never'` — the old `false`. Never auto-hide.
+ */
+export type HideCompletedMode = 'all' | 'optional-aware' | 'never'
+
+/**
+ * Is this tour hidden under the given `tours.hideCompletedMode`? Pure,
+ * exported, and tested — because the rule it encodes was got wrong once,
+ * invisibly.
  *
- * - `retired`: the author said stop presenting this. Always hidden.
- * - `done && askedSomething`: required work was asked and finished. Hidden.
- * - `done && !askedSomething`: **VACUOUSLY done — never hidden.**
+ * - `retired`: the author said stop presenting this. Always hidden,
+ *   regardless of mode.
+ * - `!askedSomething`: **VACUOUSLY done — never hidden, regardless of mode.**
  *
  * That last line is the founder's 2026-10-09 Report ("It is not showing up as a
  * tour in the sidebar"). `isTourDone` returns true for a tour with zero
@@ -652,9 +668,14 @@ export type QuestionFilter = 'open' | 'all' | 'answered';
  * ever asked. An unasked tour is unasked, not complete; `retire` is the gesture
  * for ending it.
  */
-export function isTourHidden(t: { done: boolean; retired: boolean; askedSomething: boolean }): boolean {
+export function isTourHidden(
+  t: { done: boolean; fullyResolved: boolean; retired: boolean; askedSomething: boolean },
+  mode: HideCompletedMode,
+): boolean {
   if (t.retired) return true
-  return t.done && t.askedSomething
+  if (!t.askedSomething) return false
+  if (mode === 'never') return false
+  return mode === 'optional-aware' ? t.fullyResolved : t.done
 }
 
 export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
@@ -1022,18 +1043,27 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
    * Gleaner's brief 2026-08-14 (unblocked by Facet, 2026-08-16) — Jérémie's
    * own words, his own correction as the operative spec: "not sure we
    * should give each of these a state... this should be a setting of the
-   * workspace user etc." One workspace-level `adrManager.tours.hideCompleted`
-   * boolean, default true (his "on/checked" framing), not a per-tour
+   * workspace user etc." One workspace-level setting, not a per-tour
    * property. Doneness is still computed fresh from the live substrate
    * (doctrine 1, unchanged) — this only ADDS a filter on top, shared by
    * both the group header's count and its children so the two can never
    * disagree about how many tours are actually visible.
+   *
+   * ADR-0046 (2026-10-20): `tours.hideCompleted` (boolean) replaced by
+   * `tours.hideCompletedMode` (`'all' | 'optional-aware' | 'never'`) —
+   * `'all'` is the exact old `true` (default, unchanged behavior for
+   * anyone who never touches this setting); `'never'` is the exact old
+   * `false`; `'optional-aware'` is new — hides only once `isTourFullyResolved`
+   * (every stop, required or optional, answered or `passed`), the actual fix
+   * for the Launch Hour incident this ADR is named for.
    */
-  private visibleTours(node: RootNode): Array<{ tour: TourFile; resolved: ResolvedTourEntry[]; done: boolean }> {
+  private visibleTours(
+    node: RootNode,
+  ): Array<{ tour: TourFile; resolved: ResolvedTourEntry[]; done: boolean; fullyResolved: boolean }> {
     const ctx = createRepositoryContextAdapter(this.composite)
     const all = node.tours.map(tour => {
       const resolved = resolveTourEntries(tour, ctx)
-      return { tour, resolved, done: isTourDone(resolved) }
+      return { tour, resolved, done: isTourDone(resolved), fullyResolved: isTourFullyResolved(resolved) }
     })
     // ADR-0034 iter-16: the setting hides tours that are no longer LIVE, which
     // is two states, not one — `done` (every must_respond entry answered) and
@@ -1067,10 +1097,13 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeItem> {
     // ever asked. A tour with no required stops is UNASKED, not complete — so
     // it never auto-hides, and `retire` is the author's gesture for ending it,
     // which is exactly what `retired` is for.
-    const hideCompleted = vscode.workspace.getConfiguration('adrManager').get<boolean>('tours.hideCompleted', true)
-    if (!hideCompleted) return all
+    const mode = vscode.workspace.getConfiguration('adrManager').get<HideCompletedMode>('tours.hideCompletedMode', 'all')
+    if (mode === 'never') return all
     return all.filter(t =>
-      !isTourHidden({ done: t.done, retired: t.tour.retired, askedSomething: t.resolved.some(e => e.mustRespond) }),
+      !isTourHidden(
+        { done: t.done, fullyResolved: t.fullyResolved, retired: t.tour.retired, askedSomething: t.resolved.some(e => e.mustRespond) },
+        mode,
+      ),
     )
   }
 

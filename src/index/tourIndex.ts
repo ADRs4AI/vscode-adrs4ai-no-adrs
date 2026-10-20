@@ -52,6 +52,19 @@ export interface TourEntryRaw {
   disposition?: TourDisposition
   answer_path?: string
   comment?: string
+  /**
+   * ADR-0046: a tour-scoped, author-facing claim that an OPTIONAL
+   * (`must_respond: false`) stop has been deliberately dismissed for this
+   * tour — distinct from "haven't looked at it yet" (absent/false) and
+   * distinct from `disposition`, whose four values (`decide` / `ratify` /
+   * `acknowledge` / `delegate`) all name the act the human is being ASKED
+   * to perform (Docent 5's ruling, 2026-10-20): overloading `disposition`
+   * with a value naming what the human DID would mix two registers in one
+   * field and violate Mint's №79 ("a field's claim must be true at every
+   * read"). Own field, own meaning. Never set on a `must_respond: true`
+   * entry — a required stop is never passable, only answerable.
+   */
+  passed?: boolean
 }
 
 export interface TourFile {
@@ -111,6 +124,7 @@ export function parseTourFile(filePath: string, content: string): TourFile | nul
       disposition: typeof e.disposition === 'string' ? (e.disposition as TourDisposition) : undefined,
       answer_path: typeof e.answer_path === 'string' ? e.answer_path : undefined,
       comment: typeof e.comment === 'string' ? e.comment : undefined,
+      passed: e.passed === true,
     }))
 
   const author = obj.author && typeof obj.author === 'object'
@@ -167,6 +181,8 @@ export interface ResolvedTourEntry {
   disposition?: TourDisposition
   answerPath?: string
   comment?: string
+  /** ADR-0046: deliberately dismissed for this tour (optional stops only — see TourEntryRaw.passed). */
+  passed: boolean
   resolution: ResolvedRef | RefError
 }
 
@@ -184,6 +200,7 @@ export function resolveTourEntries(tour: Pick<TourFile, 'entries'>, ctx: Reposit
     disposition: e.disposition,
     answerPath: e.answer_path,
     comment: e.comment,
+    passed: e.passed === true,
     resolution: resolveReference(ctx, e.ref),
   }))
 }
@@ -199,6 +216,20 @@ export function isTourDone(resolved: ResolvedTourEntry[]): boolean {
   const required = resolved.filter(e => e.mustRespond)
   if (required.length === 0) return true
   return required.every(e => e.resolution.kind === 'question' && e.resolution.question.isAnswered)
+}
+
+/**
+ * ADR-0046: stricter than `isTourDone` — every entry, required OR optional,
+ * must be settled: a required entry must be answered (same contract as
+ * `isTourDone`); an optional entry must be EITHER answered OR explicitly
+ * `passed`. Feeds `adrManager.tours.hideCompletedMode`'s `'optional-aware'`
+ * state.
+ */
+export function isTourFullyResolved(resolved: ResolvedTourEntry[]): boolean {
+  if (!isTourDone(resolved)) return false
+  return resolved
+    .filter(e => !e.mustRespond)
+    .every(e => e.passed || (e.resolution.kind === 'question' && e.resolution.question.isAnswered))
 }
 
 // ---------------------------------------------------------------------------

@@ -118,10 +118,14 @@ interface WebviewQuestion {
   draftSource?: string
   /** ADR-0034: present only when this question is being walked as part of a tour — the authored claim beside the live facts above. */
   tourEntry?: {
+    /** The tour entry's own `ref` string — needed to post it back on Pass (ADR-0046); never shown. */
+    ref: string
     comment?: string
     disposition?: string
     answerPath?: string
     mustRespond: boolean
+    /** ADR-0046: already dismissed for this tour. Optional stops only — see TourEntryRaw.passed. */
+    passed: boolean
   }
   /** ADR-0034 doctrine 9: this entry is already answered — render as a read-only review stop, never an input. Tour mode only. */
   isReviewStop?: boolean
@@ -197,6 +201,8 @@ type WebviewMessage =
       targetStatus?: 'answered' | 'unresolved'
     }
   | { type: 'skip' }
+  /** ADR-0046: dismiss an OPTIONAL (must_respond:false) tour stop for this tour only — writes `passed: true` on the matching entry in the active tour's .tour.json. The ref identifies which entry; the active tour itself is server-side state (this.activeTourSlug), never sent by the client. */
+  | { type: 'passOptionalStop'; ref: string }
   | { type: 'jumpTo'; adrPath: string; lineNumber: number }
   | { type: 'draft'; draftKey: string; adrPath: string; adrNumber: number; questionText: string; draftText: string; totalOccurrences: number; prevDraftText?: string }
   | { type: 'refreshRequest' }
@@ -714,7 +720,7 @@ export class OpenQuestionsPanel {
         ...this.tourEntryOrdinal(questions, entry.resolution.question),
         opts,
       )
-      row.tourEntry = { comment: entry.comment, disposition: entry.disposition, answerPath: entry.answerPath, mustRespond: entry.mustRespond }
+      row.tourEntry = { ref: entry.ref, comment: entry.comment, disposition: entry.disposition, answerPath: entry.answerPath, mustRespond: entry.mustRespond, passed: entry.passed }
       rows.push(row)
     }
     return rows
@@ -921,6 +927,7 @@ export class OpenQuestionsPanel {
     switch (msg.type) {
       case 'answer': await this.writeAnswer(msg); break
       case 'skip': this.panel.webview.postMessage({ type: 'skip_ack' }); break
+      case 'passOptionalStop': await this.passOptionalStop(msg.ref); break
       case 'jumpTo': await this.openAtLine(msg.adrPath, msg.lineNumber); break
       case 'draft':
         // ADR-0023: debounced (~500ms) auto-save from the webview's textarea input.
@@ -1486,6 +1493,38 @@ export class OpenQuestionsPanel {
     const left = await vscode.workspace.openTextDocument({ content: mine })
     const right = await vscode.workspace.openTextDocument({ content: theirs })
     await vscode.commands.executeCommand('vscode.diff', left.uri, right.uri, `Your draft ↔ Updated draft — ${questionText}`)
+  }
+
+  /**
+   * ADR-0046: dismiss an OPTIONAL stop for the active tour only — sets
+   * `passed: true` on the matching entry in the tour's own .tour.json and
+   * re-renders. Never acts on the question's own ADR/seed file (the lens
+   * doctrine, §0 of the question-tours skill: a tour comments on the
+   * substrate, it never writes into it). Mirrors `adrManager.retireTour`'s
+   * own read-whole-object/mutate-one-field/re-stringify-whole-object
+   * pattern (extension.ts) — a real tour may carry fields this code does
+   * not model, and a disposition flip must never be the thing that
+   * silently drops them.
+   */
+  private async passOptionalStop(ref: string): Promise<void> {
+    const slug = this.activeTourSlug
+    const found = slug ? this.composite.findTour(slug) : undefined
+    if (!found) return // no active tour — nothing to pass (defensive; the client only ever sends this from inside a tour)
+    try {
+      const raw = await fs.promises.readFile(found.tour.path, 'utf-8')
+      const parsed = JSON.parse(raw) as { entries?: Array<Record<string, unknown>> }
+      const entries = Array.isArray(parsed.entries) ? parsed.entries : []
+      const entry = entries.find(e => e.ref === ref)
+      // Defense in depth: the UI only ever offers Pass on an optional stop,
+      // but a required entry must never become passable even if a stale
+      // client sends this — required stops are answered, never passed.
+      if (!entry || entry.must_respond === true || entry.must_respond === undefined) return
+      entry.passed = true
+      await fs.promises.writeFile(found.tour.path, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
+      this.sendQuestions()
+    } catch (err) {
+      vscode.window.showErrorMessage(`ADR Manager: could not pass this stop — ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   /**
@@ -2365,6 +2404,7 @@ textarea.expanded{min-height:70vh;height:70vh}
     <button class="btn-respond-unresolved" id="btn-respond-unresolved" title="Request follow-up and return the partial answer to the model for consideration (Cmd+Shift+Enter)">Request Follow-up →</button>
     <button class="btn-back" id="btn-back">← Back</button>
     <button class="btn-skip" id="btn-skip">Skip</button>
+    <button class="btn-skip" id="btn-pass" style="display:none" title="Dismiss this optional stop for this tour only — never touches the question itself (ADR-0046)">Pass</button>
     <button class="btn-report" id="btn-report" style="display:none" title="Report an observation about this question/ADR — saved for later review, doesn't affect your answer">🚩 Report</button>
     <span class="flash" id="flash">✓ Answered</span>
   </div>
@@ -3144,6 +3184,17 @@ $id('btn-skip').addEventListener('click', () => {
   vscode.postMessage({ type: 'skip' });
 });
 
+// ADR-0046: Pass is tour-scoped and permanent-until-Reset (unlike Skip,
+// which is per-session navigation only) — it writes passed: true on the
+// active tour's own entry, host-side, then the host re-pushes 'questions'
+// with the updated state, so no local idx bump here (sendQuestions already
+// triggers a repaint through the normal message-driven render path).
+$id('btn-pass').addEventListener('click', () => {
+  const q = questions[idx];
+  if (!q || !q.tourEntry) return;
+  vscode.postMessage({ type: 'passOptionalStop', ref: q.tourEntry.ref });
+});
+
 // ADR-0035 Iteration 3 (frictionless observation reporting): doesn't touch
 // idx, the draft, or anything else in flight — the note capture itself
 // happens host-side (a VS Code input box), so this is a fire-and-forget post.
@@ -3231,8 +3282,10 @@ function renderTourHeader() {
   // stop) is real and separate, and is Gleaner's ADR to carry.
   // (No backticks in this comment: the webview script is a TEMPLATE LITERAL
   // and a backtick terminates it. Third time this file has taught me that.)
+  // ADR-0046: a Passed optional stop is resolved, not open — excluded here
+  // the same way an answered one (isReviewStop) already was.
   const openOptional = questions.filter(qq =>
-    !qq.isReviewStop && qq.tourEntry && qq.tourEntry.mustRespond === false).length;
+    !qq.isReviewStop && qq.tourEntry && qq.tourEntry.mustRespond === false && !qq.tourEntry.passed).length;
   const doneLabel = openOptional > 0
     ? ' [required done · ' + openOptional + ' optional open]'
     : ' [done]';
@@ -3604,7 +3657,9 @@ function render() {
   // truths rather than picking one: position in the whole walk, and how
   // many of those stops still need a real answer.
   if (activeTour) {
-    const awaiting = questions.filter(qq => !qq.isReviewStop).length;
+    // ADR-0046: a Passed optional stop no longer "awaits" — same exclusion
+    // as the tour-header's own optional-open count, for the same reason.
+    const awaiting = questions.filter(qq => !qq.isReviewStop && !(qq.tourEntry && qq.tourEntry.passed)).length;
     $id('counter').textContent = 'Stop ' + (idx + 1) + ' of ' + questions.length + ' · ' + awaiting + ' awaiting you';
   } else {
     $id('counter').textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
@@ -3652,6 +3707,7 @@ function render() {
     const meta = [];
     if (q.tourEntry.disposition) meta.push('<span class="disposition">' + q.tourEntry.disposition + '</span>');
     if (!q.tourEntry.mustRespond) meta.push('optional for this walk');
+    if (q.tourEntry.passed) meta.push('passed for this walk');
     let claimHtml = meta.length ? '<div class="claim-meta">' + meta.join(' · ') + '</div>' : '';
     if (q.tourEntry.answerPath) {
       claimHtml += '<div class="claim-shape"><span class="claim-label">Answer shape</span> ' + q.tourEntry.answerPath + '</div>';
@@ -3726,6 +3782,13 @@ function render() {
     $id('btn-ans').style.display = '';
     $id('btn-respond-unresolved').style.display = '';
   }
+
+  // ADR-0046: Pass only ever offered on an OPTIONAL stop that is neither
+  // already answered (isReviewStop) nor already passed — the three states
+  // (needs a look / resolved by answer / resolved by Pass) are mutually
+  // exclusive, and this button is the only affordance for the third one.
+  $id('btn-pass').style.display =
+    q.tourEntry && q.tourEntry.mustRespond === false && !q.tourEntry.passed && !q.isReviewStop ? '' : 'none';
 
   // ADR-0023: restore an in-progress draft, if one exists for this question's
   // key — but ONLY when this is actually a different question than what's

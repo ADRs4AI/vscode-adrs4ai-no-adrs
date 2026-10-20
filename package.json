@@ -156,6 +156,12 @@
         "icon": "$(archive)"
       },
       {
+        "command": "adrManager.resetPassedOptionalStops",
+        "title": "Reset Passed Optional Stops",
+        "category": "ADR Manager",
+        "icon": "$(discard)"
+      },
+      {
         "command": "adrManager.hideCompletedTours",
         "title": "Hide Completed Tours",
         "category": "ADR Manager",
@@ -433,12 +439,12 @@
         },
         {
           "command": "adrManager.hideCompletedTours",
-          "when": "view == adrExplorer && viewItem == tour-group && !config.adrManager.tours.hideCompleted",
+          "when": "view == adrExplorer && viewItem == tour-group && config.adrManager.tours.hideCompletedMode != 'all'",
           "group": "1_actions@1"
         },
         {
           "command": "adrManager.showCompletedTours",
-          "when": "view == adrExplorer && viewItem == tour-group && config.adrManager.tours.hideCompleted",
+          "when": "view == adrExplorer && viewItem == tour-group && config.adrManager.tours.hideCompletedMode == 'all'",
           "group": "1_actions@1"
         },
         {
@@ -465,6 +471,11 @@
           "command": "adrManager.retireTour",
           "when": "view == adrExplorer && viewItem == tour",
           "group": "1_actions@1"
+        },
+        {
+          "command": "adrManager.resetPassedOptionalStops",
+          "when": "view == adrExplorer && viewItem == tour",
+          "group": "1_actions@2"
         }
       ]
     },
@@ -729,10 +740,20 @@
           "default": true,
           "description": "In a tour's treeview entries, prefix each question with its authored disposition — DECIDE / RATIFY / ACKNOWLEDGE / DELEGATE — when the tour sets one. An entry with no disposition set gets no prefix."
         },
-        "adrManager.tours.hideCompleted": {
-          "type": "boolean",
-          "default": true,
-          "description": "Hide fully-done tours from the sidebar's Tours category. Toggle from the Tours category's own right-click menu (Hide/Show Completed Tours) or here."
+        "adrManager.tours.hideCompletedMode": {
+          "type": "string",
+          "enum": [
+            "all",
+            "optional-aware",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Hide a tour once every REQUIRED stop is answered (the previous default behavior — fastest to clear from the sidebar, but an optional stop can still be sitting open and unreachable from the treeview once hidden).",
+            "Hide a tour only once EVERY stop — required or optional — is answered or explicitly Passed (ADR-0046). A tour with a real, un-dealt-with optional stop stays visible.",
+            "Never auto-hide a tour. Retiring is the only way to stop it asking."
+          ],
+          "default": "all",
+          "description": "When to hide a fully-done tour from the sidebar's Tours category. Toggle the 'all'/'never' extremes from the Tours category's own right-click menu (Hide/Show Completed Tours) or set 'optional-aware' here directly."
         },
         "adrManager.adrs.hideSettled": {
           "type": "boolean",

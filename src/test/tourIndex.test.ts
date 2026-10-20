@@ -60,7 +60,7 @@ describe('parseTourFile', () => {
     expect(tour!.theme).toEqual({ background: '#556B2F', foreground: '#F5F5F0' })
     expect(tour!.entries).toHaveLength(1)
     expect(tour!.entries[0]).toEqual({
-      ref: 'adr:0001#qst-which-database', must_respond: true, disposition: 'decide', answer_path: undefined, comment: 'pick one',
+      ref: 'adr:0001#qst-which-database', must_respond: true, disposition: 'decide', answer_path: undefined, comment: 'pick one', passed: false,
     })
   })
 
