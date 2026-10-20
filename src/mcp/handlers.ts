@@ -468,6 +468,7 @@ export async function answerQuestion(
     if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
+    await session.refreshCorpus() // read-your-own-writes: a write that the session's next read cannot see is a stale-board bug (dogfood 2026-10-20)
     const confirmation = `Answered ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
     session.recordSuccess('answer_question', options.clientMsgId, confirmation)
     return confirmation
@@ -505,6 +506,7 @@ export async function addRecommendation(
     if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
+    await session.refreshCorpus() // read-your-own-writes: a write that the session's next read cannot see is a stale-board bug (dogfood 2026-10-20)
     const confirmation = `Added recommendation (by ${author.trim()}) to ${questionId} in ${adrRefString(resolved.adr)}\n${result.diff}`
     session.recordSuccess('add_recommendation', options.clientMsgId, confirmation)
     return confirmation
@@ -546,6 +548,7 @@ export async function appendIteration(ctx: RepositoryContext, session: DocketSes
     if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
+    await session.refreshCorpus() // read-your-own-writes: a write that the session's next read cannot see is a stale-board bug (dogfood 2026-10-20)
     const confirmation = `Appended Iteration ${result.iterationNumber} to ${adrRefString(resolved.adr)}\n${result.diff}`
     session.recordSuccess('append_iteration', entry.clientMsgId, confirmation)
     return confirmation
@@ -578,6 +581,7 @@ export async function updateResolution(
     if (!result.ok) return result.error
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
+    await session.refreshCorpus() // read-your-own-writes: a write that the session's next read cannot see is a stale-board bug (dogfood 2026-10-20)
     const confirmation = `Updated resolution for ${adrRefString(resolved.adr)} to '${resolution}'\n${result.diff}`
     session.recordSuccess('update_resolution', options.clientMsgId, confirmation)
     return confirmation
@@ -628,6 +632,7 @@ export async function applyBatch(
     if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
 
     await ctx.writeFile(resolved.adr.path, result.newContent)
+    await session.refreshCorpus() // read-your-own-writes: a write that the session's next read cannot see is a stale-board bug (dogfood 2026-10-20)
     const confirmation = `Applied ${operations.length} operation(s) to ${adrRefString(resolved.adr)}\n${result.diff}`
     session.recordSuccess('apply_batch', options.clientMsgId, confirmation)
     return confirmation
@@ -667,6 +672,7 @@ export async function blessQstHandle(
     if (!result.ok) return `error: write_failed\nmessage: ${result.error}`
 
     if (!result.alreadyBlessed) await ctx.writeFile(resolved.adr.path, result.newContent)
+    await session.refreshCorpus() // read-your-own-writes: a write that the session's next read cannot see is a stale-board bug (dogfood 2026-10-20)
     const confirmation = result.alreadyBlessed
       ? `Already blessed: ${adrRefString(resolved.adr)}#${result.slug} (no change)`
       : `Blessed ${adrRefString(resolved.adr)}#${result.slug} — anchor inserted after line ${result.headingLine}\n${result.diff}`
