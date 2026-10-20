@@ -1211,6 +1211,49 @@ describe('Tour-mode skin (ADR-0034)', () => {
   // completely forgot the ADR in context and the why needed is not good
   // enough". The grouping rationale is content NO ADR can hold, so the tour is
   // the only surface that can load it.
+  // Regression — ADR-0046's live incident (founder, 2026-10-20): the Launch
+  // Hour tour's banner read "[done]" directly above "1 AWAITING YOU" on its
+  // deliberate must_respond:false stop 3. Both labels were correct; they used
+  // DIFFERENT DENOMINATORS. The label now names its own.
+  describe('Regression tests: [done] must not contradict the awaiting counter', () => {
+    // Built inline rather than via a scoped mkQ helper — this block sits
+    // above the describes that define one, and a fixture you cannot see is a
+    // worse dependency than three extra lines.
+    const base = { adrPath: '/fake/a.md', adrNumber: 1, lineStart: 1, fileChecksum: 'c1', totalOccurrences: 1, groupLabel: 'ADR-0001', groupSortKey: '0-0001', sourceKind: 'adr' }
+    const REQUIRED = { ...base, id: 'r1', text: 'Required', draftKey: 'k-r1', tourEntry: { mustRespond: true } }
+    const OPTIONAL = { ...base, id: 'o1', text: 'Optional', draftKey: 'k-o1', tourEntry: { mustRespond: false } }
+
+    it('names the open optional stops instead of claiming the whole tour is done', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({
+        type: 'questions', generation: 0, questions: [REQUIRED, OPTIONAL],
+        tour: { ...TOUR, done: true, askedSomething: true },
+      })
+      const title = h.element('tour-header-title').textContent
+      expect(title).toContain('[required done · 1 optional open]')
+      expect(title).not.toContain('[done]')
+    })
+
+    it('still reads a plain [done] when nothing optional is left open', () => {
+      // The fix must not cost the honest case its short label.
+      const h = createWebviewHarness()
+      h.postToWebview({
+        type: 'questions', generation: 0, questions: [REQUIRED],
+        tour: { ...TOUR, done: true, askedSomething: true },
+      })
+      expect(h.element('tour-header-title').textContent).toContain('[done]')
+    })
+
+    it('a vacuously-done tour still reads [nothing required] — v0.7.123 unchanged', () => {
+      const h = createWebviewHarness()
+      h.postToWebview({
+        type: 'questions', generation: 0, questions: [OPTIONAL],
+        tour: { ...TOUR, done: true, askedSomething: false },
+      })
+      expect(h.element('tour-header-title').textContent).toContain('[nothing required]')
+    })
+  })
+
   describe('the prologue — the one claim no ADR can hold', () => {
     const PROLOGUE = { rationale: 'These three are the alpha gate.', context: 'Endgame, wave A.' }
 

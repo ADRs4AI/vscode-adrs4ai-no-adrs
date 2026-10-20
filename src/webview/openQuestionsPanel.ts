@@ -3216,9 +3216,29 @@ function renderTourHeader() {
   // old "already answered" message told, in the same week. "nothing required"
   // names the actual state and tells the minter their tour asks for nothing,
   // which is usually not what they meant.
+  // ADR-0046's incident (founder, live, 2026-10-20): the banner read "[done]"
+  // directly above "1 AWAITING YOU" on the Launch Hour tour's deliberate
+  // must_respond:false stop 3. Both labels were correct and they used
+  // DIFFERENT DENOMINATORS: done counts only required stops (isTourDone,
+  // Commodore's It-5 ruling), while the counter counts every non-review stop,
+  // optional included. Two true sentences that contradict each other when
+  // rendered an inch apart.
+  //
+  // Fixed where the defect actually is — in the LABEL, not the model. Nothing
+  // about doneness changes; the label stops claiming more than doneness means.
+  // This needs no schema, no new disposition, and none of ADR-0046's four
+  // QSTs answered: the mechanism question (how a human DISMISSES an optional
+  // stop) is real and separate, and is Gleaner's ADR to carry.
+  // (No backticks in this comment: the webview script is a TEMPLATE LITERAL
+  // and a backtick terminates it. Third time this file has taught me that.)
+  const openOptional = questions.filter(qq =>
+    !qq.isReviewStop && qq.tourEntry && qq.tourEntry.mustRespond === false).length;
+  const doneLabel = openOptional > 0
+    ? ' [required done · ' + openOptional + ' optional open]'
+    : ' [done]';
   const statusLabel = activeTour.retired
     ? ' [retired]'
-    : (activeTour.done ? (activeTour.askedSomething ? ' [done]' : ' [nothing required]') : '');
+    : (activeTour.done ? (activeTour.askedSomething ? doneLabel : ' [nothing required]') : '');
   $id('tour-header-title').textContent = activeTour.title + statusLabel;
   $id('tour-header-meta').textContent = 'By ' + authorLabel + mintedLabel;
 
