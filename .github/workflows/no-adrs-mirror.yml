@@ -19,11 +19,13 @@ on:
 concurrency:
   group: no-adrs-mirror
   cancel-in-progress: true
+permissions:
+  contents: write   # filter mode persists its state branch back to THIS repo
 jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }        # filter mode needs full history
       - uses: ADRs4AI/no-adrs-mirror@v1
         with:
