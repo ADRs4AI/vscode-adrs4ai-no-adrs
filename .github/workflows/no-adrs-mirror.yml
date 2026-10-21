@@ -1,11 +1,14 @@
 # The shipped product, dogfooding itself: this repo's code-public/record-gated
 # posture (the founder's C verdict) via the Marketplace Action.
 #
-# POSTURE (Parallax second look, 2026-10-20, rail 4): workflow_dispatch ONLY —
-# each rebuild is a deliberate, human-triggered phase-A epoch. Continuous
-# on-push filter syncing stays OFF until the two-phase (--state-branch) append
-# engine lands; the rejected rewrite-on-every-push shape is not silently
-# substituted for the answered design.
+# POSTURE (the founder's switch, 2026-10-21): CONTINUOUS — the two-phase
+# engine landed and was proven live (Action ADR-0001 It-7), so on-push
+# incremental syncing is now the honest shape: each push fast-forwards the
+# mirror, prior SHAs stay reachable, and only a declared history_epoch "new"
+# ever rewrites. Rapid pushes: concurrency cancels the older run; state
+# persists only AFTER a successful mirror push, so cancellation at any point
+# is self-healing. The Action writes ONE thing to this repo: the state branch
+# `no-adrs-mirror/state` — machinery, not record; leave it be.
 #
 # approved_paths = the reviewed union of every top-level path that EVER
 # existed in history, minus strips (filter mode publishes history, so the
@@ -15,6 +18,7 @@
 # founder's 10-19 lean ("role models our tooling").
 name: no-adrs-mirror
 on:
+  push: { branches: [main] }
   workflow_dispatch:
 concurrency:
   group: no-adrs-mirror
