@@ -16,6 +16,9 @@
 name: no-adrs-mirror
 on:
   workflow_dispatch:
+concurrency:
+  group: no-adrs-mirror
+  cancel-in-progress: true
 jobs:
   mirror:
     runs-on: ubuntu-latest
