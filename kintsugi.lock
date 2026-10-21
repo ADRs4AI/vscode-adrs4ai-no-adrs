@@ -1,12 +1,12 @@
 # kintsugi.lock — tool-written state; do not hand-edit.
 # What this repo HAS, per artifact (base version + exact canonical blob).
 kintsugi_schema: 1
-canonical_version: 3.12.1
-synced: '2026-10-20T22:16:47Z'
+canonical_version: 3.12.2
+synced: '2026-10-21T21:55:28Z'
 artifacts:
   .claude/skills/adr-authoring/SKILL.md:
-    base_version: 3.12.0
-    base_blob: 7dab7c534d2591c3887dd3410fff8d9625d601ba
+    base_version: 3.12.2
+    base_blob: 47316e5a44295bf82d74dc1afcef9fe75cb3ec21
   .claude/skills/adr-authoring/references/depth.md:
     base_version: 3.11.1
     base_blob: 479e7aeaa4fac1c6fed7d2d57077e8c1ef58bca4
@@ -17,8 +17,8 @@ artifacts:
     base_version: 3.11.6
     base_blob: edb0148e4db42c6b6df925cdf9f2b8fc5ab2b968
   .claude/skills/adrs4ai-tooling/SKILL.md:
-    base_version: 3.12.1
-    base_blob: 64522c140ef79f51d937c7c1111a5d496c4590bf
+    base_version: 3.12.2
+    base_blob: 1670047c86ed391c98fa127d6656c187c5e9617e
   .claude/skills/adrs4ai-tooling/references/seats-models-and-usage-caps.md:
     base_version: 3.12.0
     base_blob: 605522d466ce3290eec7e0beefd2005ba8999520
@@ -52,6 +52,9 @@ artifacts:
   docs/adr/templates/failure-classes.md:
     base_version: 3.9.2
     base_blob: 75bfa61e4ce325dd4b9defa7dba5896c7c94c52b
+  docs/adr/templates/placeholders.yaml:
+    base_version: 3.12.2
+    base_blob: 52506c8a48ae6de12294f26e18c615520fe57de2
   docs/adr/templates/seed.md:
     state_at_adopt: unknown-base
   docs/inbox/CONVENTIONS.md:
@@ -65,4 +68,7 @@ artifacts:
     state_at_adopt: unknown-base
   justfile:
     state_at_adopt: unknown-base
+  scripts/pneumatic-shim.sh:
+    base_version: 3.12.2
+    base_blob: 603aa066a00ba8a3eeeac24a72aef65899771a94
 applied_bundles: []
