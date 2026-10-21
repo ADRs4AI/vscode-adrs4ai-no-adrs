@@ -88,6 +88,10 @@ artifacts:
   scripts/tmux/seat.conf:
     class: stencil     # load-bearing for `just launch` TODAY (Grafter's hard-fail specimen, 2026-08-14: a missing copy broke Jérémie's launch; this row makes that failure class self-healing via missing-local → create); retires to pneumatic's external row when the package absorbs tmux config — Understudy's scope-call, minor bump on its day
 
+  scripts/pneumatic-shim.sh:
+    class: stencil     # the crew layer's one front door (ADR-0044 molt); template-maintained, instances never adapt it — row added post-copy by the fleet manifest heal (Tender 5, 2026-10-21; §1b catch №4)
+  docs/adr/templates/placeholders.yaml:
+    class: stencil     # the ⟦SIGIL⟧ + fixtures registry the healed justfile's instantiate-check reads — heals in lockstep with the check (Tender 5, 2026-10-21; §1b catch №3)
   # pneumatic — wake/messaging/registry machinery; arrives via PyPI, never via
   # file-propagation. Visibility-only row: kintsugi reports it, never touches
   # it. (Owner's reasoning, Understudy 2026-08-10: pneumatic's founding already
