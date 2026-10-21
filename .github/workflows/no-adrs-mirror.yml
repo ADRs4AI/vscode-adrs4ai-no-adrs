@@ -18,8 +18,8 @@
 # founder's 10-19 lean ("role models our tooling").
 name: no-adrs-mirror
 on:
-  push: { branches: [main] }
-  workflow_dispatch:
+  workflow_dispatch:   # continuous on-push PAUSED pending Action ADR-0001 It-8 (filter-repo metadata crash on the live pair; sandbox-green, live-red — under forensic)
+
 concurrency:
   group: no-adrs-mirror
   cancel-in-progress: true
