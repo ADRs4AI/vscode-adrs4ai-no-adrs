@@ -18,7 +18,8 @@
 # founder's 10-19 lean ("role models our tooling").
 name: no-adrs-mirror
 on:
-  workflow_dispatch:   # continuous on-push PAUSED pending Action ADR-0001 It-8 (filter-repo metadata crash on the live pair; sandbox-green, live-red — under forensic)
+  push: { branches: [main] }   # continuous restored at the founder's word (Action ADR-0001 QST-SPECIMEN-UNPAUSE: "OK, let's go with Option A") — It-8's crash closed by It-9's filter_repo_shim, proven on this pair (run 39689221832: incremental, no force, prior tip a parent)
+  workflow_dispatch:
 
 concurrency:
   group: no-adrs-mirror
